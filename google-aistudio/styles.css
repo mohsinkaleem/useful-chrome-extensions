@@ -1,0 +1,22 @@
+.enhancer-new-tab-button {
+    background-color: #333; /* Darker background */
+    color: #bbb; /* Light grey text/icon */
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-left: 8px; /* Space it out from other elements */
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    vertical-align: middle; /* Align with other buttons/icons */
+}
+
+.enhancer-new-tab-button:hover {
+    background-color: #444;
+    color: #fff;
+}
+
+/* Make sure the clickable name element still allows hover effects for the title attribute */
+div[role="gridcell"]:nth-child(1) > *[title] {
+    cursor: help; /* Or default, just ensure it's hoverable */
+}
