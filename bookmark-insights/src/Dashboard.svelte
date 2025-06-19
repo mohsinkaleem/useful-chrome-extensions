@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { Chart, registerables } from 'chart.js';
   import BookmarkCard from './BookmarkCard.svelte';
+  import BookmarkListItem from './BookmarkListItem.svelte';
   import SearchBar from './SearchBar.svelte';
   import Sidebar from './Sidebar.svelte';
   import { 
@@ -14,7 +15,9 @@
     getActivityTimeline,
     findDuplicates,
     findOrphans,
-    findMalformedUrls
+    findMalformedUrls,
+    deleteBookmark,
+    deleteBookmarks
   } from './database.js';
   
   Chart.register(...registerables);
@@ -47,6 +50,11 @@
   let duplicates = [];
   let orphans = [];
   let malformedUrls = [];
+  
+  // Multi-select state
+  let selectedBookmarks = new Set();
+  let multiSelectMode = false;
+  let viewMode = 'list'; // 'list' or 'card'
   
   onMount(async () => {
     try {
@@ -253,6 +261,90 @@
       await loadHealthData();
     }
   }
+  
+  function toggleMultiSelectMode() {
+    multiSelectMode = !multiSelectMode;
+    if (!multiSelectMode) {
+      selectedBookmarks.clear();
+      selectedBookmarks = selectedBookmarks;
+    }
+  }
+  
+  function handleToggleSelect(event) {
+    const { bookmarkId, selected } = event.detail;
+    if (selected) {
+      selectedBookmarks.add(bookmarkId);
+    } else {
+      selectedBookmarks.delete(bookmarkId);
+    }
+    selectedBookmarks = selectedBookmarks;
+  }
+  
+  function selectAllBookmarks() {
+    selectedBookmarks = new Set(bookmarks.map(b => b.id));
+  }
+  
+  function deselectAllBookmarks() {
+    selectedBookmarks.clear();
+    selectedBookmarks = selectedBookmarks;
+  }
+  
+  async function deleteSelectedBookmarks() {
+    if (selectedBookmarks.size === 0) return;
+    
+    if (!confirm(`Are you sure you want to delete ${selectedBookmarks.size} bookmark(s)?`)) {
+      return;
+    }
+    
+    try {
+      loading = true;
+      const bookmarkIds = Array.from(selectedBookmarks);
+      const result = await deleteBookmarks(bookmarkIds);
+      
+      if (result.errors.length > 0) {
+        console.error('Some bookmarks could not be deleted:', result.errors);
+        alert(`${result.success} bookmarks deleted successfully. ${result.errors.length} failed.`);
+      } else {
+        alert(`${result.success} bookmarks deleted successfully.`);
+      }
+      
+      // Clear selections and reload
+      selectedBookmarks.clear();
+      selectedBookmarks = selectedBookmarks;
+      multiSelectMode = false;
+      
+      // Reload bookmarks
+      currentPage = 0;
+      await loadBookmarksPaginated();
+    } catch (err) {
+      console.error('Error deleting bookmarks:', err);
+      alert('Error deleting bookmarks. Please try again.');
+    } finally {
+      loading = false;
+    }
+  }
+  
+  async function handleDeleteSingle(event) {
+    const { bookmarkId } = event.detail;
+    
+    if (!confirm('Are you sure you want to delete this bookmark?')) {
+      return;
+    }
+    
+    try {
+      await deleteBookmark(bookmarkId);
+      // Reload bookmarks to refresh the list
+      currentPage = 0;
+      await loadBookmarksPaginated();
+    } catch (err) {
+      console.error('Error deleting bookmark:', err);
+      alert('Error deleting bookmark. Please try again.');
+    }
+  }
+  
+  function toggleViewMode() {
+    viewMode = viewMode === 'list' ? 'card' : 'list';
+  }
 </script>
 
 <svelte:head>
@@ -312,10 +404,12 @@
         <SearchBar on:search={handleSearch} />
       </div>
       
-      <div class="flex">
-        <Sidebar on:filter={handleFilter} />
+      <div class="flex gap-6 min-h-0">
+        <div class="flex-shrink-0">
+          <Sidebar on:filter={handleFilter} />
+        </div>
         
-        <div class="flex-1 ml-6">
+        <div class="flex-1 min-w-0 overflow-hidden">
           {#if loading}
             <div class="flex items-center justify-center h-64">
               <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -339,25 +433,104 @@
               {/if}
             </div>
           {:else}
-            <div class="mb-4 flex items-center justify-between">
+            <div class="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <h2 class="text-lg font-medium text-gray-900">
                 {totalCount} bookmark{totalCount !== 1 ? 's' : ''}
                 {#if currentFilters.domains.length > 0 || currentFilters.folders.length > 0 || currentFilters.dateRange || currentFilters.searchQuery}
                   <span class="text-sm text-gray-500">
-                    (filtered from {totalCount} total)
+                    (filtered)
                   </span>
                 {/if}
               </h2>
-              <div class="text-sm text-gray-500">
-                Showing {bookmarks.length} of {totalCount}
+              <div class="flex flex-wrap items-center gap-2 sm:gap-4">
+                <div class="text-sm text-gray-500">
+                  Showing {bookmarks.length} of {totalCount}
+                </div>
+                
+                <!-- View Mode Toggle -->
+                <button
+                  on:click={toggleViewMode}
+                  class="p-2 text-gray-500 hover:text-gray-700 border border-gray-300 rounded-md"
+                  title="Toggle view mode"
+                >
+                  {#if viewMode === 'list'}
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+                    </svg>
+                  {:else}
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                    </svg>
+                  {/if}
+                </button>
+                
+                <!-- Multi-Select Toggle -->
+                <button
+                  on:click={toggleMultiSelectMode}
+                  class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+                  class:bg-blue-50={multiSelectMode}
+                  class:border-blue-300={multiSelectMode}
+                  class:text-blue-700={multiSelectMode}
+                >
+                  {multiSelectMode ? 'Cancel' : 'Select'}
+                </button>
               </div>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {#each bookmarks as bookmark (bookmark.id)}
-                <BookmarkCard {bookmark} />
-              {/each}
-            </div>
+            <!-- Multi-Select Toolbar -->
+            {#if multiSelectMode}
+              <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div class="flex flex-wrap items-center gap-2 sm:gap-4">
+                    <span class="text-sm text-blue-700">
+                      {selectedBookmarks.size} selected
+                    </span>
+                    <button
+                      on:click={selectAllBookmarks}
+                      class="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      on:click={deselectAllBookmarks}
+                      class="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                  <button
+                    on:click={deleteSelectedBookmarks}
+                    disabled={selectedBookmarks.size === 0}
+                    class="px-4 py-2 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed self-start sm:self-auto"
+                  >
+                    Delete Selected
+                  </button>
+                </div>
+              </div>
+            {/if}
+            
+            <!-- Bookmarks Display -->
+            {#if viewMode === 'list'}
+              <div class="bg-white rounded-lg shadow overflow-hidden">
+                <div class="max-w-full overflow-x-auto">
+                  {#each bookmarks as bookmark (bookmark.id)}
+                    <BookmarkListItem 
+                      {bookmark} 
+                      {multiSelectMode}
+                      isSelected={selectedBookmarks.has(bookmark.id)}
+                      on:toggle-select={handleToggleSelect}
+                      on:delete={handleDeleteSingle}
+                    />
+                  {/each}
+                </div>
+              </div>
+            {:else}
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {#each bookmarks as bookmark (bookmark.id)}
+                  <BookmarkCard {bookmark} />
+                {/each}
+              </div>
+            {/if}
 
             <!-- Load More Button -->
             {#if hasMore}

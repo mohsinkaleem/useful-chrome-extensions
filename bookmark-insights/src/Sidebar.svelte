@@ -105,7 +105,7 @@
   }
 </script>
 
-<div class="w-64 bg-gray-50 border-r border-gray-200 p-4 overflow-y-auto">
+<div class="w-64 bg-gray-50 border-r border-gray-200 p-4 overflow-y-auto flex-shrink-0">
   <div class="mb-6">
     <div class="flex items-center justify-between mb-3">
       <h3 class="text-sm font-medium text-gray-900">Filters</h3>

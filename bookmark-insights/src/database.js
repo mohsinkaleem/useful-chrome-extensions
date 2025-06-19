@@ -335,3 +335,53 @@ export async function getDomainsByCount() {
     return [];
   }
 }
+
+// Delete a single bookmark
+export async function deleteBookmark(bookmarkId) {
+  try {
+    // Delete from Chrome bookmarks API
+    await chrome.bookmarks.remove(bookmarkId);
+    
+    // Remove from our local storage cache
+    const result = await chrome.storage.local.get(['bookmarks']);
+    const bookmarks = result.bookmarks || [];
+    const updatedBookmarks = bookmarks.filter(b => b.id !== bookmarkId);
+    await chrome.storage.local.set({ bookmarks: updatedBookmarks });
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting bookmark:', error);
+    throw error;
+  }
+}
+
+// Delete multiple bookmarks
+export async function deleteBookmarks(bookmarkIds) {
+  try {
+    const errors = [];
+    
+    // Delete each bookmark from Chrome bookmarks API
+    for (const id of bookmarkIds) {
+      try {
+        await chrome.bookmarks.remove(id);
+      } catch (error) {
+        console.error(`Error deleting bookmark ${id}:`, error);
+        errors.push({ id, error: error.message });
+      }
+    }
+    
+    // Remove from our local storage cache
+    const result = await chrome.storage.local.get(['bookmarks']);
+    const bookmarks = result.bookmarks || [];
+    const updatedBookmarks = bookmarks.filter(b => !bookmarkIds.includes(b.id));
+    await chrome.storage.local.set({ bookmarks: updatedBookmarks });
+    
+    return {
+      success: bookmarkIds.length - errors.length,
+      errors: errors
+    };
+  } catch (error) {
+    console.error('Error deleting bookmarks:', error);
+    throw error;
+  }
+}
