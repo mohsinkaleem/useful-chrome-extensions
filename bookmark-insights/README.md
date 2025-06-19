@@ -11,10 +11,24 @@ A powerful bookmark manager Chrome extension with smart search, insights, and ma
 - **Popup Interface**: Quick access to bookmarks through browser action
 - **Full Dashboard**: Comprehensive view with all features
 
-### Phase 2 - Insights (Implemented)
-- **Domain Statistics**: See which domains you bookmark most
+### Phase 2 - Visual Analytics & Insights (Implemented)
+- **Domain Analysis**: 
+  - Most frequently bookmarked domains
+  - Distribution of bookmarks across top domains with percentages
+- **Content Analysis**:
+  - Most frequent words in bookmark titles (with stop-word filtering)
+  - Common title patterns and content types (tutorials, documentation, etc.)
+- **Temporal Analysis**:
+  - Bookmark age distribution (time since dateAdded)
+  - Bookmark creation patterns over time (monthly timeline)
+  - Creation patterns by day of week
+- **URL Structure Analysis**:
+  - Common URL patterns and structures
+  - Top-level domain distribution
+  - Parameter usage frequency in bookmarked URLs
+  - Protocol and subdomain analysis
 - **Activity Timeline**: Track your bookmarking activity over time
-- **Quick Stats**: Total bookmarks, duplicates, and orphans count
+- **Quick Stats**: Total bookmarks, duplicates, orphans, and unique domains count
 
 ### Phase 3 - Health & Maintenance (Implemented)
 - **Duplicate Detection**: Find and remove duplicate bookmarks

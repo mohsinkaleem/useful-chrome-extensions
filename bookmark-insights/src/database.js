@@ -385,3 +385,309 @@ export async function deleteBookmarks(bookmarkIds) {
     throw error;
   }
 }
+
+// VISUAL ANALYTICS FEATURES
+
+// Content Analysis - Most frequent words in bookmark titles
+export async function getTitleWordFrequency() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const wordCount = {};
+    
+    // Common words to filter out
+    const stopWords = new Set([
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+      'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did',
+      'will', 'would', 'could', 'should', 'may', 'might', 'can', 'about', 'from', 'up', 'out',
+      'into', 'over', 'under', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
+      'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their'
+    ]);
+    
+    bookmarks.forEach(bookmark => {
+      if (bookmark.title) {
+        // Extract words from title, normalize and filter
+        const words = bookmark.title
+          .toLowerCase()
+          .replace(/[^\w\s]/g, ' ')
+          .split(/\s+/)
+          .filter(word => word.length > 2 && !stopWords.has(word));
+        
+        words.forEach(word => {
+          wordCount[word] = (wordCount[word] || 0) + 1;
+        });
+      }
+    });
+    
+    return Object.entries(wordCount)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 20);
+  } catch (error) {
+    console.error('Error getting title word frequency:', error);
+    return [];
+  }
+}
+
+// Content Analysis - Common title patterns
+export async function getTitlePatterns() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const patterns = {};
+    
+    bookmarks.forEach(bookmark => {
+      if (bookmark.title) {
+        const title = bookmark.title.toLowerCase();
+        
+        // Detect common patterns
+        if (title.includes('how to')) {
+          patterns['How-to guides'] = (patterns['How-to guides'] || 0) + 1;
+        }
+        if (title.includes('tutorial')) {
+          patterns['Tutorials'] = (patterns['Tutorials'] || 0) + 1;
+        }
+        if (title.includes('documentation') || title.includes('docs')) {
+          patterns['Documentation'] = (patterns['Documentation'] || 0) + 1;
+        }
+        if (title.includes('api') || title.includes('reference')) {
+          patterns['API/Reference'] = (patterns['API/Reference'] || 0) + 1;
+        }
+        if (title.includes('blog') || title.includes('article')) {
+          patterns['Blog/Articles'] = (patterns['Blog/Articles'] || 0) + 1;
+        }
+        if (title.includes('github') || title.includes('repository')) {
+          patterns['Code Repositories'] = (patterns['Code Repositories'] || 0) + 1;
+        }
+        if (title.includes('video') || title.includes('youtube')) {
+          patterns['Videos'] = (patterns['Videos'] || 0) + 1;
+        }
+        if (title.includes('tool') || title.includes('app')) {
+          patterns['Tools/Apps'] = (patterns['Tools/Apps'] || 0) + 1;
+        }
+        
+        // Length-based patterns
+        if (title.length > 60) {
+          patterns['Long titles (60+ chars)'] = (patterns['Long titles (60+ chars)'] || 0) + 1;
+        }
+        if (title.split(' ').length <= 3) {
+          patterns['Short titles (≤3 words)'] = (patterns['Short titles (≤3 words)'] || 0) + 1;
+        }
+      }
+    });
+    
+    return Object.entries(patterns)
+      .sort(([,a], [,b]) => b - a);
+  } catch (error) {
+    console.error('Error getting title patterns:', error);
+    return [];
+  }
+}
+
+// Temporal Analysis - Bookmark age distribution
+export async function getBookmarkAgeDistribution() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const now = Date.now();
+    const ageGroups = {
+      'Last 24 hours': 0,
+      'Last week': 0,
+      'Last month': 0,
+      'Last 3 months': 0,
+      'Last 6 months': 0,
+      'Last year': 0,
+      'Over 1 year': 0
+    };
+    
+    const DAY = 24 * 60 * 60 * 1000;
+    const WEEK = 7 * DAY;
+    const MONTH = 30 * DAY;
+    
+    bookmarks.forEach(bookmark => {
+      const age = now - bookmark.dateAdded;
+      
+      if (age <= DAY) {
+        ageGroups['Last 24 hours']++;
+      } else if (age <= WEEK) {
+        ageGroups['Last week']++;
+      } else if (age <= MONTH) {
+        ageGroups['Last month']++;
+      } else if (age <= 3 * MONTH) {
+        ageGroups['Last 3 months']++;
+      } else if (age <= 6 * MONTH) {
+        ageGroups['Last 6 months']++;
+      } else if (age <= 365 * DAY) {
+        ageGroups['Last year']++;
+      } else {
+        ageGroups['Over 1 year']++;
+      }
+    });
+    
+    return Object.entries(ageGroups);
+  } catch (error) {
+    console.error('Error getting bookmark age distribution:', error);
+    return [];
+  }
+}
+
+// Temporal Analysis - Enhanced bookmark creation patterns
+export async function getBookmarkCreationPatterns() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const hourPatterns = new Array(24).fill(0);
+    const dayPatterns = new Array(7).fill(0);
+    const monthPatterns = new Array(12).fill(0);
+    
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    bookmarks.forEach(bookmark => {
+      const date = new Date(bookmark.dateAdded);
+      hourPatterns[date.getHours()]++;
+      dayPatterns[date.getDay()]++;
+      monthPatterns[date.getMonth()]++;
+    });
+    
+    return {
+      hourly: hourPatterns.map((count, hour) => ([`${hour}:00`, count])),
+      daily: dayPatterns.map((count, day) => ([dayNames[day], count])),
+      monthly: monthPatterns.map((count, month) => ([monthNames[month], count]))
+    };
+  } catch (error) {
+    console.error('Error getting bookmark creation patterns:', error);
+    return { hourly: [], daily: [], monthly: [] };
+  }
+}
+
+// URL Structure Analysis - Common URL patterns
+export async function getUrlPatterns() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const protocols = {};
+    const topLevelDomains = {};
+    const pathPatterns = {};
+    const subdomainPatterns = {};
+    
+    bookmarks.forEach(bookmark => {
+      try {
+        const url = new URL(bookmark.url);
+        
+        // Protocol analysis
+        protocols[url.protocol] = (protocols[url.protocol] || 0) + 1;
+        
+        // TLD analysis
+        const domain = url.hostname;
+        const parts = domain.split('.');
+        if (parts.length > 1) {
+          const tld = parts[parts.length - 1];
+          topLevelDomains[tld] = (topLevelDomains[tld] || 0) + 1;
+        }
+        
+        // Subdomain analysis
+        if (parts.length > 2) {
+          const subdomain = parts[0];
+          if (subdomain !== 'www') {
+            subdomainPatterns[subdomain] = (subdomainPatterns[subdomain] || 0) + 1;
+          }
+        }
+        
+        // Path patterns
+        const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0);
+        if (pathSegments.length > 0) {
+          const firstSegment = pathSegments[0];
+          pathPatterns[firstSegment] = (pathPatterns[firstSegment] || 0) + 1;
+        }
+        
+      } catch (e) {
+        // Skip malformed URLs
+      }
+    });
+    
+    return {
+      protocols: Object.entries(protocols).sort(([,a], [,b]) => b - a),
+      topLevelDomains: Object.entries(topLevelDomains).sort(([,a], [,b]) => b - a).slice(0, 10),
+      subdomains: Object.entries(subdomainPatterns).sort(([,a], [,b]) => b - a).slice(0, 10),
+      pathPatterns: Object.entries(pathPatterns).sort(([,a], [,b]) => b - a).slice(0, 15)
+    };
+  } catch (error) {
+    console.error('Error getting URL patterns:', error);
+    return { protocols: [], topLevelDomains: [], subdomains: [], pathPatterns: [] };
+  }
+}
+
+// URL Structure Analysis - Parameter usage frequency
+export async function getUrlParameterUsage() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const parameterCount = {};
+    let urlsWithParams = 0;
+    let totalUrls = 0;
+    
+    bookmarks.forEach(bookmark => {
+      totalUrls++;
+      try {
+        const url = new URL(bookmark.url);
+        const params = url.searchParams;
+        
+        if (params.toString()) {
+          urlsWithParams++;
+          for (const [key] of params) {
+            parameterCount[key] = (parameterCount[key] || 0) + 1;
+          }
+        }
+      } catch (e) {
+        // Skip malformed URLs
+      }
+    });
+    
+    const parameterUsage = Object.entries(parameterCount)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 15);
+    
+    return {
+      parameters: parameterUsage,
+      urlsWithParams,
+      totalUrls,
+      percentage: totalUrls > 0 ? Math.round((urlsWithParams / totalUrls) * 100) : 0
+    };
+  } catch (error) {
+    console.error('Error getting URL parameter usage:', error);
+    return { parameters: [], urlsWithParams: 0, totalUrls: 0, percentage: 0 };
+  }
+}
+
+// Enhanced Domain Analysis - Distribution of bookmarks across domains
+export async function getDomainDistribution() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const domainCount = {};
+    
+    bookmarks.forEach(bookmark => {
+      domainCount[bookmark.domain] = (domainCount[bookmark.domain] || 0) + 1;
+    });
+    
+    const sortedDomains = Object.entries(domainCount)
+      .sort(([,a], [,b]) => b - a);
+    
+    const totalBookmarks = bookmarks.length;
+    const top10 = sortedDomains.slice(0, 10);
+    const others = sortedDomains.slice(10);
+    const othersCount = others.reduce((sum, [,count]) => sum + count, 0);
+    
+    const distribution = top10.map(([domain, count]) => ({
+      domain,
+      count,
+      percentage: Math.round((count / totalBookmarks) * 100)
+    }));
+    
+    if (othersCount > 0) {
+      distribution.push({
+        domain: 'Others',
+        count: othersCount,
+        percentage: Math.round((othersCount / totalBookmarks) * 100)
+      });
+    }
+    
+    return distribution;
+  } catch (error) {
+    console.error('Error getting domain distribution:', error);
+    return [];
+  }
+}
