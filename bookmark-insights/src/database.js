@@ -220,3 +220,118 @@ export async function syncBookmarks() {
     throw error;
   }
 }
+
+// Get bookmarks with pagination for better performance
+export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {}) {
+  try {
+    const allBookmarks = await getAllBookmarks();
+    let filteredBookmarks = allBookmarks;
+
+    // Apply multiple filters
+    if (filters.domains && filters.domains.length > 0) {
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
+        filters.domains.includes(bookmark.domain)
+      );
+    }
+
+    if (filters.folders && filters.folders.length > 0) {
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
+        filters.folders.includes(bookmark.folderPath)
+      );
+    }
+
+    if (filters.dateRange) {
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
+        bookmark.dateAdded >= filters.dateRange.startDate && 
+        bookmark.dateAdded <= filters.dateRange.endDate
+      );
+    }
+
+    if (filters.searchQuery) {
+      const lowerQuery = filters.searchQuery.toLowerCase();
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
+        bookmark.title.toLowerCase().includes(lowerQuery) ||
+        bookmark.url.toLowerCase().includes(lowerQuery) ||
+        bookmark.domain.toLowerCase().includes(lowerQuery)
+      );
+    }
+
+    // Sort by date added (newest first)
+    filteredBookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
+
+    const startIndex = page * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedBookmarks = filteredBookmarks.slice(startIndex, endIndex);
+
+    return {
+      bookmarks: paginatedBookmarks,
+      totalCount: filteredBookmarks.length,
+      hasMore: endIndex < filteredBookmarks.length,
+      currentPage: page
+    };
+  } catch (error) {
+    console.error('Error getting paginated bookmarks:', error);
+    return {
+      bookmarks: [],
+      totalCount: 0,
+      hasMore: false,
+      currentPage: 0
+    };
+  }
+}
+
+// Get domains sorted by recency (most recent bookmark first)
+export async function getDomainsByRecency() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const domainLatest = {};
+    
+    bookmarks.forEach(bookmark => {
+      if (!domainLatest[bookmark.domain] || bookmark.dateAdded > domainLatest[bookmark.domain].dateAdded) {
+        domainLatest[bookmark.domain] = {
+          domain: bookmark.domain,
+          dateAdded: bookmark.dateAdded,
+          count: 0
+        };
+      }
+    });
+
+    // Count bookmarks per domain
+    bookmarks.forEach(bookmark => {
+      domainLatest[bookmark.domain].count++;
+    });
+    
+    return Object.values(domainLatest)
+      .sort((a, b) => b.dateAdded - a.dateAdded);
+  } catch (error) {
+    console.error('Error getting domains by recency:', error);
+    return [];
+  }
+}
+
+// Get domains sorted by bookmark count (most bookmarks first)
+export async function getDomainsByCount() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const domainCount = {};
+    const domainLatest = {};
+    
+    bookmarks.forEach(bookmark => {
+      domainCount[bookmark.domain] = (domainCount[bookmark.domain] || 0) + 1;
+      if (!domainLatest[bookmark.domain] || bookmark.dateAdded > domainLatest[bookmark.domain]) {
+        domainLatest[bookmark.domain] = bookmark.dateAdded;
+      }
+    });
+    
+    return Object.entries(domainCount)
+      .map(([domain, count]) => ({
+        domain,
+        count,
+        latestDate: domainLatest[domain]
+      }))
+      .sort((a, b) => b.count - a.count);
+  } catch (error) {
+    console.error('Error getting domains by count:', error);
+    return [];
+  }
+}

@@ -6,7 +6,7 @@
   import Sidebar from './Sidebar.svelte';
   import { 
     searchBookmarks, 
-    getAllBookmarks, 
+    getBookmarksPaginated, 
     getBookmarksByDomain, 
     getBookmarksByDateRange, 
     getBookmarksByFolder,
@@ -25,6 +25,20 @@
   let currentView = 'bookmarks'; // bookmarks, insights, health
   let searchQuery = '';
   
+  // Pagination variables
+  let currentPage = 0;
+  let totalCount = 0;
+  let hasMore = false;
+  let pageSize = 50;
+  
+  // Filter state
+  let currentFilters = {
+    domains: [],
+    folders: [],
+    dateRange: null,
+    searchQuery: ''
+  };
+  
   // Chart variables
   let domainChart = null;
   let activityChart = null;
@@ -36,7 +50,7 @@
   
   onMount(async () => {
     try {
-      await loadBookmarks();
+      await loadBookmarksPaginated();
       if (currentView === 'insights') {
         await loadInsights();
       } else if (currentView === 'health') {
@@ -49,17 +63,48 @@
     }
   });
   
-  async function loadBookmarks() {
-    bookmarks = await getAllBookmarks();
+  async function loadBookmarksPaginated(page = 0, append = false) {
+    try {
+      const filters = { ...currentFilters };
+      const result = await getBookmarksPaginated(page, pageSize, filters);
+      
+      if (append) {
+        bookmarks = [...bookmarks, ...result.bookmarks];
+      } else {
+        bookmarks = result.bookmarks;
+      }
+      
+      currentPage = result.currentPage;
+      totalCount = result.totalCount;
+      hasMore = result.hasMore;
+    } catch (err) {
+      console.error('Error loading bookmarks:', err);
+      throw err;
+    }
+  }
+
+  async function loadMoreBookmarks() {
+    if (!hasMore || loading) return;
+    
+    try {
+      loading = true;
+      await loadBookmarksPaginated(currentPage + 1, true);
+    } catch (err) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
   }
   
   async function handleSearch(event) {
     const query = event.detail.query;
     searchQuery = query;
+    currentFilters.searchQuery = query;
     
     try {
       loading = true;
-      bookmarks = await searchBookmarks(query);
+      currentPage = 0;
+      await loadBookmarksPaginated();
     } catch (err) {
       error = err.message;
     } finally {
@@ -68,25 +113,13 @@
   }
   
   async function handleFilter(event) {
-    const { type, value } = event.detail;
+    const filters = event.detail;
+    currentFilters = { ...currentFilters, ...filters };
     
     try {
       loading = true;
-      
-      switch (type) {
-        case 'clear':
-          bookmarks = await getAllBookmarks();
-          break;
-        case 'domain':
-          bookmarks = await getBookmarksByDomain(value);
-          break;
-        case 'folder':
-          bookmarks = await getBookmarksByFolder(value);
-          break;
-        case 'date':
-          bookmarks = await getBookmarksByDateRange(value.startDate, value.endDate);
-          break;
-      }
+      currentPage = 0;
+      await loadBookmarksPaginated();
     } catch (err) {
       error = err.message;
     } finally {
@@ -100,7 +133,8 @@
     
     try {
       if (view === 'bookmarks') {
-        await loadBookmarks();
+        currentPage = 0;
+        await loadBookmarksPaginated();
       } else if (view === 'insights') {
         await loadInsights();
       } else if (view === 'health') {
@@ -290,7 +324,7 @@
             <div class="text-center text-red-600 p-8">
               <p>Error: {error}</p>
               <button
-                on:click={loadBookmarks}
+                on:click={() => loadBookmarksPaginated()}
                 class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
                 Retry
@@ -305,10 +339,18 @@
               {/if}
             </div>
           {:else}
-            <div class="mb-4">
+            <div class="mb-4 flex items-center justify-between">
               <h2 class="text-lg font-medium text-gray-900">
-                {bookmarks.length} bookmark{bookmarks.length !== 1 ? 's' : ''}
+                {totalCount} bookmark{totalCount !== 1 ? 's' : ''}
+                {#if currentFilters.domains.length > 0 || currentFilters.folders.length > 0 || currentFilters.dateRange || currentFilters.searchQuery}
+                  <span class="text-sm text-gray-500">
+                    (filtered from {totalCount} total)
+                  </span>
+                {/if}
               </h2>
+              <div class="text-sm text-gray-500">
+                Showing {bookmarks.length} of {totalCount}
+              </div>
             </div>
             
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -316,6 +358,26 @@
                 <BookmarkCard {bookmark} />
               {/each}
             </div>
+
+            <!-- Load More Button -->
+            {#if hasMore}
+              <div class="mt-8 text-center">
+                <button
+                  on:click={loadMoreBookmarks}
+                  disabled={loading}
+                  class="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {#if loading}
+                    <div class="flex items-center">
+                      <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Loading...
+                    </div>
+                  {:else}
+                    Load More
+                  {/if}
+                </button>
+              </div>
+            {/if}
           {/if}
         </div>
       </div>
