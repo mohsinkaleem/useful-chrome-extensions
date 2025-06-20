@@ -141,12 +141,8 @@ This extension:
 ## Roadmap
 
 Future enhancements could include:
-- Export/import functionality
-- Bookmark backup and restore
 - Advanced search with regex support
-- Custom tagging system
-- Integration with external bookmark services
-- Bookmark sharing capabilities
+- tagging or thematic system
 
 ## Contributing
 
