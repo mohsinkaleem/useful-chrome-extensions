@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TubeFilter Extension - Installation Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .step {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .step h3 {
+            color: #ff0000;
+            margin-top: 0;
+        }
+        .code {
+            background: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+        .success {
+            background: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        .warning {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎬 TubeFilter Chrome Extension</h1>
+        <p>Installation and Testing Guide</p>
+    </div>
+
+    <div class="step">
+        <h3>Step 1: Load the Extension</h3>
+        <ol>
+            <li>Open Chrome and go to <code>chrome://extensions/</code></li>
+            <li>Enable "Developer mode" (toggle in top right corner)</li>
+            <li>Click "Load unpacked"</li>
+            <li>Select the <strong>tubefilter</strong> folder</li>
+            <li>The TubeFilter icon should appear in your toolbar</li>
+        </ol>
+    </div>
+
+    <div class="step warning">
+        <h3>Step 2: Create Proper Icons (Recommended)</h3>
+        <p>The extension currently uses placeholder icons. For better appearance:</p>
+        <ol>
+            <li>Open <code>icons/icon.svg</code> in any SVG editor or viewer</li>
+            <li>Convert to PNG at these exact sizes:
+                <ul>
+                    <li>16×16 pixels → <code>icon16.png</code></li>
+                    <li>32×32 pixels → <code>icon32.png</code></li>
+                    <li>48×48 pixels → <code>icon48.png</code></li>
+                    <li>128×128 pixels → <code>icon128.png</code></li>
+                </ul>
+            </li>
+            <li>Replace the placeholder files in the <code>icons/</code> folder</li>
+            <li>Reload the extension in Chrome</li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <h3>Step 3: Test the Extension</h3>
+        <ol>
+            <li>Navigate to <a href="https://www.youtube.com" target="_blank">YouTube.com</a></li>
+            <li>Click the TubeFilter extension icon in your toolbar</li>
+            <li>Try different filter settings:
+                <ul>
+                    <li>Set view count filters (e.g., "Greater than 1000")</li>
+                    <li>Try duration filters (e.g., "Short videos")</li>
+                    <li>Enter a keyword filter (e.g., "music")</li>
+                </ul>
+            </li>
+            <li>Click "Apply Filters" and observe videos being hidden/shown</li>
+            <li>Use "Clear All" to reset filters</li>
+        </ol>
+    </div>
+
+    <div class="step success">
+        <h3>✅ Extension Features</h3>
+        <ul>
+            <li><strong>View Count Filtering:</strong> Greater than, Less than, Between ranges</li>
+            <li><strong>Duration Filtering:</strong> Short/Medium/Long presets + Custom ranges</li>
+            <li><strong>Keyword Filtering:</strong> Search for specific words in video titles</li>
+            <li><strong>Dynamic Updates:</strong> Works with YouTube's infinite scroll</li>
+            <li><strong>Persistent Settings:</strong> Filters are saved between sessions</li>
+        </ul>
+    </div>
+
+    <div class="step">
+        <h3>🐛 Troubleshooting</h3>
+        <ul>
+            <li><strong>Extension not appearing:</strong> Make sure Developer mode is enabled</li>
+            <li><strong>Filters not working:</strong> Ensure you're on YouTube and clicked "Apply Filters"</li>
+            <li><strong>Console errors:</strong> Check browser DevTools Console for error messages</li>
+            <li><strong>Page refresh needed:</strong> Try refreshing YouTube after loading the extension</li>
+        </ul>
+    </div>
+
+    <div class="step">
+        <h3>📝 Quick Test Checklist</h3>
+        <div class="code">
+☐ Extension loads without errors<br>
+☐ Extension icon appears in toolbar<br>
+☐ Popup opens when clicking icon<br>
+☐ Can navigate to YouTube<br>
+☐ Filters apply and hide videos<br>
+☐ Clear filters shows all videos<br>
+☐ Settings persist after closing popup<br>
+☐ Works with scrolling for new videos
+        </div>
+    </div>
+
+    <footer style="text-align: center; margin-top: 40px; color: #6c757d;">
+        <p>TubeFilter v1.0.0 - Built with vanilla JavaScript</p>
+    </footer>
+</body>
+</html>
