@@ -48,21 +48,19 @@
           No filter
         </label>
         <label>
-          <input type="radio" name="durationFilter" value="short">
-          Short (< 4 minutes)
+          <input type="radio" name="durationFilter" value="less">
+          Less than
+          <input type="text" id="durationLess" placeholder="10:00" disabled>
         </label>
         <label>
-          <input type="radio" name="durationFilter" value="medium">
-          Medium (4-20 minutes)
-        </label>
-        <label>
-          <input type="radio" name="durationFilter" value="long">
-          Long (> 20 minutes)
+          <input type="radio" name="durationFilter" value="greater">
+          Greater than
+          <input type="text" id="durationGreater" placeholder="5:00" disabled>
         </label>
         <label>
           <input type="radio" name="durationFilter" value="custom">
           Custom range
-          <input type="text" id="durationMin" placeholder="0:00" disabled>
+          <input type="text" id="durationMin" placeholder="2:00" disabled>
           to
           <input type="text" id="durationMax" placeholder="10:00" disabled>
         </label>

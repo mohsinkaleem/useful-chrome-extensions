@@ -61,18 +61,28 @@ function updateViewInputs(selectedValue) {
 }
 
 function updateDurationInputs(selectedValue) {
+  const durationLess = document.getElementById('durationLess');
+  const durationGreater = document.getElementById('durationGreater');
   const durationMin = document.getElementById('durationMin');
   const durationMax = document.getElementById('durationMax');
   
   // Disable all inputs first
-  [durationMin, durationMax].forEach(input => {
-    input.disabled = true;
+  [durationLess, durationGreater, durationMin, durationMax].forEach(input => {
+    if (input) input.disabled = true;
   });
   
   // Enable relevant inputs based on selection
-  if (selectedValue === 'custom') {
-    durationMin.disabled = false;
-    durationMax.disabled = false;
+  switch(selectedValue) {
+    case 'less':
+      if (durationLess) durationLess.disabled = false;
+      break;
+    case 'greater':
+      if (durationGreater) durationGreater.disabled = false;
+      break;
+    case 'custom':
+      if (durationMin) durationMin.disabled = false;
+      if (durationMax) durationMax.disabled = false;
+      break;
   }
 }
 
@@ -150,6 +160,8 @@ function collectFilters() {
     },
     durationFilter: {
       type: document.querySelector('input[name="durationFilter"]:checked').value,
+      lessValue: document.getElementById('durationLess') ? document.getElementById('durationLess').value || '' : '',
+      greaterValue: document.getElementById('durationGreater') ? document.getElementById('durationGreater').value || '' : '',
       customMin: document.getElementById('durationMin').value || '',
       customMax: document.getElementById('durationMax').value || ''
     },
@@ -183,6 +195,32 @@ function validateFilters(filters) {
   }
   
   // Validate duration filters
+  if (filters.durationFilter.type === 'less') {
+    if (!filters.durationFilter.lessValue) {
+      showStatus('Please enter a maximum duration', 'error');
+      return false;
+    }
+    
+    const maxSeconds = parseTimeToSeconds(filters.durationFilter.lessValue);
+    if (maxSeconds === -1) {
+      showStatus('Please enter duration in format mm:ss (e.g., 5:30)', 'error');
+      return false;
+    }
+  }
+  
+  if (filters.durationFilter.type === 'greater') {
+    if (!filters.durationFilter.greaterValue) {
+      showStatus('Please enter a minimum duration', 'error');
+      return false;
+    }
+    
+    const minSeconds = parseTimeToSeconds(filters.durationFilter.greaterValue);
+    if (minSeconds === -1) {
+      showStatus('Please enter duration in format mm:ss (e.g., 5:30)', 'error');
+      return false;
+    }
+  }
+  
   if (filters.durationFilter.type === 'custom') {
     if (!filters.durationFilter.customMin || !filters.durationFilter.customMax) {
       showStatus('Please enter both minimum and maximum duration', 'error');
@@ -232,6 +270,12 @@ function loadSavedFilters() {
       
       // Restore duration filter
       document.querySelector(`input[name="durationFilter"][value="${filters.durationFilter.type}"]`).checked = true;
+      if (document.getElementById('durationLess')) {
+        document.getElementById('durationLess').value = filters.durationFilter.lessValue || '';
+      }
+      if (document.getElementById('durationGreater')) {
+        document.getElementById('durationGreater').value = filters.durationFilter.greaterValue || '';
+      }
       document.getElementById('durationMin').value = filters.durationFilter.customMin || '';
       document.getElementById('durationMax').value = filters.durationFilter.customMax || '';
       

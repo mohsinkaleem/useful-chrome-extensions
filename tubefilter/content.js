@@ -190,20 +190,19 @@
       const durationSeconds = parseDurationToSeconds(videoData.duration);
       if (durationSeconds !== -1) {
         switch (filters.durationFilter.type) {
-          case 'short':
-            if (durationSeconds >= 240) return true; // 4 minutes
+          case 'less':
+            const maxSeconds = parseTimeToSeconds(filters.durationFilter.lessValue);
+            if (maxSeconds !== -1 && durationSeconds >= maxSeconds) return true;
             break;
-          case 'medium':
-            if (durationSeconds < 240 || durationSeconds > 1200) return true; // 4-20 minutes
-            break;
-          case 'long':
-            if (durationSeconds <= 1200) return true; // > 20 minutes
+          case 'greater':
+            const minSeconds = parseTimeToSeconds(filters.durationFilter.greaterValue);
+            if (minSeconds !== -1 && durationSeconds <= minSeconds) return true;
             break;
           case 'custom':
-            const minSeconds = parseTimeToSeconds(filters.durationFilter.customMin);
-            const maxSeconds = parseTimeToSeconds(filters.durationFilter.customMax);
-            if (minSeconds !== -1 && maxSeconds !== -1) {
-              if (durationSeconds < minSeconds || durationSeconds > maxSeconds) {
+            const customMinSeconds = parseTimeToSeconds(filters.durationFilter.customMin);
+            const customMaxSeconds = parseTimeToSeconds(filters.durationFilter.customMax);
+            if (customMinSeconds !== -1 && customMaxSeconds !== -1) {
+              if (durationSeconds < customMinSeconds || durationSeconds > customMaxSeconds) {
                 return true;
               }
             }
