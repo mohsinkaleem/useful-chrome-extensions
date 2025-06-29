@@ -101,12 +101,41 @@ body {
   margin-left: 20px;
 }
 
-#titleKeyword {
+#titleKeywords {
   width: 100%;
   padding: 6px 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 12px;
+  resize: vertical;
+  min-height: 40px;
+  font-family: inherit;
+}
+
+.keyword-logic-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+}
+
+.keyword-logic-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.keyword-logic-group label:hover {
+  background-color: #e9ecef;
 }
 
 .keyword-mode-group {
@@ -210,4 +239,28 @@ input:focus {
 button:focus {
   outline: 2px solid #ff000050;
   outline-offset: 2px;
+}
+
+.keyword-preview {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background-color: #e3f2fd;
+  border: 1px solid #bbdefb;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.keyword-tag {
+  background-color: #2196f3;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+/* Textarea focus styles */
+#titleKeywords:focus {
+  outline: 2px solid #ff000050;
+  outline-offset: 1px;
+  border-color: #ff0000;
 }

@@ -146,8 +146,36 @@
   }
   
   function shouldHideVideo(videoData, filters) {
-    // Check title keyword filter
-    if (filters.titleKeyword && filters.titleKeyword.length > 0) {
+    // Check title keyword filter (enhanced for multiple keywords)
+    if (filters.titleKeywords && Array.isArray(filters.titleKeywords) && filters.titleKeywords.length > 0) {
+      const titleLower = videoData.title.toLowerCase();
+      const keywordLogic = filters.keywordLogic || 'AND';
+      const keywordMode = filters.keywordMode || 'include';
+      
+      let keywordMatch = false;
+      
+      if (keywordLogic === 'AND') {
+        // ALL keywords must be present
+        keywordMatch = filters.titleKeywords.every(keyword => titleLower.includes(keyword.toLowerCase()));
+      } else {
+        // ANY keyword must be present (OR logic)
+        keywordMatch = filters.titleKeywords.some(keyword => titleLower.includes(keyword.toLowerCase()));
+      }
+      
+      if (keywordMode === 'include') {
+        // Include mode: hide if keywords don't match the logic
+        if (!keywordMatch) {
+          return true;
+        }
+      } else if (keywordMode === 'exclude') {
+        // Exclude mode: hide if keywords match the logic
+        if (keywordMatch) {
+          return true;
+        }
+      }
+    } 
+    // Fallback for backward compatibility with old single keyword format
+    else if (filters.titleKeyword && filters.titleKeyword.length > 0) {
       const titleLower = videoData.title.toLowerCase();
       const keywordLower = filters.titleKeyword.toLowerCase();
       const containsKeyword = titleLower.includes(keywordLower);

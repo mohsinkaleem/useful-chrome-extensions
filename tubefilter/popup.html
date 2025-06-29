@@ -70,18 +70,28 @@
     <div class="section">
       <h3>🔍 Title Keyword Filter</h3>
       <div class="filter-group">
-        <input type="text" id="titleKeyword" placeholder="Enter keyword or phrase...">
+        <textarea id="titleKeywords" placeholder="Enter keywords separated by commas (e.g., music, tutorial, gaming)" rows="2"></textarea>
+        <div class="keyword-logic-group">
+          <label>
+            <input type="radio" name="keywordLogic" value="AND" checked>
+            AND (video must contain ALL keywords)
+          </label>
+          <label>
+            <input type="radio" name="keywordLogic" value="OR">
+            OR (video must contain ANY keyword)
+          </label>
+        </div>
         <div class="keyword-mode-group">
           <label>
             <input type="radio" name="keywordMode" value="include" checked>
-            Include videos with keyword
+            Include videos with keywords
           </label>
           <label>
             <input type="radio" name="keywordMode" value="exclude">
-            Exclude videos with keyword
+            Exclude videos with keywords
           </label>
         </div>
-        <small>Leave empty to disable keyword filtering</small>
+        <small>Leave empty to disable keyword filtering. Use commas to separate multiple keywords.</small>
       </div>
     </div>
 

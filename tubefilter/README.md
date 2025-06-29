@@ -14,8 +14,11 @@ A simple and fast Chrome extension to filter YouTube videos by view count, durat
   - Long videos (> 20 minutes)
   - Custom duration range
 - **Title Keyword Filter**: Show only videos containing specific keywords OR exclude videos containing specific keywords
-  - Include mode: Show only videos with the keyword
-  - Exclude mode: Hide videos containing the keyword
+  - **Multiple Keywords**: Enter multiple keywords separated by commas
+  - **AND/OR Logic**: Choose whether videos must contain ALL keywords (AND) or ANY keywords (OR)
+  - Include mode: Show only videos matching the keyword criteria
+  - Exclude mode: Hide videos matching the keyword criteria
+  - **Smart Preview**: See a preview of your keyword logic before applying
 - **Dynamic Filtering**: Works with YouTube's infinite scroll
 - **Non-intrusive**: Clean, simple interface
 - **Fast Performance**: Vanilla JavaScript, no dependencies
@@ -56,10 +59,28 @@ The extension includes placeholder PNG files. For better appearance:
 3. **Set your filters:**
    - Choose view count range options
    - Select duration preferences  
-   - Enter keywords to search for in titles
+   - Enter multiple keywords separated by commas (e.g., "tutorial, beginner, coding")
+   - Choose AND/OR logic for keyword matching
    - Choose whether to include or exclude videos with those keywords
 4. **Click "Apply Filters"** to activate filtering
 5. **Use "Clear All"** to remove all filters and show all videos
+
+### 🎯 Multiple Keywords Examples
+
+**AND Logic Examples:**
+
+- `"music, tutorial"` → Shows only videos containing BOTH "music" AND "tutorial"
+- `"gaming, beginner, guide"` → Shows only videos containing ALL three keywords
+
+**OR Logic Examples:**
+
+- `"comedy, funny, humor"` → Shows videos containing ANY of these keywords  
+- `"review, unboxing"` → Shows videos that are either reviews OR unboxings
+
+**Include vs Exclude:**
+
+- **Include + AND**: `"python, programming"` → Show only Python programming videos
+- **Exclude + OR**: `"clickbait, reaction"` → Hide videos that are clickbait OR reactions
 
 ## 🛠️ How It Works
 
@@ -67,7 +88,7 @@ The extension includes placeholder PNG files. For better appearance:
 - When filters are applied, it scans each video's metadata:
   - Extracts view count from the video info
   - Parses duration from the video overlay
-  - Checks title text for keyword matches
+  - Checks title text for keyword matches using AND/OR logic with multiple keywords
 - Videos that don't match the criteria are hidden using CSS
 - The extension adapts to YouTube's dynamic content loading
 
@@ -127,6 +148,8 @@ tubefilter/
 - Export/import filter presets
 - Keyboard shortcuts
 - Statistics dashboard
+- Regex support for advanced keyword matching
+- Keyword highlighting in video titles
 
 ## 📝 License
 

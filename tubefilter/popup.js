@@ -18,6 +18,38 @@ document.addEventListener('DOMContentLoaded', function() {
   // Clear filters button
   document.getElementById('clearFilters').addEventListener('click', clearFilters);
   
+  // Add input event listener for keywords to show preview of parsed keywords
+  document.getElementById('titleKeywords').addEventListener('input', function() {
+    const keywords = parseKeywords(this.value);
+    if (keywords.length > 1) {
+      showKeywordPreview(keywords);
+    } else {
+      hideKeywordPreview();
+    }
+  });
+  
+  // Add event listeners for keyword logic and mode changes to update preview
+  const keywordLogicRadios = document.querySelectorAll('input[name="keywordLogic"]');
+  const keywordModeRadios = document.querySelectorAll('input[name="keywordMode"]');
+  
+  keywordLogicRadios.forEach(radio => {
+    radio.addEventListener('change', function() {
+      const keywords = parseKeywords(document.getElementById('titleKeywords').value);
+      if (keywords.length > 1) {
+        showKeywordPreview(keywords);
+      }
+    });
+  });
+  
+  keywordModeRadios.forEach(radio => {
+    radio.addEventListener('change', function() {
+      const keywords = parseKeywords(document.getElementById('titleKeywords').value);
+      if (keywords.length > 1) {
+        showKeywordPreview(keywords);
+      }
+    });
+  });
+  
   // Optional: Clean up old tab filter data periodically
   cleanupOldTabFilters();
 });
@@ -136,8 +168,12 @@ function clearFilters() {
   // Reset all form elements
   document.querySelector('input[name="viewFilter"][value="none"]').checked = true;
   document.querySelector('input[name="durationFilter"][value="none"]').checked = true;
-  document.getElementById('titleKeyword').value = '';
+  document.getElementById('titleKeywords').value = '';
+  document.querySelector('input[name="keywordLogic"][value="AND"]').checked = true;
   document.querySelector('input[name="keywordMode"][value="include"]').checked = true;
+  
+  // Hide keyword preview
+  hideKeywordPreview();
   
   // Update inputs
   updateViewInputs('none');
@@ -165,6 +201,8 @@ function clearFilters() {
 }
 
 function collectFilters() {
+  const keywords = parseKeywords(document.getElementById('titleKeywords').value);
+  
   const filters = {
     viewFilter: {
       type: document.querySelector('input[name="viewFilter"]:checked').value,
@@ -180,8 +218,13 @@ function collectFilters() {
       customMin: document.getElementById('durationMin').value || '',
       customMax: document.getElementById('durationMax').value || ''
     },
-    titleKeyword: document.getElementById('titleKeyword').value.trim(),
-    keywordMode: document.querySelector('input[name="keywordMode"]:checked').value
+    // Updated for multiple keywords support
+    titleKeywords: keywords,
+    keywordLogic: document.querySelector('input[name="keywordLogic"]:checked').value,
+    keywordMode: document.querySelector('input[name="keywordMode"]:checked').value,
+    
+    // Keep old property for backward compatibility
+    titleKeyword: keywords.length > 0 ? keywords.join(', ') : ''
   };
   
   return filters;
@@ -300,8 +343,18 @@ function loadSavedFilters() {
           document.getElementById('durationMin').value = filters.durationFilter.customMin || '';
           document.getElementById('durationMax').value = filters.durationFilter.customMax || '';
           
-          // Restore title keyword
-          document.getElementById('titleKeyword').value = filters.titleKeyword || '';
+          // Restore title keywords (handle both old and new format)
+          if (filters.titleKeywords && Array.isArray(filters.titleKeywords)) {
+            // New format with array of keywords
+            document.getElementById('titleKeywords').value = filters.titleKeywords.join(', ');
+          } else if (filters.titleKeyword) {
+            // Old format with single keyword - convert to new format
+            document.getElementById('titleKeywords').value = filters.titleKeyword;
+          }
+          
+          // Restore keyword logic (default to 'AND' if not set)
+          const keywordLogic = filters.keywordLogic || 'AND';
+          document.querySelector(`input[name="keywordLogic"][value="${keywordLogic}"]`).checked = true;
           
           // Restore keyword mode (default to 'include' if not set for backward compatibility)
           const keywordMode = filters.keywordMode || 'include';
@@ -310,6 +363,12 @@ function loadSavedFilters() {
           // Update input states
           updateViewInputs(filters.viewFilter.type);
           updateDurationInputs(filters.durationFilter.type);
+          
+          // Show keyword preview if multiple keywords are present
+          const keywords = parseKeywords(document.getElementById('titleKeywords').value);
+          if (keywords.length > 1) {
+            showKeywordPreview(keywords);
+          }
         }
         // If no saved filters for this tab, form will remain in default state
       });
@@ -327,6 +386,52 @@ function showStatus(message, type) {
     statusElement.textContent = '';
     statusElement.className = 'status';
   }, 3000);
+}
+
+// Helper function to parse multiple keywords from input
+function parseKeywords(input) {
+  if (!input || !input.trim()) {
+    return [];
+  }
+  
+  return input
+    .split(',')
+    .map(keyword => keyword.trim())
+    .filter(keyword => keyword.length > 0)
+    .map(keyword => keyword.toLowerCase());
+}
+
+// Show preview of parsed keywords
+function showKeywordPreview(keywords) {
+  let previewElement = document.getElementById('keyword-preview');
+  
+  if (!previewElement) {
+    previewElement = document.createElement('div');
+    previewElement.id = 'keyword-preview';
+    previewElement.className = 'keyword-preview';
+    
+    const keywordSection = document.querySelector('#titleKeywords').parentNode;
+    keywordSection.appendChild(previewElement);
+  }
+  
+  const logic = document.querySelector('input[name="keywordLogic"]:checked').value;
+  const mode = document.querySelector('input[name="keywordMode"]:checked').value;
+  
+  previewElement.innerHTML = `
+    <small>
+      <strong>Preview:</strong> Will ${mode} videos that contain 
+      <strong>${logic === 'AND' ? 'ALL' : 'ANY'}</strong> of: 
+      ${keywords.map(k => `<span class="keyword-tag">${k}</span>`).join(logic === 'AND' ? ' AND ' : ' OR ')}
+    </small>
+  `;
+}
+
+// Hide keyword preview
+function hideKeywordPreview() {
+  const previewElement = document.getElementById('keyword-preview');
+  if (previewElement) {
+    previewElement.remove();
+  }
 }
 
 // Optional: Clean up old tab filter data periodically
