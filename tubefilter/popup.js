@@ -127,6 +127,7 @@ function clearFilters() {
   document.querySelector('input[name="viewFilter"][value="none"]').checked = true;
   document.querySelector('input[name="durationFilter"][value="none"]').checked = true;
   document.getElementById('titleKeyword').value = '';
+  document.querySelector('input[name="keywordMode"][value="include"]').checked = true;
   
   // Update inputs
   updateViewInputs('none');
@@ -165,7 +166,8 @@ function collectFilters() {
       customMin: document.getElementById('durationMin').value || '',
       customMax: document.getElementById('durationMax').value || ''
     },
-    titleKeyword: document.getElementById('titleKeyword').value.trim()
+    titleKeyword: document.getElementById('titleKeyword').value.trim(),
+    keywordMode: document.querySelector('input[name="keywordMode"]:checked').value
   };
   
   return filters;
@@ -281,6 +283,10 @@ function loadSavedFilters() {
       
       // Restore title keyword
       document.getElementById('titleKeyword').value = filters.titleKeyword || '';
+      
+      // Restore keyword mode (default to 'include' if not set for backward compatibility)
+      const keywordMode = filters.keywordMode || 'include';
+      document.querySelector(`input[name="keywordMode"][value="${keywordMode}"]`).checked = true;
       
       // Update input states
       updateViewInputs(filters.viewFilter.type);

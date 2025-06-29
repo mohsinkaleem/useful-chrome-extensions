@@ -109,6 +109,28 @@ body {
   font-size: 12px;
 }
 
+.keyword-mode-group {
+  display: flex;
+  gap: 12px;
+  margin: 6px 0;
+  padding: 4px 0;
+}
+
+.keyword-mode-group label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.keyword-mode-group label:hover {
+  background-color: #f1f3f4;
+}
+
 .controls {
   display: flex;
   gap: 6px;

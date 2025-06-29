@@ -160,8 +160,21 @@
     if (filters.titleKeyword && filters.titleKeyword.length > 0) {
       const titleLower = videoData.title.toLowerCase();
       const keywordLower = filters.titleKeyword.toLowerCase();
-      if (!titleLower.includes(keywordLower)) {
-        return true;
+      const containsKeyword = titleLower.includes(keywordLower);
+      
+      // Default to 'include' mode for backward compatibility
+      const keywordMode = filters.keywordMode || 'include';
+      
+      if (keywordMode === 'include') {
+        // Include mode: hide if keyword is NOT found
+        if (!containsKeyword) {
+          return true;
+        }
+      } else if (keywordMode === 'exclude') {
+        // Exclude mode: hide if keyword IS found
+        if (containsKeyword) {
+          return true;
+        }
       }
     }
     

@@ -13,7 +13,9 @@ A simple and fast Chrome extension to filter YouTube videos by view count, durat
   - Medium videos (4-20 minutes)
   - Long videos (> 20 minutes)
   - Custom duration range
-- **Title Keyword Filter**: Show only videos containing specific keywords
+- **Title Keyword Filter**: Show only videos containing specific keywords OR exclude videos containing specific keywords
+  - Include mode: Show only videos with the keyword
+  - Exclude mode: Hide videos containing the keyword
 - **Dynamic Filtering**: Works with YouTube's infinite scroll
 - **Non-intrusive**: Clean, simple interface
 - **Fast Performance**: Vanilla JavaScript, no dependencies
@@ -55,6 +57,7 @@ The extension includes placeholder PNG files. For better appearance:
    - Choose view count range options
    - Select duration preferences  
    - Enter keywords to search for in titles
+   - Choose whether to include or exclude videos with those keywords
 4. **Click "Apply Filters"** to activate filtering
 5. **Use "Clear All"** to remove all filters and show all videos
 
