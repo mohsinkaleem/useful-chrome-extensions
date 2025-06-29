@@ -3,7 +3,10 @@
 document.addEventListener('DOMContentLoaded', function() {
   const statusElement = document.getElementById('status');
   
-  // Load saved filters from storage
+  // Clean up old tab filters
+  cleanupOldTabFilters();
+  
+  // Load saved filters from storage for the current tab
   loadSavedFilters();
   
   // Add event listeners for radio buttons to enable/disable inputs
@@ -14,6 +17,9 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Clear filters button
   document.getElementById('clearFilters').addEventListener('click', clearFilters);
+  
+  // Optional: Clean up old tab filter data periodically
+  cleanupOldTabFilters();
 });
 
 function setupRadioButtonListeners() {
@@ -92,18 +98,22 @@ function applyFilters() {
   if (!validateFilters(filters)) {
     return;
   }
-  
-  // Save filters to storage
-  chrome.storage.sync.set({tubeFilters: filters}, function() {
-    if (chrome.runtime.lastError) {
-      showStatus('Error saving filters', 'error');
-      return;
-    }
-    
-    // Send filters to content script
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (tabs[0] && tabs[0].url && tabs[0].url.includes('youtube.com')) {
-        chrome.tabs.sendMessage(tabs[0].id, {
+
+  // Get current tab to save filters per tab
+  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    if (tabs[0] && tabs[0].url && tabs[0].url.includes('youtube.com')) {
+      const tabId = tabs[0].id;
+      const storageKey = `tubeFilters_${tabId}`;
+      
+      // Save filters to storage with tab-specific key
+      chrome.storage.local.set({[storageKey]: filters}, function() {
+        if (chrome.runtime.lastError) {
+          showStatus('Error saving filters', 'error');
+          return;
+        }
+        
+        // Send filters to content script
+        chrome.tabs.sendMessage(tabId, {
           action: 'applyFilters',
           filters: filters
         }, function(response) {
@@ -115,10 +125,10 @@ function applyFilters() {
             showStatus('Error applying filters', 'error');
           }
         });
-      } else {
-        showStatus('Please navigate to YouTube first', 'error');
-      }
-    });
+      });
+    } else {
+      showStatus('Please navigate to YouTube first', 'error');
+    }
   });
 }
 
@@ -133,20 +143,24 @@ function clearFilters() {
   updateViewInputs('none');
   updateDurationInputs('none');
   
-  // Clear storage
-  chrome.storage.sync.remove('tubeFilters', function() {
-    // Send clear message to content script
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (tabs[0] && tabs[0].url && tabs[0].url.includes('youtube.com')) {
-        chrome.tabs.sendMessage(tabs[0].id, {
+  // Get current tab to clear filters for this specific tab
+  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    if (tabs[0] && tabs[0].url && tabs[0].url.includes('youtube.com')) {
+      const tabId = tabs[0].id;
+      const storageKey = `tubeFilters_${tabId}`;
+      
+      // Clear storage for this tab
+      chrome.storage.local.remove(storageKey, function() {
+        // Send clear message to content script
+        chrome.tabs.sendMessage(tabId, {
           action: 'clearFilters'
         }, function(response) {
           if (!chrome.runtime.lastError && response && response.success) {
             showStatus('All filters cleared', 'success');
           }
         });
-      }
-    });
+      });
+    }
   });
 }
 
@@ -259,38 +273,46 @@ function parseTimeToSeconds(timeStr) {
 }
 
 function loadSavedFilters() {
-  chrome.storage.sync.get('tubeFilters', function(data) {
-    if (data.tubeFilters) {
-      const filters = data.tubeFilters;
+  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    if (tabs[0] && tabs[0].url && tabs[0].url.includes('youtube.com')) {
+      const tabId = tabs[0].id;
+      const storageKey = `tubeFilters_${tabId}`;
       
-      // Restore view filter
-      document.querySelector(`input[name="viewFilter"][value="${filters.viewFilter.type}"]`).checked = true;
-      document.getElementById('viewMin').value = filters.viewFilter.min || '';
-      document.getElementById('viewMax').value = filters.viewFilter.max || '';
-      document.getElementById('viewBetweenMin').value = filters.viewFilter.betweenMin || '';
-      document.getElementById('viewBetweenMax').value = filters.viewFilter.betweenMax || '';
-      
-      // Restore duration filter
-      document.querySelector(`input[name="durationFilter"][value="${filters.durationFilter.type}"]`).checked = true;
-      if (document.getElementById('durationLess')) {
-        document.getElementById('durationLess').value = filters.durationFilter.lessValue || '';
-      }
-      if (document.getElementById('durationGreater')) {
-        document.getElementById('durationGreater').value = filters.durationFilter.greaterValue || '';
-      }
-      document.getElementById('durationMin').value = filters.durationFilter.customMin || '';
-      document.getElementById('durationMax').value = filters.durationFilter.customMax || '';
-      
-      // Restore title keyword
-      document.getElementById('titleKeyword').value = filters.titleKeyword || '';
-      
-      // Restore keyword mode (default to 'include' if not set for backward compatibility)
-      const keywordMode = filters.keywordMode || 'include';
-      document.querySelector(`input[name="keywordMode"][value="${keywordMode}"]`).checked = true;
-      
-      // Update input states
-      updateViewInputs(filters.viewFilter.type);
-      updateDurationInputs(filters.durationFilter.type);
+      chrome.storage.local.get(storageKey, function(data) {
+        if (data[storageKey]) {
+          const filters = data[storageKey];
+          
+          // Restore view filter
+          document.querySelector(`input[name="viewFilter"][value="${filters.viewFilter.type}"]`).checked = true;
+          document.getElementById('viewMin').value = filters.viewFilter.min || '';
+          document.getElementById('viewMax').value = filters.viewFilter.max || '';
+          document.getElementById('viewBetweenMin').value = filters.viewFilter.betweenMin || '';
+          document.getElementById('viewBetweenMax').value = filters.viewFilter.betweenMax || '';
+          
+          // Restore duration filter
+          document.querySelector(`input[name="durationFilter"][value="${filters.durationFilter.type}"]`).checked = true;
+          if (document.getElementById('durationLess')) {
+            document.getElementById('durationLess').value = filters.durationFilter.lessValue || '';
+          }
+          if (document.getElementById('durationGreater')) {
+            document.getElementById('durationGreater').value = filters.durationFilter.greaterValue || '';
+          }
+          document.getElementById('durationMin').value = filters.durationFilter.customMin || '';
+          document.getElementById('durationMax').value = filters.durationFilter.customMax || '';
+          
+          // Restore title keyword
+          document.getElementById('titleKeyword').value = filters.titleKeyword || '';
+          
+          // Restore keyword mode (default to 'include' if not set for backward compatibility)
+          const keywordMode = filters.keywordMode || 'include';
+          document.querySelector(`input[name="keywordMode"][value="${keywordMode}"]`).checked = true;
+          
+          // Update input states
+          updateViewInputs(filters.viewFilter.type);
+          updateDurationInputs(filters.durationFilter.type);
+        }
+        // If no saved filters for this tab, form will remain in default state
+      });
     }
   });
 }
@@ -305,4 +327,28 @@ function showStatus(message, type) {
     statusElement.textContent = '';
     statusElement.className = 'status';
   }, 3000);
+}
+
+// Optional: Clean up old tab filter data periodically
+function cleanupOldTabFilters() {
+  chrome.storage.local.get(null, function(items) {
+    const filterKeys = Object.keys(items).filter(key => key.startsWith('tubeFilters_'));
+    
+    // Get all current tab IDs
+    chrome.tabs.query({}, function(tabs) {
+      const currentTabIds = new Set(tabs.map(tab => tab.id.toString()));
+      
+      // Remove filters for tabs that no longer exist
+      const keysToRemove = filterKeys.filter(key => {
+        const tabId = key.replace('tubeFilters_', '');
+        return !currentTabIds.has(tabId);
+      });
+      
+      if (keysToRemove.length > 0) {
+        chrome.storage.local.remove(keysToRemove, function() {
+          console.log('TubeFilter: Cleaned up', keysToRemove.length, 'old tab filters');
+        });
+      }
+    });
+  });
 }

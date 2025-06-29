@@ -12,8 +12,7 @@
   initialize();
   
   function initialize() {
-    // Load saved filters on page load
-    loadSavedFilters();
+    // Don't load saved filters automatically - wait for user to apply them
     
     // Listen for messages from popup
     chrome.runtime.onMessage.addListener(handleMessage);
@@ -21,7 +20,7 @@
     // Set up mutation observer to handle dynamically loaded content
     setupMutationObserver();
     
-    console.log('TubeFilter: Content script initialized');
+    console.log('TubeFilter: Content script initialized (tab-specific mode)');
   }
   
   function handleMessage(request, sender, sendResponse) {
@@ -34,15 +33,6 @@
       clearFilters();
       sendResponse({success: true});
     }
-  }
-  
-  function loadSavedFilters() {
-    chrome.storage.sync.get('tubeFilters', function(data) {
-      if (data.tubeFilters) {
-        currentFilters = data.tubeFilters;
-        applyFilters();
-      }
-    });
   }
   
   function setupMutationObserver() {
