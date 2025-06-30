@@ -99,19 +99,38 @@ body {
     padding: 8px 12px;
     background: #fafafa;
     border-bottom: 1px solid #e5e5e5;
+    display: flex;
+    gap: 6px;
+    align-items: center;
 }
 
 .search-input {
-    width: 100%;
-    padding: 6px 8px;
+    flex: 1;
+    padding: 4px 6px;
     border: 1px solid #ddd;
     border-radius: 3px;
-    font-size: 12px;
+    font-size: 11px;
     outline: none;
     background: white;
 }
 
 .search-input:focus {
+    border-color: #6366f1;
+}
+
+.sort-select {
+    padding: 3px 4px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 10px;
+    background: white;
+    color: #666;
+    cursor: pointer;
+    min-width: 80px;
+}
+
+.sort-select:focus {
+    outline: none;
     border-color: #6366f1;
 }
 
@@ -324,6 +343,58 @@ body {
 .category-badge.social {
     background: #fed7aa;
     color: #c2410c;
+}
+
+/* Drag and drop styles */
+.drag-handle {
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    color: #ccc;
+    font-size: 10px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.manual-sort .drag-handle {
+    opacity: 1;
+}
+
+.drag-handle:hover {
+    color: #666;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.link-item.dragging {
+    opacity: 0.5;
+    transform: rotate(5deg);
+    z-index: 1000;
+}
+
+.link-item.drag-over {
+    border-color: #6366f1;
+    background: #f0f9ff;
+    transform: translateY(-2px);
+}
+
+.drop-indicator {
+    height: 2px;
+    background: #6366f1;
+    margin: 2px 0;
+    border-radius: 1px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.drop-indicator.show {
+    opacity: 1;
 }
 
 /* Empty state */

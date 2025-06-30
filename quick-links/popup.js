@@ -3,11 +3,14 @@ class QuickLinksManager {
         this.links = [];
         this.currentCategory = 'all';
         this.editingId = null;
+        this.currentSort = 'manual';
+        this.draggedElement = null;
         this.init();
     }
 
     async init() {
         await this.loadLinks();
+        await this.loadSortPreference();
         this.setupEventListeners();
         this.render();
         
@@ -19,9 +22,30 @@ class QuickLinksManager {
         try {
             const result = await chrome.storage.local.get(['quickLinks']);
             this.links = result.quickLinks || [];
+            
+            // Ensure all links have a manual order property
+            this.links.forEach((link, index) => {
+                if (typeof link.manualOrder !== 'number') {
+                    link.manualOrder = index;
+                }
+            });
         } catch (error) {
             console.error('Error loading links:', error);
             this.links = [];
+        }
+    }
+
+    async loadSortPreference() {
+        try {
+            const result = await chrome.storage.local.get(['sortPreference']);
+            this.currentSort = result.sortPreference || 'manual';
+            const sortSelect = document.getElementById('sort-select');
+            if (sortSelect) {
+                sortSelect.value = this.currentSort;
+                this.updateSortMode();
+            }
+        } catch (error) {
+            console.error('Error loading sort preference:', error);
         }
     }
 
@@ -42,6 +66,14 @@ class QuickLinksManager {
         // Search input
         document.getElementById('search-input').addEventListener('input', (e) => {
             this.filterLinks(e.target.value);
+        });
+
+        // Sort select
+        document.getElementById('sort-select').addEventListener('change', (e) => {
+            this.currentSort = e.target.value;
+            this.saveSortPreference();
+            this.updateSortMode();
+            this.render();
         });
 
         // Category tabs
@@ -197,11 +229,32 @@ class QuickLinksManager {
             this.links[index] = linkData;
         } else {
             this.links.unshift(linkData);
+            // Update manual order for new links
+            this.links.forEach((link, index) => {
+                link.manualOrder = index;
+            });
         }
 
         await this.saveLinks();
         this.hideModal();
         this.render();
+    }
+
+    async saveSortPreference() {
+        try {
+            await chrome.storage.local.set({ sortPreference: this.currentSort });
+        } catch (error) {
+            console.error('Error saving sort preference:', error);
+        }
+    }
+
+    updateSortMode() {
+        const container = document.getElementById('links-container');
+        if (this.currentSort === 'manual') {
+            container.classList.add('manual-sort');
+        } else {
+            container.classList.remove('manual-sort');
+        }
     }
 
     async deleteLink(id) {
@@ -224,6 +277,11 @@ class QuickLinksManager {
     }
 
     filterLinks(searchTerm) {
+        if (!searchTerm.trim()) {
+            this.render();
+            return;
+        }
+
         const filteredLinks = this.getFilteredLinks().filter(link =>
             link.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
             link.url.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -234,14 +292,41 @@ class QuickLinksManager {
     }
 
     getFilteredLinks() {
-        if (this.currentCategory === 'all') {
-            return this.links;
+        let filteredLinks = this.currentCategory === 'all' 
+            ? [...this.links] 
+            : this.links.filter(link => link.category === this.currentCategory);
+
+        // Apply sorting
+        switch (this.currentSort) {
+            case 'manual':
+                filteredLinks.sort((a, b) => (a.manualOrder || 0) - (b.manualOrder || 0));
+                break;
+            case 'title-asc':
+                filteredLinks.sort((a, b) => a.title.localeCompare(b.title));
+                break;
+            case 'title-desc':
+                filteredLinks.sort((a, b) => b.title.localeCompare(a.title));
+                break;
+            case 'date-desc':
+                filteredLinks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                break;
+            case 'date-asc':
+                filteredLinks.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                break;
+            case 'category':
+                filteredLinks.sort((a, b) => a.category.localeCompare(b.category));
+                break;
+            case 'url':
+                filteredLinks.sort((a, b) => a.url.localeCompare(b.url));
+                break;
         }
-        return this.links.filter(link => link.category === this.currentCategory);
+
+        return filteredLinks;
     }
 
     render() {
         const filteredLinks = this.getFilteredLinks();
+        this.updateSortMode();
         this.renderLinks(filteredLinks);
     }
 
@@ -270,8 +355,15 @@ class QuickLinksManager {
     createLinkElement(link) {
         const linkDiv = document.createElement('div');
         linkDiv.className = 'link-item';
+        linkDiv.dataset.linkId = link.id;
+        
+        // Add draggable attributes for manual sort mode
+        if (this.currentSort === 'manual') {
+            linkDiv.draggable = true;
+        }
+        
         linkDiv.addEventListener('click', (e) => {
-            if (!e.target.closest('.link-actions')) {
+            if (!e.target.closest('.link-actions') && !e.target.closest('.drag-handle')) {
                 this.openLink(link.url);
             }
         });
@@ -280,6 +372,7 @@ class QuickLinksManager {
         const domain = this.extractDomain(link.url);
 
         linkDiv.innerHTML = `
+            <div class="drag-handle" title="Drag to reorder">⋮⋮</div>
             <div class="link-favicon">
                 <img src="${favicon}" alt="" onerror="this.parentElement.textContent='🔗'">
             </div>
@@ -305,6 +398,11 @@ class QuickLinksManager {
             e.stopPropagation();
             this.deleteLink(link.id);
         });
+
+        // Add drag event listeners
+        if (this.currentSort === 'manual') {
+            this.setupDragListeners(linkDiv);
+        }
 
         return linkDiv;
     }
@@ -335,6 +433,65 @@ class QuickLinksManager {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    setupDragListeners(element) {
+        element.addEventListener('dragstart', (e) => {
+            this.draggedElement = element;
+            element.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/html', element.outerHTML);
+        });
+
+        element.addEventListener('dragend', (e) => {
+            element.classList.remove('dragging');
+            this.draggedElement = null;
+            // Remove all drag-over classes
+            document.querySelectorAll('.link-item').forEach(item => {
+                item.classList.remove('drag-over');
+            });
+        });
+
+        element.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            
+            if (this.draggedElement && this.draggedElement !== element) {
+                element.classList.add('drag-over');
+            }
+        });
+
+        element.addEventListener('dragleave', (e) => {
+            element.classList.remove('drag-over');
+        });
+
+        element.addEventListener('drop', (e) => {
+            e.preventDefault();
+            element.classList.remove('drag-over');
+            
+            if (this.draggedElement && this.draggedElement !== element) {
+                this.reorderLinks(this.draggedElement.dataset.linkId, element.dataset.linkId);
+            }
+        });
+    }
+
+    async reorderLinks(draggedId, targetId) {
+        const draggedIndex = this.links.findIndex(link => link.id === draggedId);
+        const targetIndex = this.links.findIndex(link => link.id === targetId);
+        
+        if (draggedIndex === -1 || targetIndex === -1) return;
+
+        // Remove dragged item and insert at target position
+        const [draggedLink] = this.links.splice(draggedIndex, 1);
+        this.links.splice(targetIndex, 0, draggedLink);
+
+        // Update manual order for all links
+        this.links.forEach((link, index) => {
+            link.manualOrder = index;
+        });
+
+        await this.saveLinks();
+        this.render();
     }
 }
 
