@@ -119,13 +119,16 @@
                              element.querySelector('#text[aria-label*="minute"], #text[aria-label*="second"]');
       const duration = durationElement ? durationElement.textContent.trim() : '';
       
-      // Extract view count
+      // Extract view count and upload time
       const viewElements = element.querySelectorAll('.inline-metadata-item');
       let viewCount = '';
+      let uploadTime = '';
       viewElements.forEach(function(el) {
         const text = el.textContent.trim();
         if (text.includes('view')) {
           viewCount = text;
+        } else if (text.includes('ago') || text.includes('Streamed')) {
+          uploadTime = text;
         }
       });
       
@@ -137,6 +140,7 @@
         title: title,
         duration: duration,
         viewCount: viewCount,
+        uploadTime: uploadTime,
         element: element
       };
     } catch (error) {
@@ -242,6 +246,30 @@
       }
     }
     
+    // Check time filter (upload date)
+    if (filters.timeFilter && filters.timeFilter.type !== 'none') {
+      const uploadHoursAgo = parseUploadTimeToHours(videoData.uploadTime);
+      if (uploadHoursAgo !== -1) {
+        switch (filters.timeFilter.type) {
+          case 'less':
+            const maxHours = convertTimeToHours(filters.timeFilter.lessValue, filters.timeFilter.lessUnit);
+            if (uploadHoursAgo >= maxHours) return true;
+            break;
+          case 'greater':
+            const minHours = convertTimeToHours(filters.timeFilter.greaterValue, filters.timeFilter.greaterUnit);
+            if (uploadHoursAgo <= minHours) return true;
+            break;
+          case 'between':
+            const betweenMinHours = convertTimeToHours(filters.timeFilter.betweenMin, filters.timeFilter.betweenMinUnit);
+            const betweenMaxHours = convertTimeToHours(filters.timeFilter.betweenMax, filters.timeFilter.betweenMaxUnit);
+            if (uploadHoursAgo < betweenMinHours || uploadHoursAgo > betweenMaxHours) {
+              return true;
+            }
+            break;
+        }
+      }
+    }
+    
     return false;
   }
   
@@ -306,6 +334,41 @@
     if (isNaN(minutes) || isNaN(seconds) || seconds >= 60) return -1;
     
     return minutes * 60 + seconds;
+  }
+  
+  function parseUploadTimeToHours(uploadText) {
+    if (!uploadText) return -1;
+    
+    const text = uploadText.toLowerCase();
+    const match = text.match(/(\d+)\s*(second|minute|hour|day|week|month|year)s?\s*ago/);
+    
+    if (!match) return -1;
+    
+    const value = parseInt(match[1]);
+    const unit = match[2];
+    
+    return convertTimeToHours(value, unit + 's');
+  }
+  
+  function convertTimeToHours(value, unit) {
+    switch(unit) {
+      case 'seconds':
+        return value / 3600;
+      case 'minutes':
+        return value / 60;
+      case 'hours':
+        return value;
+      case 'days':
+        return value * 24;
+      case 'weeks':
+        return value * 24 * 7;
+      case 'months':
+        return value * 24 * 30;
+      case 'years':
+        return value * 24 * 365;
+      default:
+        return value;
+    }
   }
   
   function hideVideoElement(element) {

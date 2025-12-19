@@ -264,3 +264,52 @@ button:focus {
   outline-offset: 1px;
   border-color: #ff0000;
 }
+
+/* Time filter specific styles */
+.time-between-label {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+}
+
+.time-between-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.time-between-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin-left: 20px;
+}
+
+.time-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.time-between-and {
+  font-size: 11px;
+  color: #6c757d;
+  margin: 2px 0;
+}
+
+.filter-group select {
+  padding: 3px 4px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 11px;
+  background-color: white;
+  cursor: pointer;
+  max-width: 100px;
+}
+
+.filter-group select:disabled {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+}

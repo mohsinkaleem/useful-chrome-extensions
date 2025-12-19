@@ -1,0 +1,22 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2E7D32;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="url(#gradient)" stroke="#1B5E20" stroke-width="2"/>
+  
+  <!-- Play triangle -->
+  <polygon points="45,35 45,93 85,64" fill="white" stroke="none"/>
+  
+  <!-- Speed indicator lines -->
+  <line x1="90" y1="50" x2="100" y2="45" stroke="white" stroke-width="3" stroke-linecap="round"/>
+  <line x1="90" y1="64" x2="105" y2="64" stroke="white" stroke-width="3" stroke-linecap="round"/>
+  <line x1="90" y1="78" x2="100" y2="83" stroke="white" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Speed text -->
+  <text x="64" y="110" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="white">SPEED</text>
+</svg>

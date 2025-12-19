@@ -70,6 +70,14 @@ function setupRadioButtonListeners() {
       updateDurationInputs(this.value);
     });
   });
+  
+  // Time filter radio buttons
+  const timeRadios = document.querySelectorAll('input[name="timeFilter"]');
+  timeRadios.forEach(radio => {
+    radio.addEventListener('change', function() {
+      updateTimeInputs(this.value);
+    });
+  });
 }
 
 function updateViewInputs(selectedValue) {
@@ -124,6 +132,41 @@ function updateDurationInputs(selectedValue) {
   }
 }
 
+function updateTimeInputs(selectedValue) {
+  const timeLess = document.getElementById('timeLess');
+  const timeLessUnit = document.getElementById('timeLessUnit');
+  const timeGreater = document.getElementById('timeGreater');
+  const timeGreaterUnit = document.getElementById('timeGreaterUnit');
+  const timeBetweenMin = document.getElementById('timeBetweenMin');
+  const timeBetweenMinUnit = document.getElementById('timeBetweenMinUnit');
+  const timeBetweenMax = document.getElementById('timeBetweenMax');
+  const timeBetweenMaxUnit = document.getElementById('timeBetweenMaxUnit');
+  
+  // Disable all inputs first
+  [timeLess, timeLessUnit, timeGreater, timeGreaterUnit, 
+   timeBetweenMin, timeBetweenMinUnit, timeBetweenMax, timeBetweenMaxUnit].forEach(input => {
+    if (input) input.disabled = true;
+  });
+  
+  // Enable relevant inputs based on selection
+  switch(selectedValue) {
+    case 'less':
+      if (timeLess) timeLess.disabled = false;
+      if (timeLessUnit) timeLessUnit.disabled = false;
+      break;
+    case 'greater':
+      if (timeGreater) timeGreater.disabled = false;
+      if (timeGreaterUnit) timeGreaterUnit.disabled = false;
+      break;
+    case 'between':
+      if (timeBetweenMin) timeBetweenMin.disabled = false;
+      if (timeBetweenMinUnit) timeBetweenMinUnit.disabled = false;
+      if (timeBetweenMax) timeBetweenMax.disabled = false;
+      if (timeBetweenMaxUnit) timeBetweenMaxUnit.disabled = false;
+      break;
+  }
+}
+
 function applyFilters() {
   const filters = collectFilters();
   
@@ -168,6 +211,7 @@ function clearFilters() {
   // Reset all form elements
   document.querySelector('input[name="viewFilter"][value="none"]').checked = true;
   document.querySelector('input[name="durationFilter"][value="none"]').checked = true;
+  document.querySelector('input[name="timeFilter"][value="none"]').checked = true;
   document.getElementById('titleKeywords').value = '';
   document.querySelector('input[name="keywordLogic"][value="AND"]').checked = true;
   document.querySelector('input[name="keywordMode"][value="include"]').checked = true;
@@ -178,6 +222,7 @@ function clearFilters() {
   // Update inputs
   updateViewInputs('none');
   updateDurationInputs('none');
+  updateTimeInputs('none');
   
   // Get current tab to clear filters for this specific tab
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
@@ -217,6 +262,17 @@ function collectFilters() {
       greaterValue: document.getElementById('durationGreater') ? document.getElementById('durationGreater').value || '' : '',
       customMin: document.getElementById('durationMin').value || '',
       customMax: document.getElementById('durationMax').value || ''
+    },
+    timeFilter: {
+      type: document.querySelector('input[name="timeFilter"]:checked').value,
+      lessValue: parseInt(document.getElementById('timeLess').value) || 0,
+      lessUnit: document.getElementById('timeLessUnit').value || 'days',
+      greaterValue: parseInt(document.getElementById('timeGreater').value) || 0,
+      greaterUnit: document.getElementById('timeGreaterUnit').value || 'days',
+      betweenMin: parseInt(document.getElementById('timeBetweenMin').value) || 0,
+      betweenMinUnit: document.getElementById('timeBetweenMinUnit').value || 'days',
+      betweenMax: parseInt(document.getElementById('timeBetweenMax').value) || 0,
+      betweenMaxUnit: document.getElementById('timeBetweenMaxUnit').value || 'days'
     },
     // Updated for multiple keywords support
     titleKeywords: keywords,
@@ -300,7 +356,45 @@ function validateFilters(filters) {
     }
   }
   
+  // Validate time filters
+  if (filters.timeFilter.type === 'less' && filters.timeFilter.lessValue <= 0) {
+    showStatus('Please enter a valid time value', 'error');
+    return false;
+  }
+  
+  if (filters.timeFilter.type === 'greater' && filters.timeFilter.greaterValue <= 0) {
+    showStatus('Please enter a valid time value', 'error');
+    return false;
+  }
+  
+  if (filters.timeFilter.type === 'between') {
+    if (filters.timeFilter.betweenMin <= 0 || filters.timeFilter.betweenMax <= 0) {
+      showStatus('Please enter valid time values', 'error');
+      return false;
+    }
+    
+    // Convert to hours for comparison
+    const minHours = convertToHours(filters.timeFilter.betweenMin, filters.timeFilter.betweenMinUnit);
+    const maxHours = convertToHours(filters.timeFilter.betweenMax, filters.timeFilter.betweenMaxUnit);
+    
+    if (minHours >= maxHours) {
+      showStatus('Minimum time must be less than maximum time', 'error');
+      return false;
+    }
+  }
+  
   return true;
+}
+
+function convertToHours(value, unit) {
+  switch(unit) {
+    case 'hours': return value;
+    case 'days': return value * 24;
+    case 'weeks': return value * 24 * 7;
+    case 'months': return value * 24 * 30;
+    case 'years': return value * 24 * 365;
+    default: return value;
+  }
 }
 
 function parseTimeToSeconds(timeStr) {
@@ -343,6 +437,20 @@ function loadSavedFilters() {
           document.getElementById('durationMin').value = filters.durationFilter.customMin || '';
           document.getElementById('durationMax').value = filters.durationFilter.customMax || '';
           
+          // Restore time filter
+          if (filters.timeFilter) {
+            document.querySelector(`input[name="timeFilter"][value="${filters.timeFilter.type}"]`).checked = true;
+            document.getElementById('timeLess').value = filters.timeFilter.lessValue || '';
+            document.getElementById('timeLessUnit').value = filters.timeFilter.lessUnit || 'days';
+            document.getElementById('timeGreater').value = filters.timeFilter.greaterValue || '';
+            document.getElementById('timeGreaterUnit').value = filters.timeFilter.greaterUnit || 'days';
+            document.getElementById('timeBetweenMin').value = filters.timeFilter.betweenMin || '';
+            document.getElementById('timeBetweenMinUnit').value = filters.timeFilter.betweenMinUnit || 'days';
+            document.getElementById('timeBetweenMax').value = filters.timeFilter.betweenMax || '';
+            document.getElementById('timeBetweenMaxUnit').value = filters.timeFilter.betweenMaxUnit || 'days';
+            updateTimeInputs(filters.timeFilter.type);
+          }
+          
           // Restore title keywords (handle both old and new format)
           if (filters.titleKeywords && Array.isArray(filters.titleKeywords)) {
             // New format with array of keywords
@@ -363,6 +471,9 @@ function loadSavedFilters() {
           // Update input states
           updateViewInputs(filters.viewFilter.type);
           updateDurationInputs(filters.durationFilter.type);
+          if (filters.timeFilter) {
+            updateTimeInputs(filters.timeFilter.type);
+          }
           
           // Show keyword preview if multiple keywords are present
           const keywords = parseKeywords(document.getElementById('titleKeywords').value);

@@ -68,7 +68,70 @@
     </div>
 
     <div class="section">
-      <h3>🔍 Title Keyword Filter</h3>
+      <h3>� Upload Time Filter</h3>
+      <div class="filter-group">
+        <label>
+          <input type="radio" name="timeFilter" value="none" checked>
+          No filter
+        </label>
+        <label>
+          <input type="radio" name="timeFilter" value="less">
+          Less than
+          <input type="number" id="timeLess" placeholder="7" min="1" disabled>
+          <select id="timeLessUnit" disabled>
+            <option value="hours">hours ago</option>
+            <option value="days">days ago</option>
+            <option value="weeks">weeks ago</option>
+            <option value="months">months ago</option>
+            <option value="years">years ago</option>
+          </select>
+        </label>
+        <label>
+          <input type="radio" name="timeFilter" value="greater">
+          Greater than
+          <input type="number" id="timeGreater" placeholder="30" min="1" disabled>
+          <select id="timeGreaterUnit" disabled>
+            <option value="hours">hours ago</option>
+            <option value="days" selected>days ago</option>
+            <option value="weeks">weeks ago</option>
+            <option value="months">months ago</option>
+            <option value="years">years ago</option>
+          </select>
+        </label>
+        <label class="time-between-label">
+          <div class="time-between-header">
+            <input type="radio" name="timeFilter" value="between">
+            Between
+          </div>
+          <div class="time-between-inputs">
+            <div class="time-input-row">
+              <input type="number" id="timeBetweenMin" placeholder="7" min="1" disabled>
+              <select id="timeBetweenMinUnit" disabled>
+                <option value="hours">hours ago</option>
+                <option value="days" selected>days ago</option>
+                <option value="weeks">weeks ago</option>
+                <option value="months">months ago</option>
+                <option value="years">years ago</option>
+              </select>
+            </div>
+            <span class="time-between-and">and</span>
+            <div class="time-input-row">
+              <input type="number" id="timeBetweenMax" placeholder="30" min="1" disabled>
+              <select id="timeBetweenMaxUnit" disabled>
+                <option value="hours">hours ago</option>
+                <option value="days" selected>days ago</option>
+                <option value="weeks">weeks ago</option>
+                <option value="months">months ago</option>
+                <option value="years">years ago</option>
+              </select>
+            </div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>�🔍 Title Keyword Filter</h3>
       <div class="filter-group">
         <textarea id="titleKeywords" placeholder="Enter keywords separated by commas (e.g., music, tutorial, gaming)" rows="2"></textarea>
         <div class="keyword-logic-group">
