@@ -26,6 +26,7 @@
   "dependencies": {
     "chart.js": "^4.3.0",
     "dexie": "^4.2.1",
-    "flexsearch": "^0.8.212"
+    "flexsearch": "^0.8.212",
+    "mermaid": "^10.6.0"
   }
 }

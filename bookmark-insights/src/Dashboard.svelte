@@ -5,6 +5,7 @@
   import BookmarkListItem from './BookmarkListItem.svelte';
   import SearchBar from './SearchBar.svelte';
   import Sidebar from './Sidebar.svelte';
+  import DataExplorer from './DataExplorer.svelte';
   import { SORT_OPTIONS } from './utils.js';
   import { searchBookmarks, computeSearchResultStats } from './search.js';
   import { 
@@ -55,7 +56,7 @@
   let bookmarks = [];
   let loading = true;
   let error = null;
-  let currentView = 'bookmarks'; // bookmarks, insights, health
+  let currentView = 'bookmarks'; // bookmarks, insights, health, dataExplorer
   let searchQuery = '';
   
   // Pagination variables
@@ -1146,6 +1147,16 @@
           >
             Health
           </button>
+          <button
+            on:click={() => switchView('dataExplorer')}
+            class="px-4 py-2 rounded-md text-sm font-medium"
+            class:bg-blue-100={currentView === 'dataExplorer'}
+            class:text-blue-700={currentView === 'dataExplorer'}
+            class:text-gray-500={currentView !== 'dataExplorer'}
+            class:hover:text-gray-700={currentView !== 'dataExplorer'}
+          >
+            🗄️ Data
+          </button>
         </nav>
       </div>
     </div>
@@ -2069,6 +2080,8 @@
           </div>
         {/if}
       </div>
+    {:else if currentView === 'dataExplorer'}
+      <DataExplorer />
     {/if}
   </div>
 </div>
