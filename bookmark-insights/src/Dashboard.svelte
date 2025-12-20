@@ -33,6 +33,22 @@
     getDomainDistribution
   } from './database.js';
   
+  // Import new insights functions
+  import {
+    getDomainHierarchy,
+    getDomainTreemapData,
+    getStaleBookmarks,
+    getReadingListSuggestions,
+    getMostAccessedBookmarks,
+    getCategoryTrends,
+    getExpertiseAreas,
+    getBookmarkAndForget,
+    getContentFreshness,
+    getInsightsSummary,
+    getEventStatistics,
+    getHourlyAccessPatterns
+  } from './insights.js';
+  
   Chart.register(...registerables);
   
   let bookmarks = [];
@@ -68,6 +84,11 @@
   let creationPatternsChart = null;
   let urlPatternsChart = null;
   let domainDistributionChart = null;
+  let domainHierarchyChart = null;
+  let categoryTrendsChart = null;
+  let freshnessChart = null;
+  let expertiseChart = null;
+  let accessPatternChart = null;
   
   // Health data
   let duplicates = [];
@@ -77,6 +98,23 @@
   let deadLinkResults = null;
   let checkingDeadLinks = false;
   let quickStats = null;
+  
+  // Enrichment state
+  let enrichmentStatus = null;
+  let runningEnrichment = false;
+  let enrichmentResult = null;
+  
+  // Advanced insights data
+  let domainHierarchy = [];
+  let staleBookmarks = [];
+  let readingList = [];
+  let mostAccessed = [];
+  let categoryTrends = null;
+  let expertiseAreas = [];
+  let bookmarkAndForget = [];
+  let contentFreshness = [];
+  let insightsSummary = null;
+  let eventStats = null;
   
   // Health section loading states (for progressive loading)
   let loadingDuplicates = false;
@@ -223,7 +261,18 @@
         creationPatterns,
         urlPatterns,
         urlParameterUsage,
-        domainDistribution
+        domainDistribution,
+        // New insights data
+        hierarchyData,
+        staleData,
+        readingData,
+        accessedData,
+        trendsData,
+        expertiseData,
+        forgetData,
+        freshnessData,
+        summaryData,
+        eventData
       ] = await Promise.all([
         getDomainStats(),
         getActivityTimeline(),
@@ -233,11 +282,34 @@
         getBookmarkCreationPatterns(),
         getUrlPatterns(),
         getUrlParameterUsage(),
-        getDomainDistribution()
+        getDomainDistribution(),
+        // New insights functions
+        getDomainHierarchy(),
+        getStaleBookmarks(90),
+        getReadingListSuggestions(20),
+        getMostAccessedBookmarks(20),
+        getCategoryTrends(),
+        getExpertiseAreas(),
+        getBookmarkAndForget(),
+        getContentFreshness(),
+        getInsightsSummary(),
+        getEventStatistics()
       ]);
       
       // Store URL parameter data for display
       urlParameterData = urlParameterUsage;
+      
+      // Store new insights data
+      domainHierarchy = hierarchyData;
+      staleBookmarks = staleData;
+      readingList = readingData;
+      mostAccessed = accessedData;
+      categoryTrends = trendsData;
+      expertiseAreas = expertiseData;
+      bookmarkAndForget = forgetData;
+      contentFreshness = freshnessData;
+      insightsSummary = summaryData;
+      eventStats = eventData;
       
       // Create charts with a slight delay to ensure DOM elements exist
       setTimeout(() => {
@@ -505,6 +577,140 @@
             }
           });
         }
+
+        // Domain Hierarchy Chart (treemap-like horizontal bar)
+        const hierarchyCtx = document.getElementById('domainHierarchyChart');
+        if (hierarchyCtx && hierarchyData.length > 0) {
+          if (domainHierarchyChart) domainHierarchyChart.destroy();
+          const topDomains = hierarchyData.slice(0, 15);
+          domainHierarchyChart = new Chart(hierarchyCtx, {
+            type: 'bar',
+            data: {
+              labels: topDomains.map(d => d.name),
+              datasets: [{
+                label: 'Bookmarks',
+                data: topDomains.map(d => d.count),
+                backgroundColor: [
+                  '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
+                  '#EC4899', '#6B7280', '#14B8A6', '#F97316', '#84CC16',
+                  '#06B6D4', '#F43F5E', '#22C55E', '#A855F7', '#0EA5E9'
+                ]
+              }]
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              plugins: {
+                title: {
+                  display: true,
+                  text: 'Domain Hierarchy (Top 15 Domains)'
+                },
+                legend: {
+                  display: false
+                }
+              },
+              scales: {
+                x: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
+        }
+
+        // Category Trends Chart (line chart over time)
+        const trendsCtx = document.getElementById('categoryTrendsChart');
+        if (trendsCtx && trendsData.months && trendsData.months.length > 0) {
+          if (categoryTrendsChart) categoryTrendsChart.destroy();
+          const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
+          categoryTrendsChart = new Chart(trendsCtx, {
+            type: 'line',
+            data: {
+              labels: trendsData.months,
+              datasets: trendsData.datasets.map((ds, idx) => ({
+                label: ds.category,
+                data: ds.data,
+                borderColor: colors[idx % colors.length],
+                backgroundColor: colors[idx % colors.length] + '20',
+                fill: false,
+                tension: 0.3
+              }))
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                title: {
+                  display: true,
+                  text: 'Category Trends Over Time'
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
+        }
+
+        // Content Freshness Chart (doughnut)
+        const freshnessCtx = document.getElementById('freshnessChart');
+        if (freshnessCtx && freshnessData.length > 0) {
+          if (freshnessChart) freshnessChart.destroy();
+          freshnessChart = new Chart(freshnessCtx, {
+            type: 'doughnut',
+            data: {
+              labels: freshnessData.map(d => d.period),
+              datasets: [{
+                data: freshnessData.map(d => d.count),
+                backgroundColor: ['#22C55E', '#84CC16', '#F59E0B', '#F97316', '#EF4444']
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                title: {
+                  display: true,
+                  text: 'Bookmark Freshness'
+                }
+              }
+            }
+          });
+        }
+
+        // Expertise Areas Chart (polar area)
+        const expertiseCtx = document.getElementById('expertiseChart');
+        if (expertiseCtx && expertiseData.length > 0) {
+          if (expertiseChart) expertiseChart.destroy();
+          expertiseChart = new Chart(expertiseCtx, {
+            type: 'polarArea',
+            data: {
+              labels: expertiseData.slice(0, 8).map(d => d.area),
+              datasets: [{
+                data: expertiseData.slice(0, 8).map(d => d.score),
+                backgroundColor: [
+                  'rgba(59, 130, 246, 0.7)',
+                  'rgba(239, 68, 68, 0.7)',
+                  'rgba(16, 185, 129, 0.7)',
+                  'rgba(245, 158, 11, 0.7)',
+                  'rgba(139, 92, 246, 0.7)',
+                  'rgba(236, 72, 153, 0.7)',
+                  'rgba(20, 184, 166, 0.7)',
+                  'rgba(249, 115, 22, 0.7)'
+                ]
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                title: {
+                  display: true,
+                  text: 'Expertise Areas (by category + access)'
+                }
+              }
+            }
+          });
+        }
       }, 100);
     } catch (err) {
       console.error('Error loading insights:', err);
@@ -526,6 +732,9 @@
       
       // Load quick stats immediately
       quickStats = await getQuickStats();
+      
+      // Load enrichment status
+      await loadEnrichmentStatus();
       
       // Load sections progressively (non-blocking)
       // Duplicates load
@@ -566,6 +775,43 @@
       
     } catch (err) {
       console.error('Error loading health data:', err);
+    }
+  }
+  
+  // Enrichment functions
+  async function loadEnrichmentStatus() {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'getEnrichmentStatus' });
+      if (response.success) {
+        enrichmentStatus = response;
+      }
+    } catch (err) {
+      console.error('Error loading enrichment status:', err);
+    }
+  }
+  
+  async function handleRunEnrichment() {
+    runningEnrichment = true;
+    enrichmentResult = null;
+    
+    try {
+      const response = await chrome.runtime.sendMessage({ 
+        action: 'runEnrichment',
+        batchSize: 20
+      });
+      
+      if (response.success) {
+        enrichmentResult = response.result;
+        // Refresh enrichment status
+        await loadEnrichmentStatus();
+      } else {
+        enrichmentResult = { error: response.error };
+      }
+    } catch (err) {
+      console.error('Error running enrichment:', err);
+      enrichmentResult = { error: err.message };
+    } finally {
+      runningEnrichment = false;
     }
   }
   
@@ -1061,6 +1307,264 @@
             </div>
           </div>
           
+          <!-- NEW: Domain Hierarchy Visualization (Step 9) -->
+          <div class="bg-white p-6 rounded-lg shadow">
+            <h3 class="text-xl font-semibold text-gray-900 mb-6">
+              <svg class="w-6 h-6 inline-block mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+              </svg>
+              Domain Hierarchy
+            </h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div>
+                <canvas id="domainHierarchyChart" width="400" height="400"></canvas>
+              </div>
+              <div class="bg-gray-50 p-4 rounded-lg max-h-96 overflow-y-auto">
+                <h4 class="text-lg font-medium text-gray-900 mb-4">Domain Breakdown</h4>
+                {#if domainHierarchy.length > 0}
+                  <div class="space-y-3">
+                    {#each domainHierarchy.slice(0, 10) as domain}
+                      <div class="border border-gray-200 rounded p-3 bg-white">
+                        <div class="flex justify-between items-center">
+                          <span class="font-medium text-gray-800">{domain.name}</span>
+                          <span class="text-sm font-bold text-blue-600">{domain.count}</span>
+                        </div>
+                        {#if domain.subdomains.length > 0}
+                          <div class="mt-2 pl-4 border-l-2 border-gray-200">
+                            {#each domain.subdomains.slice(0, 3) as subdomain}
+                              <div class="text-sm text-gray-600 flex justify-between py-1">
+                                <span>{subdomain.name}</span>
+                                <span class="text-gray-500">{subdomain.count}</span>
+                              </div>
+                            {/each}
+                            {#if domain.subdomains.length > 3}
+                              <div class="text-xs text-gray-400">+{domain.subdomains.length - 3} more...</div>
+                            {/if}
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <p class="text-gray-500 text-sm">No domain data available.</p>
+                {/if}
+              </div>
+            </div>
+          </div>
+          
+          <!-- NEW: Data Insights Dashboard (Step 11) -->
+          <div class="bg-white p-6 rounded-lg shadow">
+            <h3 class="text-xl font-semibold text-gray-900 mb-6">
+              <svg class="w-6 h-6 inline-block mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+              </svg>
+              Data Insights
+            </h3>
+            
+            {#if insightsSummary}
+              <!-- Insights Summary Cards -->
+              <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+                <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg text-center">
+                  <div class="text-2xl font-bold text-blue-700">{insightsSummary.totalBookmarks}</div>
+                  <div class="text-xs text-blue-600">Total Bookmarks</div>
+                </div>
+                <div class="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg text-center">
+                  <div class="text-2xl font-bold text-green-700">{insightsSummary.categorizedPercentage}%</div>
+                  <div class="text-xs text-green-600">Categorized</div>
+                </div>
+                <div class="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg text-center">
+                  <div class="text-2xl font-bold text-purple-700">{insightsSummary.enrichedPercentage}%</div>
+                  <div class="text-xs text-purple-600">Enriched</div>
+                </div>
+                <div class="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg text-center">
+                  <div class="text-2xl font-bold text-orange-700">{insightsSummary.neverAccessedPercentage}%</div>
+                  <div class="text-xs text-orange-600">Never Accessed</div>
+                </div>
+                <div class="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg text-center">
+                  <div class="text-2xl font-bold text-red-700">{insightsSummary.deadLinks}</div>
+                  <div class="text-xs text-red-600">Dead Links</div>
+                </div>
+                <div class="bg-gradient-to-br from-cyan-50 to-cyan-100 p-4 rounded-lg text-center">
+                  <div class="text-2xl font-bold text-cyan-700">{insightsSummary.uniqueDomains}</div>
+                  <div class="text-xs text-cyan-600">Unique Domains</div>
+                </div>
+              </div>
+            {/if}
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <!-- Category Trends -->
+              <div>
+                <canvas id="categoryTrendsChart" width="400" height="300"></canvas>
+              </div>
+              
+              <!-- Expertise Areas -->
+              <div>
+                <canvas id="expertiseChart" width="400" height="300"></canvas>
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+              <!-- Content Freshness -->
+              <div>
+                <canvas id="freshnessChart" width="400" height="300"></canvas>
+              </div>
+              
+              <!-- Top Categories -->
+              <div class="bg-gray-50 p-4 rounded-lg">
+                <h4 class="text-lg font-medium text-gray-900 mb-4">Top Categories</h4>
+                {#if insightsSummary && insightsSummary.topCategories}
+                  <div class="space-y-2">
+                    {#each insightsSummary.topCategories as [category, count]}
+                      <div class="flex items-center justify-between py-2 border-b border-gray-200">
+                        <span class="font-medium text-gray-700 capitalize">{category}</span>
+                        <div class="flex items-center">
+                          <div class="w-24 bg-gray-200 rounded-full h-2 mr-3">
+                            <div class="bg-purple-600 h-2 rounded-full" style="width: {Math.min(100, (count / insightsSummary.topCategories[0][1]) * 100)}%"></div>
+                          </div>
+                          <span class="text-sm font-bold text-gray-600">{count}</span>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <p class="text-sm text-gray-500">No category data available.</p>
+                {/if}
+              </div>
+            </div>
+          </div>
+          
+          <!-- NEW: Stale Bookmarks & Reading List (Step 11) -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Stale Bookmarks -->
+            <div class="bg-white p-6 rounded-lg shadow">
+              <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                <svg class="w-5 h-5 inline-block mr-2 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Stale Bookmarks
+                <span class="text-sm font-normal text-gray-500 ml-2">({staleBookmarks.length} bookmarks older than 90 days, never accessed)</span>
+              </h3>
+              {#if staleBookmarks.length > 0}
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                  {#each staleBookmarks.slice(0, 10) as bookmark}
+                    <div class="p-2 bg-orange-50 rounded border border-orange-100 hover:bg-orange-100 transition-colors">
+                      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" class="block">
+                        <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
+                        <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                        <div class="text-xs text-orange-600 mt-1">
+                          Added {new Date(bookmark.dateAdded).toLocaleDateString()}
+                        </div>
+                      </a>
+                    </div>
+                  {/each}
+                  {#if staleBookmarks.length > 10}
+                    <div class="text-center text-sm text-gray-500 py-2">
+                      +{staleBookmarks.length - 10} more stale bookmarks
+                    </div>
+                  {/if}
+                </div>
+              {:else}
+                <p class="text-sm text-gray-500">No stale bookmarks found. Great!</p>
+              {/if}
+            </div>
+            
+            <!-- Reading List Suggestions -->
+            <div class="bg-white p-6 rounded-lg shadow">
+              <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                <svg class="w-5 h-5 inline-block mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                </svg>
+                Reading List
+                <span class="text-sm font-normal text-gray-500 ml-2">(Recently added, not yet visited)</span>
+              </h3>
+              {#if readingList.length > 0}
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                  {#each readingList.slice(0, 10) as bookmark}
+                    <div class="p-2 bg-green-50 rounded border border-green-100 hover:bg-green-100 transition-colors">
+                      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" class="block">
+                        <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
+                        <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                        <div class="text-xs text-green-600 mt-1">
+                          Added {new Date(bookmark.dateAdded).toLocaleDateString()}
+                        </div>
+                      </a>
+                    </div>
+                  {/each}
+                  {#if readingList.length > 10}
+                    <div class="text-center text-sm text-gray-500 py-2">
+                      +{readingList.length - 10} more to read
+                    </div>
+                  {/if}
+                </div>
+              {:else}
+                <p class="text-sm text-gray-500">All recent bookmarks have been accessed!</p>
+              {/if}
+            </div>
+          </div>
+          
+          <!-- NEW: Most Accessed & Bookmark and Forget (Step 11 + 12) -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Most Accessed Bookmarks -->
+            <div class="bg-white p-6 rounded-lg shadow">
+              <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                <svg class="w-5 h-5 inline-block mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                </svg>
+                Most Accessed
+              </h3>
+              {#if mostAccessed.length > 0}
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                  {#each mostAccessed.slice(0, 10) as bookmark}
+                    <div class="p-2 bg-blue-50 rounded border border-blue-100 hover:bg-blue-100 transition-colors flex items-center justify-between">
+                      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" class="flex-1 min-w-0">
+                        <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
+                        <div class="text-xs text-gray-500 truncate">{bookmark.domain}</div>
+                      </a>
+                      <span class="ml-2 px-2 py-1 bg-blue-200 text-blue-800 text-xs font-bold rounded-full">
+                        {bookmark.accessCount}x
+                      </span>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <p class="text-sm text-gray-500">No access data yet. Start browsing your bookmarks!</p>
+              {/if}
+            </div>
+            
+            <!-- Bookmark and Forget Detection -->
+            <div class="bg-white p-6 rounded-lg shadow">
+              <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                <svg class="w-5 h-5 inline-block mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                </svg>
+                "Bookmark and Forget"
+                <span class="text-sm font-normal text-gray-500 ml-2">({bookmarkAndForget.length} bookmarks 6+ months old, never accessed)</span>
+              </h3>
+              {#if bookmarkAndForget.length > 0}
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                  {#each bookmarkAndForget.slice(0, 10) as bookmark}
+                    <div class="p-2 bg-red-50 rounded border border-red-100 hover:bg-red-100 transition-colors">
+                      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" class="block">
+                        <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
+                        <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                        <div class="text-xs text-red-600 mt-1">
+                          Added {new Date(bookmark.dateAdded).toLocaleDateString()} - Consider removing?
+                        </div>
+                      </a>
+                    </div>
+                  {/each}
+                  {#if bookmarkAndForget.length > 10}
+                    <div class="text-center text-sm text-gray-500 py-2">
+                      +{bookmarkAndForget.length - 10} more forgotten bookmarks
+                    </div>
+                  {/if}
+                </div>
+              {:else}
+                <p class="text-sm text-gray-500">No "bookmark and forget" patterns detected.</p>
+              {/if}
+            </div>
+          </div>
+          
           <!-- Summary Statistics -->
           <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div class="bg-white p-6 rounded-lg shadow text-center">
@@ -1118,6 +1622,79 @@
               </div>
             </div>
           {/if}
+          
+          <!-- Enrichment Panel -->
+          <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">
+                  <svg class="w-5 h-5 inline-block mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                  </svg>
+                  Bookmark Enrichment
+                </h3>
+                <p class="text-sm text-gray-500 mt-1">
+                  Fetch metadata (descriptions, categories, keywords) for your bookmarks
+                </p>
+              </div>
+              <button
+                on:click={handleRunEnrichment}
+                disabled={runningEnrichment}
+                class="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 flex-shrink-0"
+              >
+                {#if runningEnrichment}
+                  <span class="flex items-center">
+                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Enriching...
+                  </span>
+                {:else}
+                  Run Enrichment
+                {/if}
+              </button>
+            </div>
+            <div class="p-6">
+              {#if enrichmentStatus}
+                <div class="flex flex-wrap gap-4 text-sm mb-4">
+                  <span class="text-gray-600">
+                    Queue: <strong class="text-purple-600">{enrichmentStatus.queueSize}</strong> bookmarks pending
+                  </span>
+                  <span class="text-gray-600">
+                    Status: <strong class="{enrichmentStatus.enabled ? 'text-green-600' : 'text-gray-500'}">{enrichmentStatus.enabled ? 'Enabled' : 'Disabled'}</strong>
+                  </span>
+                </div>
+              {/if}
+              
+              {#if enrichmentResult}
+                <div class="mt-4 p-4 rounded-lg {enrichmentResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}">
+                  {#if enrichmentResult.error}
+                    <div class="text-red-700 text-sm">
+                      <strong>Error:</strong> {enrichmentResult.error}
+                    </div>
+                  {:else}
+                    <div class="text-green-700 text-sm space-y-1">
+                      <div><strong>Enrichment Complete!</strong></div>
+                      <div>Processed: {enrichmentResult.processed || 0} bookmarks</div>
+                      <div>Successful: {enrichmentResult.success || 0}</div>
+                      {#if enrichmentResult.failed > 0}
+                        <div class="text-orange-600">Failed: {enrichmentResult.failed}</div>
+                      {/if}
+                      {#if enrichmentResult.skipped > 0}
+                        <div class="text-gray-600">Skipped (already enriched): {enrichmentResult.skipped}</div>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              {:else}
+                <p class="text-gray-500 text-sm">
+                  Click "Run Enrichment" to fetch metadata for bookmarks that haven't been enriched yet. 
+                  Only new bookmarks without descriptions or categories will be processed.
+                </p>
+              {/if}
+            </div>
+          </div>
           
           <!-- Dead Link Checker -->
           <div class="bg-white rounded-lg shadow">

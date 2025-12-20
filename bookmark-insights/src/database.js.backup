@@ -1,0 +1,803 @@
+// Database utilities - Compatibility layer for new IndexedDB storage
+// This file maintains the existing API while using Dexie.js under the hood
+
+import * as DB from './db.js';
+
+// Invalidate cache (maintained for backward compatibility, now a no-op since Dexie handles caching)
+export function invalidateCache() {
+  // No-op: Dexie handles its own caching
+}
+
+// Get all bookmarks - Now uses IndexedDB via Dexie
+export async function getAllBookmarks() {
+  return await DB.getAllBookmarks();
+}
+
+// Search functionality - Now uses IndexedDB with enhanced search
+export async function searchBookmarks(query) {
+  return await DB.searchBookmarks(query);
+}
+
+// Get bookmarks by domain - Now uses indexed queries
+export async function getBookmarksByDomain(domain) {
+  return await DB.getBookmarksByDomain(domain);
+}
+
+// Get bookmarks by date range
+export async function getBookmarksByDateRange(startDate, endDate) {
+  try {
+    const bookmarks = await getAllBookmarks();
+    return bookmarks.filter(bookmark => 
+      bookmark.dateAdded >= startDate && bookmark.dateAdded <= endDate
+    ); - Now uses indexed queries
+export async function getBookmarksByDateRange(startDate, endDate) {
+  return await DB.getBookmarksByDateRange(startDate, endDate); const bookmarks = await getAllBookmarks();
+    return bookmarks.filter(bookmark => bookmark.folderPath === folderPath);
+  } catch (error) {
+    console.error('Error getting bookmarks by folder:', error);
+    return [];
+  }
+}
+
+// Get unique domains
+export async function getUniqueDomains() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const domains = [...new Set(bookmarks.map(b => b.domain))];
+    return domains.sort();
+  } catch (error) {
+    console.error('Error getting unique domains:', error);
+    return [];
+  }
+}return await DB.getUniqueDomains(); return folders.sort();
+  } catch (error) {
+    console.error('Error getting unique folders:', error);
+    return [];
+  }
+}
+
+// Get domain statistics
+export async function getDomainStats() {
+  return await DB.getDomainStats();
+}
+
+// Get activity timeline
+export async function getActivityTimeline() {
+  return await DB.getActivityTimeline();
+}
+
+// Find duplicate bookmarks (same URL appearing multiple times)
+export async function findDuplicates() {
+  try {
+    // Force a fresh sync before checking duplicates
+    invalidateCache();
+    const bookmarks = await getAllBookmarks();
+    const urlMap = {};
+    
+    bookmarks.forEach(bookmark => {
+      // Normalize URL for comparison (remove trailing slashes, lowercase)
+      const normalizedUrl = bookmark.url.toLowerCase().replace(/\/$/, '');
+      if (!urlMap[normalizedUrl]) {
+        urlMap[normalizedUrl] = [];
+      }
+      urlMap[normalizedUrl].push(bookmark);
+    });
+    
+    // Return groups with more than one bookmark
+    return Object.values(urlMap).filter(group => group.length > 1);
+  } catch (error) {
+    console.error('Error finding duplicates:', error);
+    return [];
+  }
+}
+
+// Find similar bookmarks (similar titles, different URLs)
+// Uses optimized algorithm with early termination for large datasets
+export async function findSimilarBookmarks(threshold = 0.7, maxPairs = 100) {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const similar = [];
+    
+    // Optimization: Pre-compute word sets for all bookmarks
+    const wordSets = bookmarks.map(b => ({
+      bookmark: b,
+      words: new Set(b.title.toLowerCase().split(/\s+/).filter(w => w.length > 2))
+    })).filter(item => item.words.size > 0);
+    
+    // Simple similarity check based on shared words
+    for (let i = 0; i < wordSets.length; i++) {
+      for (let j = i + 1; j < wordSets.length; j++) {
+        if (wordSets[i].bookmark.url === wordSets[j].bookmark.url) continue; // Skip exact duplicates
+        
+        const words1 = wordSets[i].words;
+        const words2 = wordSets[j].words;
+        
+        const intersection = [...words1].filter(w => words2.has(w)).length;
+        const similarity = (2 * intersection) / (words1.size + words2.size);
+        
+        if (similarity >= threshold) {
+          similar.push([wordSets[i].bookmark, wordSets[j].bookmark, similarity]);
+        }
+      }
+      
+      // Early termination if we have enough pairs (performance optimization)
+      if (similar.length >= maxPairs * 2) break;
+    }
+    
+    return similar.sort((a, b) => b[2] - a[2]).slice(0, maxPairs);
+  } catch (error) {
+    console.error('Error finding similar bookmarks:', error);
+    return [];
+  }
+}
+
+// Find uncategorized bookmarks (in root folders, not in user-created subfolders)
+export async function findUncategorizedBookmarks() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const rootFolders = ['Bookmarks Bar', 'Other Bookmarks', 'Mobile Bookmarks', ''];
+    
+    return bookmarks.filter(bookmark => {
+      const folderPath = bookmark.folderPath || '';
+      // Check if bookmark is directly in a root folder (no subfolder)
+      return rootFolders.includes(folderPath) || 
+             !folderPath.includes('/');
+    });
+  } catch (error) {
+    console.error('Error finding uncategorized bookmarks:', error);
+    return [];
+  }
+}
+
+// Legacy alias for backward compatibility
+export async function findOrphans() {
+  return findUncategorizedBookmarks();
+}
+
+// Find malformed URLs (truly invalid URLs, not just non-HTTP)
+export async function findMalformedUrls() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    
+    // Legitimate URL schemes that are not errors
+    const validSchemes = [
+      'http://', 'https://', 'chrome://', 'chrome-extension://',
+      'file://', 'javascript:', 'data:', 'about:', 'mailto:',
+      'tel:', 'ftp://', 'sftp://', 'ssh://'
+    ];
+    
+    return bookmarks.filter(bookmark => {
+      const url = bookmark.url || '';
+      
+      // Check if URL starts with any valid scheme
+      const hasValidScheme = validSchemes.some(scheme => url.startsWith(scheme));
+      
+      // Consider it malformed if it doesn't have a valid scheme
+      // or if it's empty/whitespace only
+      return !hasValidScheme || url.trim() === '';
+    });
+  } catch (error) {
+    console.error('Error finding malformed URLs:', error);
+    return [];
+  }
+}
+
+// Trigger sync from background script
+export async function syncBookmarks() {
+  try {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action: 'syncBookmarks' }, (response) => {
+        if (response.success) {
+          resolve();
+        } else {
+          reject(new Error(response.error));
+        }
+      });
+    });
+  } catch (error) {
+    console.error('Error syncing bookmarks:', error);
+    throw error;
+  }
+}
+
+// Get bookmarks with pagination for better performance
+export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {}) {
+  try {
+    const allBookmarks = await getAllBookmarks();
+    let filteredBookmarks = allBookmarks;
+
+    // Apply multiple filters
+    if (filters.domains && filters.domains.length > 0) {
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
+        filters.domains.includes(bookmark.domain)
+      );
+    }
+
+    if (filters.folders && filters.folders.length > 0) {
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
+        filters.folders.includes(bookmark.folderPath)
+      );
+    }
+
+    if (filters.dateRange) {
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
+        bookmark.dateAdded >= filters.dateRange.startDate && 
+        bookmark.dateAdded <= filters.dateRange.endDate
+      );
+    }
+
+    if (filters.searchQuery) {
+      const lowerQuery = filters.searchQuery.toLowerCase();
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
+        bookmark.title.toLowerCase().includes(lowerQuery) ||
+        bookmark.url.toLowerCase().includes(lowerQuery) ||
+        bookmark.domain.toLowerCase().includes(lowerQuery)
+      );
+    }
+
+    // Apply sorting based on sortBy filter
+    const sortBy = filters.sortBy || 'date_desc';
+    switch (sortBy) {
+      case 'date_asc':
+        filteredBookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
+        break;
+      case 'title_asc':
+        filteredBookmarks.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+        break;
+      case 'title_desc':
+        filteredBookmarks.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+        break;
+      case 'domain_asc':
+        filteredBookmarks.sort((a, b) => (a.domain || '').localeCompare(b.domain || ''));
+        break;
+      case 'date_desc':
+      default:
+        filteredBookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
+        break;
+    }
+
+    const startIndex = page * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedBookmarks = filteredBookmarks.slice(startIndex, endIndex);
+
+    return {
+      bookmarks: paginatedBookmarks,
+      totalCount: filteredBookmarks.length,
+      hasMore: endIndex < filteredBookmarks.length,
+      currentPage: page
+    };
+  } catch (error) {
+    console.error('Error getting paginated bookmarks:', error);
+    return {
+      bookmarks: [],
+      totalCount: 0,
+      hasMore: false,
+      currentPage: 0
+    };
+  }
+}
+
+// Get domains sorted by recency (most recent bookmark first)
+export async function getDomainsByRecency() {
+  const analytics = await getConsolidatedDomainAnalytics();
+  return analytics.byRecency;
+}
+
+// Get domains sorted by bookmark count (most bookmarks first)
+export async function getDomainsByCount() {
+  const analytics = await getConsolidatedDomainAnalytics();
+  return analytics.byCount;
+}
+
+// Consolidated domain analytics - single pass through all bookmarks
+export async function getConsolidatedDomainAnalytics() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const domainData = {};
+    
+    // Single pass to collect all domain data
+    bookmarks.forEach(bookmark => {
+      if (!domainData[bookmark.domain]) {
+        domainData[bookmark.domain] = {
+          domain: bookmark.domain,
+          count: 0,
+          latestDate: 0,
+          oldestDate: Infinity
+        };
+      }
+      
+      const data = domainData[bookmark.domain];
+      data.count++;
+      if (bookmark.dateAdded > data.latestDate) {
+        data.latestDate = bookmark.dateAdded;
+      }
+      if (bookmark.dateAdded < data.oldestDate) {
+        data.oldestDate = bookmark.dateAdded;
+      }
+    });
+    
+    const domainArray = Object.values(domainData);
+    const totalBookmarks = bookmarks.length;
+    
+    // Add percentage to each domain
+    domainArray.forEach(d => {
+      d.percentage = totalBookmarks > 0 ? Math.round((d.count / totalBookmarks) * 100) : 0;
+      d.dateAdded = d.latestDate; // For backward compatibility
+    });
+    
+    return {
+      byRecency: [...domainArray].sort((a, b) => b.latestDate - a.latestDate),
+      byCount: [...domainArray].sort((a, b) => b.count - a.count),
+      top10: [...domainArray].sort((a, b) => b.count - a.count).slice(0, 10),
+      totalDomains: domainArray.length,
+      totalBookmarks
+    };
+  } catch (error) {
+    console.error('Error getting consolidated domain analytics:', error);
+    return { byRecency: [], byCount: [], top10: [], totalDomains: 0, totalBookmarks: 0 };
+  }
+}
+
+// Delete a single bookmark - Updated to sync with IndexedDB
+export async function deleteBookmark(bookmarkId) {
+  try {
+    // Delete from Chrome bookmarks API
+    await chrome.bookmarks.remove(bookmarkId);
+    
+    // Delete from IndexedDB
+    await DB.deleteBookmark(bookmarkId);
+    
+    // Log the event
+    await DB.logEvent(bookmarkId, 'delete');
+    
+    return true;
+  } catch (error) {
+    console.error('Error deleting bookmark:', error);
+    throw error;
+  }
+}
+
+// Delete multiple bookmarks
+export async function deleteBookmarks(bookmarkIds) {
+  try {
+    const errors = []; - Updated to sync with IndexedDB
+export async function deleteBookmarks(bookmarkIds) {
+  try {
+    const errors = [];
+    
+    // Delete each bookmark from Chrome bookmarks API
+    for (const id of bookmarkIds) {
+      try {
+        await chrome.bookmarks.remove(id);
+        await DB.deleteBookmark(id);
+        await DB.logEvent(id, 'delete');
+      } catch (error) {
+        console.error(`Error deleting bookmark ${id}:`, error);
+        errors.push({ id, error: error.message });
+      }
+    }kIds.length - errors.length,
+      errors: errors
+    };
+  } catch (error) {
+    console.error('Error deleting bookmarks:', error);
+    throw error;
+  }
+}
+
+// VISUAL ANALYTICS FEATURES
+
+// Content Analysis - Most frequent words in bookmark titles
+export async function getTitleWordFrequency() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const wordCount = {};
+    
+    // Common words to filter out
+    const stopWords = new Set([
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+      'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did',
+      'will', 'would', 'could', 'should', 'may', 'might', 'can', 'about', 'from', 'up', 'out',
+      'into', 'over', 'under', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
+      'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their'
+    ]);
+    
+    bookmarks.forEach(bookmark => {
+      if (bookmark.title) {
+        // Extract words from title, normalize and filter
+        const words = bookmark.title
+          .toLowerCase()
+          .replace(/[^\w\s]/g, ' ')
+          .split(/\s+/)
+          .filter(word => word.length > 2 && !stopWords.has(word));
+        
+        words.forEach(word => {
+          wordCount[word] = (wordCount[word] || 0) + 1;
+        });
+      }
+    });
+    
+    return Object.entries(wordCount)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 20);
+  } catch (error) {
+    console.error('Error getting title word frequency:', error);
+    return [];
+  }
+}
+
+// Content Analysis - Common title patterns
+export async function getTitlePatterns() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const patterns = {};
+    
+    bookmarks.forEach(bookmark => {
+      if (bookmark.title) {
+        const title = bookmark.title.toLowerCase();
+        
+        // Detect common patterns
+        if (title.includes('how to')) {
+          patterns['How-to guides'] = (patterns['How-to guides'] || 0) + 1;
+        }
+        if (title.includes('tutorial')) {
+          patterns['Tutorials'] = (patterns['Tutorials'] || 0) + 1;
+        }
+        if (title.includes('documentation') || title.includes('docs')) {
+          patterns['Documentation'] = (patterns['Documentation'] || 0) + 1;
+        }
+        if (title.includes('api') || title.includes('reference')) {
+          patterns['API/Reference'] = (patterns['API/Reference'] || 0) + 1;
+        }
+        if (title.includes('blog') || title.includes('article')) {
+          patterns['Blog/Articles'] = (patterns['Blog/Articles'] || 0) + 1;
+        }
+        if (title.includes('github') || title.includes('repository')) {
+          patterns['Code Repositories'] = (patterns['Code Repositories'] || 0) + 1;
+        }
+        if (title.includes('video') || title.includes('youtube')) {
+          patterns['Videos'] = (patterns['Videos'] || 0) + 1;
+        }
+        if (title.includes('tool') || title.includes('app')) {
+          patterns['Tools/Apps'] = (patterns['Tools/Apps'] || 0) + 1;
+        }
+        
+        // Length-based patterns
+        if (title.length > 60) {
+          patterns['Long titles (60+ chars)'] = (patterns['Long titles (60+ chars)'] || 0) + 1;
+        }
+        if (title.split(' ').length <= 3) {
+          patterns['Short titles (≤3 words)'] = (patterns['Short titles (≤3 words)'] || 0) + 1;
+        }
+      }
+    });
+    
+    return Object.entries(patterns)
+      .sort(([,a], [,b]) => b - a);
+  } catch (error) {
+    console.error('Error getting title patterns:', error);
+    return [];
+  }
+}
+
+// Temporal Analysis - Bookmark age distribution
+export async function getBookmarkAgeDistribution() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const now = Date.now();
+    const ageGroups = {
+      'Last 24 hours': 0,
+      'Last week': 0,
+      'Last month': 0,
+      'Last 3 months': 0,
+      'Last 6 months': 0,
+      'Last year': 0,
+      'Over 1 year': 0
+    };
+    
+    const DAY = 24 * 60 * 60 * 1000;
+    const WEEK = 7 * DAY;
+    const MONTH = 30 * DAY;
+    
+    bookmarks.forEach(bookmark => {
+      const age = now - bookmark.dateAdded;
+      
+      if (age <= DAY) {
+        ageGroups['Last 24 hours']++;
+      } else if (age <= WEEK) {
+        ageGroups['Last week']++;
+      } else if (age <= MONTH) {
+        ageGroups['Last month']++;
+      } else if (age <= 3 * MONTH) {
+        ageGroups['Last 3 months']++;
+      } else if (age <= 6 * MONTH) {
+        ageGroups['Last 6 months']++;
+      } else if (age <= 365 * DAY) {
+        ageGroups['Last year']++;
+      } else {
+        ageGroups['Over 1 year']++;
+      }
+    });
+    
+    return Object.entries(ageGroups);
+  } catch (error) {
+    console.error('Error getting bookmark age distribution:', error);
+    return [];
+  }
+}
+
+// Temporal Analysis - Enhanced bookmark creation patterns
+export async function getBookmarkCreationPatterns() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const hourPatterns = new Array(24).fill(0);
+    const dayPatterns = new Array(7).fill(0);
+    const monthPatterns = new Array(12).fill(0);
+    
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    bookmarks.forEach(bookmark => {
+      const date = new Date(bookmark.dateAdded);
+      hourPatterns[date.getHours()]++;
+      dayPatterns[date.getDay()]++;
+      monthPatterns[date.getMonth()]++;
+    });
+    
+    return {
+      hourly: hourPatterns.map((count, hour) => ([`${hour}:00`, count])),
+      daily: dayPatterns.map((count, day) => ([dayNames[day], count])),
+      monthly: monthPatterns.map((count, month) => ([monthNames[month], count]))
+    };
+  } catch (error) {
+    console.error('Error getting bookmark creation patterns:', error);
+    return { hourly: [], daily: [], monthly: [] };
+  }
+}
+
+// URL Structure Analysis - Common URL patterns
+export async function getUrlPatterns() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const protocols = {};
+    const topLevelDomains = {};
+    const pathPatterns = {};
+    const subdomainPatterns = {};
+    
+    bookmarks.forEach(bookmark => {
+      try {
+        const url = new URL(bookmark.url);
+        
+        // Protocol analysis
+        protocols[url.protocol] = (protocols[url.protocol] || 0) + 1;
+        
+        // TLD analysis
+        const domain = url.hostname;
+        const parts = domain.split('.');
+        if (parts.length > 1) {
+          const tld = parts[parts.length - 1];
+          topLevelDomains[tld] = (topLevelDomains[tld] || 0) + 1;
+        }
+        
+        // Subdomain analysis
+        if (parts.length > 2) {
+          const subdomain = parts[0];
+          if (subdomain !== 'www') {
+            subdomainPatterns[subdomain] = (subdomainPatterns[subdomain] || 0) + 1;
+          }
+        }
+        
+        // Path patterns
+        const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0);
+        if (pathSegments.length > 0) {
+          const firstSegment = pathSegments[0];
+          pathPatterns[firstSegment] = (pathPatterns[firstSegment] || 0) + 1;
+        }
+        
+      } catch (e) {
+        // Skip malformed URLs
+      }
+    });
+    
+    return {
+      protocols: Object.entries(protocols).sort(([,a], [,b]) => b - a),
+      topLevelDomains: Object.entries(topLevelDomains).sort(([,a], [,b]) => b - a).slice(0, 10),
+      subdomains: Object.entries(subdomainPatterns).sort(([,a], [,b]) => b - a).slice(0, 10),
+      pathPatterns: Object.entries(pathPatterns).sort(([,a], [,b]) => b - a).slice(0, 15)
+    };
+  } catch (error) {
+    console.error('Error getting URL patterns:', error);
+    return { protocols: [], topLevelDomains: [], subdomains: [], pathPatterns: [] };
+  }
+}
+
+// URL Structure Analysis - Parameter usage frequency
+export async function getUrlParameterUsage() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const parameterCount = {};
+    let urlsWithParams = 0;
+    let totalUrls = 0;
+    
+    bookmarks.forEach(bookmark => {
+      totalUrls++;
+      try {
+        const url = new URL(bookmark.url);
+        const params = url.searchParams;
+        
+        if (params.toString()) {
+          urlsWithParams++;
+          for (const [key] of params) {
+            parameterCount[key] = (parameterCount[key] || 0) + 1;
+          }
+        }
+      } catch (e) {
+        // Skip malformed URLs
+      }
+    });
+    
+    const parameterUsage = Object.entries(parameterCount)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 15);
+    
+    return {
+      parameters: parameterUsage,
+      urlsWithParams,
+      totalUrls,
+      percentage: totalUrls > 0 ? Math.round((urlsWithParams / totalUrls) * 100) : 0
+    };
+  } catch (error) {
+    console.error('Error getting URL parameter usage:', error);
+    return { parameters: [], urlsWithParams: 0, totalUrls: 0, percentage: 0 };
+  }
+}
+
+// Enhanced Domain Analysis - Distribution of bookmarks across domains
+export async function getDomainDistribution() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const domainCount = {};
+    
+    bookmarks.forEach(bookmark => {
+      domainCount[bookmark.domain] = (domainCount[bookmark.domain] || 0) + 1;
+    });
+    
+    const sortedDomains = Object.entries(domainCount)
+      .sort(([,a], [,b]) => b - a);
+    
+    const totalBookmarks = bookmarks.length;
+    const top10 = sortedDomains.slice(0, 10);
+    const others = sortedDomains.slice(10);
+    const othersCount = others.reduce((sum, [,count]) => sum + count, 0);
+    
+    const distribution = top10.map(([domain, count]) => ({
+      domain,
+      count,
+      percentage: Math.round((count / totalBookmarks) * 100)
+    }));
+    
+    if (othersCount > 0) {
+      distribution.push({
+        domain: 'Others',
+        count: othersCount,
+        percentage: Math.round((othersCount / totalBookmarks) * 100)
+      });
+    }
+    
+    return distribution;
+  } catch (error) {
+    console.error('Error getting domain distribution:', error);
+    return [];
+  }
+}
+
+// Dead Link Checker - Check if URLs are still accessible
+// Note: Due to CORS restrictions, this uses a heuristic approach
+export async function checkDeadLinks(bookmarkIds = null, batchSize = 10) {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const toCheck = bookmarkIds 
+      ? bookmarks.filter(b => bookmarkIds.includes(b.id))
+      : bookmarks.filter(b => b.url.startsWith('http'));
+    
+    const results = {
+      checked: 0,
+      alive: [],
+      dead: [],
+      errors: [],
+      inProgress: false
+    };
+    
+    // Check links in batches to avoid overwhelming the browser
+    for (let i = 0; i < Math.min(toCheck.length, batchSize); i++) {
+      const bookmark = toCheck[i];
+      results.checked++;
+      
+      try {
+        // Use fetch with mode: 'no-cors' to check if the resource exists
+        // This won't give us the actual status code but will tell us if the request fails
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        await fetch(bookmark.url, {
+          method: 'HEAD',
+          mode: 'no-cors',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        results.alive.push(bookmark);
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          results.errors.push({ bookmark, reason: 'timeout' });
+        } else {
+          results.dead.push({ bookmark, reason: error.message });
+        }
+      }
+    }
+    
+    return {
+      ...results,
+      total: toCheck.length,
+      remaining: Math.max(0, toCheck.length - batchSize)
+    };
+  } catch (error) {
+    console.error('Error checking dead links:', error);
+    return { checked: 0, alive: [], dead: [], errors: [], total: 0, remaining: 0 };
+  }
+}
+
+// Export bookmarks to JSON
+export async function exportBookmarks() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    return {
+      exportDate: new Date().toISOString(),
+      version: '1.0',
+      totalBookmarks: bookmarks.length,
+      bookmarks: bookmarks
+    };
+  } catch (error) {
+    console.error('Error exporting bookmarks:', error);
+    throw error;
+  }
+}
+
+// Get quick statistics about bookmarks
+export async function getQuickStats() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const duplicates = await findDuplicates();
+    const uncategorized = await findUncategorizedBookmarks();
+    const malformed = await findMalformedUrls();
+    const domainAnalytics = await getConsolidatedDomainAnalytics();
+    
+    const now = Date.now();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    const oneMonth = 30 * 24 * 60 * 60 * 1000;
+    
+    return {
+      total: bookmarks.length,
+      duplicateGroups: duplicates.length,
+      uncategorized: uncategorized.length,
+      malformed: malformed.length,
+      uniqueDomains: domainAnalytics.totalDomains,
+      addedThisWeek: bookmarks.filter(b => now - b.dateAdded < oneWeek).length,
+      addedThisMonth: bookmarks.filter(b => now - b.dateAdded < oneMonth).length,
+      oldestBookmark: bookmarks.reduce((oldest, b) => b.dateAdded < oldest ? b.dateAdded : oldest, Date.now()),
+      newestBookmark: bookmarks.reduce((newest, b) => b.dateAdded > newest ? b.dateAdded : newest, 0)
+    };
+  } catch (error) {
+    console.error('Error getting quick stats:', error);
+    return {
+      total: 0,
+      duplicateGroups: 0,
+      uncategorized: 0,
+      malformed: 0,
+      uniqueDomains: 0,
+      addedThisWeek: 0,
+      addedThisMonth: 0,
+      oldestBookmark: 0,
+      newestBookmark: 0
+    };
+  }
+}

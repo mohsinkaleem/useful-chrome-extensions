@@ -60,5 +60,25 @@ export default [
     watch: {
       clearScreen: false
     }
+  },
+  {
+    input: 'background-new.js',
+    output: {
+      sourcemap: true,
+      format: 'es',
+      file: 'background.js',
+      inlineDynamicImports: true
+    },
+    plugins: [
+      resolve({
+        browser: true,
+        preferBuiltins: false
+      }),
+      commonjs(),
+      production && terser()
+    ],
+    watch: {
+      clearScreen: false
+    }
   }
 ];

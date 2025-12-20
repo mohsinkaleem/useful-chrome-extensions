@@ -1,49 +1,68 @@
 # Bookmark Insight - Chrome Extension
 
-A powerful bookmark manager Chrome extension with smart search, insights, and maintenance tools.
+A powerful, local-first bookmark intelligence system with smart search, enrichment, insights, and maintenance tools.
+
+## 🚀 What's New in v2.0
+
+Version 2.0 transforms Bookmark Insight into a smart bookmark intelligence system:
+
+- **IndexedDB Storage** - Faster queries with Dexie.js (replaces chrome.storage.local)
+- **FlexSearch Integration** - Powerful fuzzy search with ranking and suggestions
+- **Background Enrichment** - Automatic metadata extraction from bookmarked pages
+- **Dead Link Detection** - Identifies broken bookmarks automatically
+- **Auto-Categorization** - Smart categorization based on domain, URL, and content
+- **TF-IDF Similarity** - Advanced semantic matching for similar bookmarks
+- **Domain Visualization** - Hierarchical view of your bookmark domains
+- **Data Insights Dashboard** - Stale bookmarks, reading lists, expertise areas
+- **Behavioral Analytics** - Track which bookmarks you actually use
 
 ## Features
 
-### Phase 1 - MVP (Implemented)
-- **Smart Bookmark Search**: Fast search through all your bookmarks by title, URL, or domain
-- **Rich Bookmark Cards**: View bookmarks with favicons, domain info, folder paths, and dates
-- **Advanced Filters**: Filter by domain, date range, or folder
-- **Popup Interface**: Quick access to bookmarks through browser action
-- **Full Dashboard**: Comprehensive view with all features
-- **Copy URL**: One-click copy bookmark URL to clipboard
-- **Sorting Options**: Sort by date (newest/oldest), title (A-Z/Z-A), or domain
+### 🔍 Smart Search (FlexSearch-Powered)
+- **Fuzzy matching** with intelligent ranking
+- **Multi-field search** across title, URL, description, keywords, category
+- **Real-time suggestions** with autocomplete dropdown
+- **Keyboard navigation** (up/down arrows, enter, escape)
+- **Weighted boosting** - title matches rank higher
 
-### Phase 2 - Visual Analytics & Insights (Implemented)
-- **Domain Analysis**: 
-  - Most frequently bookmarked domains
-  - Distribution of bookmarks across top domains with percentages
-- **Content Analysis**:
-  - Most frequent words in bookmark titles (with stop-word filtering)
-  - Common title patterns and content types (tutorials, documentation, etc.)
-- **Temporal Analysis**:
-  - Bookmark age distribution (time since dateAdded)
-  - Bookmark creation patterns over time (monthly timeline)
-  - Creation patterns by day of week
-- **URL Structure Analysis**:
-  - Common URL patterns and structures
-  - Top-level domain distribution
-  - Parameter usage frequency in bookmarked URLs
-  - Protocol and subdomain analysis
-- **Activity Timeline**: Track your bookmarking activity over time
-- **Quick Stats**: Total bookmarks, duplicates, uncategorized, and unique domains count
+### 📊 Visual Analytics & Insights
+- **Domain Analysis**: Most bookmarked domains with distribution charts
+- **Domain Hierarchy**: Interactive domain → subdomain → path visualization
+- **Content Analysis**: Word frequency and title pattern detection
+- **Temporal Analysis**: Activity timeline, age distribution, creation patterns
+- **URL Structure**: TLD distribution and parameter usage analysis
+- **Category Trends**: Track how your interests evolve over time
+- **Expertise Areas**: Discover your knowledge domains based on bookmarks
 
-### Phase 3 - Health & Maintenance (Implemented)
-- **Duplicate Detection**: Find and remove duplicate bookmarks (normalized URL matching)
-- **Similar Bookmark Detection**: Find bookmarks with similar titles but different URLs
-- **Dead Link Checker**: Check if bookmarked URLs are still accessible
-- **Uncategorized Finder**: Locate bookmarks in root folders without organization
-- **Malformed URL Detection**: Find bookmarks with truly invalid URLs (excluding legitimate protocols)
-- **Quick Stats Dashboard**: Overview of bookmark health metrics
+### 🔧 Enrichment Pipeline
+- **Manual Trigger**: Click "Run Enrichment" button when you want
+- **Smart Skipping**: Already enriched bookmarks are automatically skipped
+- **Metadata Extraction**: Title, description, Open Graph tags, keywords
+- **Auto-Categorization**: 15+ categories based on domain, URL, and content
+- **Favicon Caching**: Visual identification at a glance
+- **Rate Limiting**: Respectful 1 request/second with configurable batch size
 
-### Phase 4 - Data Management (New)
-- **Export Bookmarks**: Export all bookmarks to JSON format
-- **Performance Caching**: Intelligent caching reduces redundant data fetches
-- **Consolidated Analytics**: Efficient single-pass domain analytics
+### 🏥 Health & Maintenance
+- **Dead Link Checker**: HEAD/GET requests to verify bookmark health
+- **Duplicate Detection**: Exact and normalized URL matching
+- **Similar Bookmarks**: TF-IDF similarity with cosine scoring
+- **Uncategorized Finder**: Locate bookmarks without organization
+- **Malformed URL Detection**: Find invalid bookmark URLs
+
+### 📈 Behavioral Analytics (Opt-In)
+- **Disabled by default** - Your browsing is NOT tracked unless you enable it
+- **Access Tracking**: Know which bookmarks you actually visit (if enabled)
+- **Stale Detection**: Find bookmarks 90+ days old, never accessed
+- **"Bookmark and Forget"**: Identify 6+ months old unused bookmarks
+- **Reading List**: Recently added bookmarks you haven't visited yet
+- **Most Accessed**: Your top bookmarks by usage
+- **Event Logging**: Track create, delete, update events (access events only if enabled)
+
+### 💾 Data Management
+- **Export to JSON**: Full bookmark export with metadata
+- **IndexedDB Storage**: Fast, scalable local database
+- **Automatic Migration**: Seamless upgrade from v1.x
+- **Performance Caching**: Intelligent caching for speed
 
 ## Installation
 
@@ -88,23 +107,42 @@ The extension will be available on the Chrome Web Store once published.
 ## Technical Details
 
 ### Technology Stack
-- **UI Framework**: Svelte (compiled to vanilla JavaScript)
-- **Storage**: Chrome Storage API (for compatibility)
+- **UI Framework**: Svelte 4.0 (compiled to vanilla JavaScript)
+- **Database**: IndexedDB via Dexie.js (with chrome.storage.local fallback)
+- **Search**: FlexSearch.js for fuzzy matching and ranking
 - **Charts**: Chart.js for insights visualization
 - **Styling**: Tailwind CSS
-- **Build Tool**: Rollup
+- **Build Tool**: Rollup with ES modules
 
 ### Architecture
-- **Background Script**: Handles bookmark synchronization and Chrome API interactions
+- **Background Script**: Service worker with bookmark sync, enrichment pipeline, and tab monitoring
+- **IndexedDB Schema**: bookmarks, enrichmentQueue, events, cache, settings tables
 - **Popup**: Quick access interface (384x384px)
-- **Dashboard**: Full-featured interface with tabs for different functions
-- **Database**: Uses Chrome Storage API for cross-device sync compatibility
+- **Dashboard**: Full-featured interface with Bookmarks, Insights, and Health tabs
+
+### Database Schema
+```javascript
+// Bookmarks with enrichment fields
+{
+  id, url, title, domain, dateAdded, folderPath, parentId,
+  description, keywords[], category, tags[],
+  isAlive, lastChecked, faviconUrl, contentSnippet,
+  lastAccessed, accessCount
+}
+
+// Supporting tables
+enrichmentQueue: { queueId, bookmarkId, addedAt, priority }
+events: { eventId, bookmarkId, type, timestamp }
+cache: { key, value, timestamp, ttl }
+settings: { key, ...preferences }
+```
 
 ### Performance
-- Local-first architecture for instant search and filtering
-- Debounced search to avoid excessive queries
-- Efficient bookmark synchronization with change detection
-- Optimized bundle size through Svelte compilation
+- **Indexed queries** on domain, category, dateAdded, isAlive
+- **Paginated loading** with virtual scrolling
+- **Cached search index** persisted to IndexedDB
+- **Rate-limited enrichment** (1 req/sec configurable)
+- **Scalable** to 5000+ bookmarks
 
 ## Development
 
@@ -117,31 +155,35 @@ The extension will be available on the Chrome Web Store once published.
 ### File Structure
 ```
 bookmark-insights/
-├── manifest.json           # Extension manifest
-├── background.js          # Service worker
-├── popup.html            # Popup interface HTML
-├── dashboard.html        # Dashboard HTML
-├── tailwind.config.js    # Tailwind CSS configuration
-├── icons/               # Extension icons
-├── public/              # Built files
-│   ├── tailwind.css    # Built Tailwind CSS
-│   ├── popup.css       # Popup component styles
-│   ├── dashboard.css   # Dashboard component styles
-│   ├── popup.js        # Built popup bundle
-│   └── dashboard.js    # Built dashboard bundle
-├── src/                 # Source code
-│   ├── App.svelte      # Main popup component
-│   ├── Dashboard.svelte # Dashboard component
-│   ├── BookmarkCard.svelte
-│   ├── BookmarkListItem.svelte
-│   ├── SearchBar.svelte
-│   ├── Sidebar.svelte
-│   ├── database.js     # Data access layer with caching
-│   ├── utils.js        # Shared utility functions
-│   ├── tailwind.css    # Tailwind source CSS
-│   ├── popup.js        # Popup entry point
-│   └── dashboard.js    # Dashboard entry point
-└── rollup.config.js    # Build configuration
+├── manifest.json           # Extension manifest (v2.0)
+├── background-new.js       # Enhanced service worker source
+├── background.js           # Built service worker
+├── popup.html              # Popup interface HTML
+├── dashboard.html          # Dashboard HTML
+├── tailwind.config.js      # Tailwind CSS configuration
+├── rollup.config.js        # Build configuration
+├── icons/                  # Extension icons
+├── public/                 # Built files
+│   ├── tailwind.css        # Built Tailwind CSS
+│   ├── popup.js            # Built popup bundle
+│   └── dashboard.js        # Built dashboard bundle
+└── src/                    # Source code
+    ├── db.js               # Dexie IndexedDB layer
+    ├── enrichment.js       # Background enrichment pipeline
+    ├── search.js           # FlexSearch integration
+    ├── similarity.js       # TF-IDF similarity detection
+    ├── insights.js         # Domain hierarchy & analytics
+    ├── database.js         # Original data access layer
+    ├── database-compat.js  # Compatibility wrapper
+    ├── utils.js            # Shared utilities
+    ├── App.svelte          # Main popup component
+    ├── Dashboard.svelte    # Dashboard with insights
+    ├── BookmarkCard.svelte # Card view component
+    ├── BookmarkListItem.svelte
+    ├── SearchBar.svelte    # Enhanced search with suggestions
+    ├── Sidebar.svelte      # Filter sidebar
+    ├── popup.js            # Popup entry point
+    └── dashboard.js        # Dashboard entry point
 ```
 
 ## Permissions
@@ -150,20 +192,49 @@ The extension requires the following permissions:
 - `bookmarks`: To read and manage your bookmarks
 - `storage`: To store processed bookmark data locally
 - `favicon`: To display website icons
+- `alarms`: For scheduled background enrichment
+- `tabs`: To track bookmark access for analytics
+- `host_permissions (<all_urls>)`: To fetch metadata from bookmarked URLs (opt-in)
 
 ## Privacy
 
 This extension:
-- ✅ Works entirely locally - no data is sent to external servers
-- ✅ Only accesses your bookmark data through Chrome's official APIs
-- ✅ Stores processed data locally for performance
-- ✅ Does not track or collect any personal information
+- ✅ **100% local processing** - All data stays in your browser's IndexedDB
+- ✅ **No external APIs** - Only fetches from your bookmarked URLs (when you click enrich)
+- ✅ **No browsing tracking by default** - Tab monitoring is OFF unless you enable it
+- ✅ **Manual enrichment** - Metadata fetching only runs when you click the button
+- ✅ **Transparent permissions** - `<all_urls>` only used for enrichment when triggered
+- ✅ **CORS-safe** - Gracefully handles blocked requests
+- ✅ **No analytics/telemetry** - Zero data collection
+
+## Configuration
+
+Default settings (customizable in future settings UI):
+```javascript
+{
+  enrichmentEnabled: true,      // Enable enrichment feature
+  enrichmentSchedule: 'manual', // Manual only - no automatic scheduling
+  enrichmentBatchSize: 20,      // Bookmarks per batch
+  enrichmentRateLimit: 1000,    // ms between requests
+  autoCategorizationEnabled: true,
+  deadLinkCheckEnabled: true,
+  privacyMode: false,           // Disable all enrichment
+  trackBrowsingBehavior: false  // OFF by default - no tab monitoring
+}
+```
+
+### Privacy Controls
+- **Behavior Tracking**: Disabled by default. Your browsing is NOT monitored unless you explicitly enable `trackBrowsingBehavior`.
+- **Enrichment**: Manual trigger only - runs when YOU click the button, not automatically in the background.
 
 ## Roadmap
 
-Future enhancements could include:
+Future enhancements:
+- Settings UI for enrichment configuration
+- Backup/restore via dexie-export-import
 - Advanced search with regex support
-- tagging or thematic system
+- Custom tagging system
+- Chrome sync for settings
 
 ## Contributing
 
