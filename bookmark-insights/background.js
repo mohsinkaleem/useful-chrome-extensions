@@ -28,10 +28,16 @@ async function syncBookmarks() {
             if (node.url.startsWith('http://') || node.url.startsWith('https://')) {
               const url = new URL(node.url);
               domain = url.hostname;
-            } else if (node.url.startsWith('chrome://')) {
+            } else if (node.url.startsWith('chrome://') || node.url.startsWith('chrome-extension://')) {
               domain = 'chrome-internal';
             } else if (node.url.startsWith('file://')) {
               domain = 'local-file';
+            } else if (node.url.startsWith('javascript:')) {
+              domain = 'javascript-bookmarklet';
+            } else if (node.url.startsWith('data:')) {
+              domain = 'data-uri';
+            } else if (node.url.startsWith('mailto:') || node.url.startsWith('tel:')) {
+              domain = 'contact-link';
             } else {
               domain = 'other-protocol';
             }

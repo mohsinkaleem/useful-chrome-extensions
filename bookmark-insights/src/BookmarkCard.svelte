@@ -1,51 +1,23 @@
 <script>
+  import { createEventDispatcher } from 'svelte';
+  import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard } from './utils.js';
+  
   export let bookmark;
   
-  function formatDate(timestamp) {
-    return new Date(timestamp).toLocaleDateString();
-  }
+  const dispatch = createEventDispatcher();
+  
+  let showCopied = false;
   
   function openBookmark(url) {
     chrome.tabs.create({ url });
   }
   
-  function getFaviconUrl(bookmark) {
-    // For HTTP/HTTPS URLs, create a simple domain-based icon
-    if (bookmark.url.startsWith('http://') || bookmark.url.startsWith('https://')) {
-      // Create a simple letter-based favicon using the first letter of the domain
-      const firstLetter = bookmark.domain.charAt(0).toUpperCase();
-      const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
-      const colorIndex = bookmark.domain.length % colors.length;
-      const color = colors[colorIndex];
-      
-      return `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="${color}"/><text x="8" y="12" font-family="Arial" font-size="10" text-anchor="middle" fill="white" font-weight="bold">${firstLetter}</text></svg>`;
-    }
-    
-    // Return specific icons for different types
-    switch (bookmark.domain) {
-      case 'chrome-internal':
-        return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="%23EA4335"/><circle cx="8" cy="8" r="3" fill="white"/></svg>';
-      case 'local-file':
-        return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="%23F59E0B"/><text x="8" y="12" font-family="Arial" font-size="10" text-anchor="middle" fill="white">📄</text></svg>';
-      case 'other-protocol':
-        return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="%236B7280"/><text x="8" y="12" font-family="Arial" font-size="10" text-anchor="middle" fill="white">⚡</text></svg>';
-      default:
-        return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="%23E5E7EB"/><text x="8" y="12" font-family="Arial" font-size="10" text-anchor="middle" fill="%236B7280">?</text></svg>';
-    }
-  }
-  
-  function getDomainLabel(bookmark) {
-    switch (bookmark.domain) {
-      case 'chrome-internal':
-        return 'Chrome';
-      case 'local-file':
-        return 'Local File';
-      case 'other-protocol':
-        return 'Other';
-      case 'invalid-url':
-        return 'Invalid URL';
-      default:
-        return bookmark.domain;
+  async function handleCopyUrl(event) {
+    event.stopPropagation();
+    const success = await copyToClipboard(bookmark.url);
+    if (success) {
+      showCopied = true;
+      setTimeout(() => showCopied = false, 2000);
     }
   }
 </script>
@@ -72,9 +44,26 @@
         <span class="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
           {getDomainLabel(bookmark)}
         </span>
-        <span class="text-xs text-gray-400">
-          {formatDate(bookmark.dateAdded)}
-        </span>
+        <div class="flex items-center space-x-2">
+          <button
+            on:click={handleCopyUrl}
+            class="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+            title="Copy URL"
+          >
+            {#if showCopied}
+              <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            {:else}
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+              </svg>
+            {/if}
+          </button>
+          <span class="text-xs text-gray-400">
+            {formatDate(bookmark.dateAdded)}
+          </span>
+        </div>
       </div>
       {#if bookmark.folderPath}
         <p class="text-xs text-gray-400 mt-1 truncate" title={bookmark.folderPath}>

@@ -1,10 +1,28 @@
-// Database utilities using Chrome storage instead of Dexie for simplicity
+// Database utilities using Chrome storage with caching for better performance
 
-// Get all bookmarks from Chrome storage
+// Cache for bookmarks to reduce redundant storage reads
+let cachedBookmarks = null;
+let cacheTimestamp = 0;
+const CACHE_TTL = 5000; // 5 seconds cache validity
+
+// Invalidate cache (call after modifications)
+export function invalidateCache() {
+  cachedBookmarks = null;
+  cacheTimestamp = 0;
+}
+
+// Get all bookmarks from Chrome storage with caching
 export async function getAllBookmarks() {
   try {
+    // Return cached data if still valid
+    if (cachedBookmarks && Date.now() - cacheTimestamp < CACHE_TTL) {
+      return cachedBookmarks;
+    }
+    
     const result = await chrome.storage.local.get(['bookmarks']);
-    return result.bookmarks || [];
+    cachedBookmarks = result.bookmarks || [];
+    cacheTimestamp = Date.now();
+    return cachedBookmarks;
   } catch (error) {
     console.error('Error getting bookmarks:', error);
     return [];
@@ -131,72 +149,116 @@ export async function getActivityTimeline() {
   }
 }
 
-// Find duplicate bookmarks
+// Find duplicate bookmarks (same URL appearing multiple times)
 export async function findDuplicates() {
   try {
+    // Force a fresh sync before checking duplicates
+    invalidateCache();
     const bookmarks = await getAllBookmarks();
     const urlMap = {};
     
     bookmarks.forEach(bookmark => {
-      if (!urlMap[bookmark.url]) {
-        urlMap[bookmark.url] = [];
+      // Normalize URL for comparison (remove trailing slashes, lowercase)
+      const normalizedUrl = bookmark.url.toLowerCase().replace(/\/$/, '');
+      if (!urlMap[normalizedUrl]) {
+        urlMap[normalizedUrl] = [];
       }
-      urlMap[bookmark.url].push(bookmark);
+      urlMap[normalizedUrl].push(bookmark);
     });
     
-    // Filter out groups where bookmarks might no longer exist
-    const duplicateGroups = Object.values(urlMap).filter(group => group.length > 1);
-    
-    // Verify bookmarks still exist by checking with Chrome API
-    const validGroups = [];
-    for (const group of duplicateGroups) {
-      const validBookmarks = [];
-      for (const bookmark of group) {
-        try {
-          const exists = await chrome.bookmarks.get([bookmark.id]);
-          if (exists && exists.length > 0) {
-            validBookmarks.push(bookmark);
-          }
-        } catch (e) {
-          // Bookmark doesn't exist anymore, skip it
-          console.log(`Bookmark ${bookmark.id} no longer exists`);
-        }
-      }
-      if (validBookmarks.length > 1) {
-        validGroups.push(validBookmarks);
-      }
-    }
-    
-    return validGroups;
+    // Return groups with more than one bookmark
+    return Object.values(urlMap).filter(group => group.length > 1);
   } catch (error) {
     console.error('Error finding duplicates:', error);
     return [];
   }
 }
 
-// Find orphaned bookmarks
-export async function findOrphans() {
+// Find similar bookmarks (similar titles, different URLs)
+// Uses optimized algorithm with early termination for large datasets
+export async function findSimilarBookmarks(threshold = 0.7, maxPairs = 100) {
   try {
     const bookmarks = await getAllBookmarks();
-    return bookmarks.filter(bookmark => 
-      !bookmark.folderPath || 
-      bookmark.folderPath === 'Bookmarks Bar' ||
-      bookmark.folderPath === 'Other Bookmarks'
-    );
+    const similar = [];
+    
+    // Optimization: Pre-compute word sets for all bookmarks
+    const wordSets = bookmarks.map(b => ({
+      bookmark: b,
+      words: new Set(b.title.toLowerCase().split(/\s+/).filter(w => w.length > 2))
+    })).filter(item => item.words.size > 0);
+    
+    // Simple similarity check based on shared words
+    for (let i = 0; i < wordSets.length; i++) {
+      for (let j = i + 1; j < wordSets.length; j++) {
+        if (wordSets[i].bookmark.url === wordSets[j].bookmark.url) continue; // Skip exact duplicates
+        
+        const words1 = wordSets[i].words;
+        const words2 = wordSets[j].words;
+        
+        const intersection = [...words1].filter(w => words2.has(w)).length;
+        const similarity = (2 * intersection) / (words1.size + words2.size);
+        
+        if (similarity >= threshold) {
+          similar.push([wordSets[i].bookmark, wordSets[j].bookmark, similarity]);
+        }
+      }
+      
+      // Early termination if we have enough pairs (performance optimization)
+      if (similar.length >= maxPairs * 2) break;
+    }
+    
+    return similar.sort((a, b) => b[2] - a[2]).slice(0, maxPairs);
   } catch (error) {
-    console.error('Error finding orphans:', error);
+    console.error('Error finding similar bookmarks:', error);
     return [];
   }
 }
 
-// Find malformed URLs
+// Find uncategorized bookmarks (in root folders, not in user-created subfolders)
+export async function findUncategorizedBookmarks() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const rootFolders = ['Bookmarks Bar', 'Other Bookmarks', 'Mobile Bookmarks', ''];
+    
+    return bookmarks.filter(bookmark => {
+      const folderPath = bookmark.folderPath || '';
+      // Check if bookmark is directly in a root folder (no subfolder)
+      return rootFolders.includes(folderPath) || 
+             !folderPath.includes('/');
+    });
+  } catch (error) {
+    console.error('Error finding uncategorized bookmarks:', error);
+    return [];
+  }
+}
+
+// Legacy alias for backward compatibility
+export async function findOrphans() {
+  return findUncategorizedBookmarks();
+}
+
+// Find malformed URLs (truly invalid URLs, not just non-HTTP)
 export async function findMalformedUrls() {
   try {
     const bookmarks = await getAllBookmarks();
-    return bookmarks.filter(bookmark => 
-      !bookmark.url.startsWith('http://') && 
-      !bookmark.url.startsWith('https://')
-    );
+    
+    // Legitimate URL schemes that are not errors
+    const validSchemes = [
+      'http://', 'https://', 'chrome://', 'chrome-extension://',
+      'file://', 'javascript:', 'data:', 'about:', 'mailto:',
+      'tel:', 'ftp://', 'sftp://', 'ssh://'
+    ];
+    
+    return bookmarks.filter(bookmark => {
+      const url = bookmark.url || '';
+      
+      // Check if URL starts with any valid scheme
+      const hasValidScheme = validSchemes.some(scheme => url.startsWith(scheme));
+      
+      // Consider it malformed if it doesn't have a valid scheme
+      // or if it's empty/whitespace only
+      return !hasValidScheme || url.trim() === '';
+    });
   } catch (error) {
     console.error('Error finding malformed URLs:', error);
     return [];
@@ -256,8 +318,26 @@ export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {
       );
     }
 
-    // Sort by date added (newest first)
-    filteredBookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
+    // Apply sorting based on sortBy filter
+    const sortBy = filters.sortBy || 'date_desc';
+    switch (sortBy) {
+      case 'date_asc':
+        filteredBookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
+        break;
+      case 'title_asc':
+        filteredBookmarks.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+        break;
+      case 'title_desc':
+        filteredBookmarks.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+        break;
+      case 'domain_asc':
+        filteredBookmarks.sort((a, b) => (a.domain || '').localeCompare(b.domain || ''));
+        break;
+      case 'date_desc':
+      default:
+        filteredBookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
+        break;
+    }
 
     const startIndex = page * pageSize;
     const endIndex = startIndex + pageSize;
@@ -282,57 +362,62 @@ export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {
 
 // Get domains sorted by recency (most recent bookmark first)
 export async function getDomainsByRecency() {
-  try {
-    const bookmarks = await getAllBookmarks();
-    const domainLatest = {};
-    
-    bookmarks.forEach(bookmark => {
-      if (!domainLatest[bookmark.domain] || bookmark.dateAdded > domainLatest[bookmark.domain].dateAdded) {
-        domainLatest[bookmark.domain] = {
-          domain: bookmark.domain,
-          dateAdded: bookmark.dateAdded,
-          count: 0
-        };
-      }
-    });
-
-    // Count bookmarks per domain
-    bookmarks.forEach(bookmark => {
-      domainLatest[bookmark.domain].count++;
-    });
-    
-    return Object.values(domainLatest)
-      .sort((a, b) => b.dateAdded - a.dateAdded);
-  } catch (error) {
-    console.error('Error getting domains by recency:', error);
-    return [];
-  }
+  const analytics = await getConsolidatedDomainAnalytics();
+  return analytics.byRecency;
 }
 
 // Get domains sorted by bookmark count (most bookmarks first)
 export async function getDomainsByCount() {
+  const analytics = await getConsolidatedDomainAnalytics();
+  return analytics.byCount;
+}
+
+// Consolidated domain analytics - single pass through all bookmarks
+export async function getConsolidatedDomainAnalytics() {
   try {
     const bookmarks = await getAllBookmarks();
-    const domainCount = {};
-    const domainLatest = {};
+    const domainData = {};
     
+    // Single pass to collect all domain data
     bookmarks.forEach(bookmark => {
-      domainCount[bookmark.domain] = (domainCount[bookmark.domain] || 0) + 1;
-      if (!domainLatest[bookmark.domain] || bookmark.dateAdded > domainLatest[bookmark.domain]) {
-        domainLatest[bookmark.domain] = bookmark.dateAdded;
+      if (!domainData[bookmark.domain]) {
+        domainData[bookmark.domain] = {
+          domain: bookmark.domain,
+          count: 0,
+          latestDate: 0,
+          oldestDate: Infinity
+        };
+      }
+      
+      const data = domainData[bookmark.domain];
+      data.count++;
+      if (bookmark.dateAdded > data.latestDate) {
+        data.latestDate = bookmark.dateAdded;
+      }
+      if (bookmark.dateAdded < data.oldestDate) {
+        data.oldestDate = bookmark.dateAdded;
       }
     });
     
-    return Object.entries(domainCount)
-      .map(([domain, count]) => ({
-        domain,
-        count,
-        latestDate: domainLatest[domain]
-      }))
-      .sort((a, b) => b.count - a.count);
+    const domainArray = Object.values(domainData);
+    const totalBookmarks = bookmarks.length;
+    
+    // Add percentage to each domain
+    domainArray.forEach(d => {
+      d.percentage = totalBookmarks > 0 ? Math.round((d.count / totalBookmarks) * 100) : 0;
+      d.dateAdded = d.latestDate; // For backward compatibility
+    });
+    
+    return {
+      byRecency: [...domainArray].sort((a, b) => b.latestDate - a.latestDate),
+      byCount: [...domainArray].sort((a, b) => b.count - a.count),
+      top10: [...domainArray].sort((a, b) => b.count - a.count).slice(0, 10),
+      totalDomains: domainArray.length,
+      totalBookmarks
+    };
   } catch (error) {
-    console.error('Error getting domains by count:', error);
-    return [];
+    console.error('Error getting consolidated domain analytics:', error);
+    return { byRecency: [], byCount: [], top10: [], totalDomains: 0, totalBookmarks: 0 };
   }
 }
 
@@ -347,6 +432,9 @@ export async function deleteBookmark(bookmarkId) {
     const bookmarks = result.bookmarks || [];
     const updatedBookmarks = bookmarks.filter(b => b.id !== bookmarkId);
     await chrome.storage.local.set({ bookmarks: updatedBookmarks });
+    
+    // Invalidate cache
+    invalidateCache();
     
     return true;
   } catch (error) {
@@ -375,6 +463,9 @@ export async function deleteBookmarks(bookmarkIds) {
     const bookmarks = result.bookmarks || [];
     const updatedBookmarks = bookmarks.filter(b => !bookmarkIds.includes(b.id));
     await chrome.storage.local.set({ bookmarks: updatedBookmarks });
+    
+    // Invalidate cache
+    invalidateCache();
     
     return {
       success: bookmarkIds.length - errors.length,
@@ -689,5 +780,117 @@ export async function getDomainDistribution() {
   } catch (error) {
     console.error('Error getting domain distribution:', error);
     return [];
+  }
+}
+
+// Dead Link Checker - Check if URLs are still accessible
+// Note: Due to CORS restrictions, this uses a heuristic approach
+export async function checkDeadLinks(bookmarkIds = null, batchSize = 10) {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const toCheck = bookmarkIds 
+      ? bookmarks.filter(b => bookmarkIds.includes(b.id))
+      : bookmarks.filter(b => b.url.startsWith('http'));
+    
+    const results = {
+      checked: 0,
+      alive: [],
+      dead: [],
+      errors: [],
+      inProgress: false
+    };
+    
+    // Check links in batches to avoid overwhelming the browser
+    for (let i = 0; i < Math.min(toCheck.length, batchSize); i++) {
+      const bookmark = toCheck[i];
+      results.checked++;
+      
+      try {
+        // Use fetch with mode: 'no-cors' to check if the resource exists
+        // This won't give us the actual status code but will tell us if the request fails
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        await fetch(bookmark.url, {
+          method: 'HEAD',
+          mode: 'no-cors',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        results.alive.push(bookmark);
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          results.errors.push({ bookmark, reason: 'timeout' });
+        } else {
+          results.dead.push({ bookmark, reason: error.message });
+        }
+      }
+    }
+    
+    return {
+      ...results,
+      total: toCheck.length,
+      remaining: Math.max(0, toCheck.length - batchSize)
+    };
+  } catch (error) {
+    console.error('Error checking dead links:', error);
+    return { checked: 0, alive: [], dead: [], errors: [], total: 0, remaining: 0 };
+  }
+}
+
+// Export bookmarks to JSON
+export async function exportBookmarks() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    return {
+      exportDate: new Date().toISOString(),
+      version: '1.0',
+      totalBookmarks: bookmarks.length,
+      bookmarks: bookmarks
+    };
+  } catch (error) {
+    console.error('Error exporting bookmarks:', error);
+    throw error;
+  }
+}
+
+// Get quick statistics about bookmarks
+export async function getQuickStats() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const duplicates = await findDuplicates();
+    const uncategorized = await findUncategorizedBookmarks();
+    const malformed = await findMalformedUrls();
+    const domainAnalytics = await getConsolidatedDomainAnalytics();
+    
+    const now = Date.now();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    const oneMonth = 30 * 24 * 60 * 60 * 1000;
+    
+    return {
+      total: bookmarks.length,
+      duplicateGroups: duplicates.length,
+      uncategorized: uncategorized.length,
+      malformed: malformed.length,
+      uniqueDomains: domainAnalytics.totalDomains,
+      addedThisWeek: bookmarks.filter(b => now - b.dateAdded < oneWeek).length,
+      addedThisMonth: bookmarks.filter(b => now - b.dateAdded < oneMonth).length,
+      oldestBookmark: bookmarks.reduce((oldest, b) => b.dateAdded < oldest ? b.dateAdded : oldest, Date.now()),
+      newestBookmark: bookmarks.reduce((newest, b) => b.dateAdded > newest ? b.dateAdded : newest, 0)
+    };
+  } catch (error) {
+    console.error('Error getting quick stats:', error);
+    return {
+      total: 0,
+      duplicateGroups: 0,
+      uncategorized: 0,
+      malformed: 0,
+      uniqueDomains: 0,
+      addedThisWeek: 0,
+      addedThisMonth: 0,
+      oldestBookmark: 0,
+      newestBookmark: 0
+    };
   }
 }

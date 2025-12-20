@@ -10,6 +10,8 @@ A powerful bookmark manager Chrome extension with smart search, insights, and ma
 - **Advanced Filters**: Filter by domain, date range, or folder
 - **Popup Interface**: Quick access to bookmarks through browser action
 - **Full Dashboard**: Comprehensive view with all features
+- **Copy URL**: One-click copy bookmark URL to clipboard
+- **Sorting Options**: Sort by date (newest/oldest), title (A-Z/Z-A), or domain
 
 ### Phase 2 - Visual Analytics & Insights (Implemented)
 - **Domain Analysis**: 
@@ -28,12 +30,20 @@ A powerful bookmark manager Chrome extension with smart search, insights, and ma
   - Parameter usage frequency in bookmarked URLs
   - Protocol and subdomain analysis
 - **Activity Timeline**: Track your bookmarking activity over time
-- **Quick Stats**: Total bookmarks, duplicates, orphans, and unique domains count
+- **Quick Stats**: Total bookmarks, duplicates, uncategorized, and unique domains count
 
 ### Phase 3 - Health & Maintenance (Implemented)
-- **Duplicate Detection**: Find and remove duplicate bookmarks
-- **Orphan Finder**: Locate bookmarks without proper folder organization
-- **Malformed URL Detection**: Find bookmarks with invalid URLs
+- **Duplicate Detection**: Find and remove duplicate bookmarks (normalized URL matching)
+- **Similar Bookmark Detection**: Find bookmarks with similar titles but different URLs
+- **Dead Link Checker**: Check if bookmarked URLs are still accessible
+- **Uncategorized Finder**: Locate bookmarks in root folders without organization
+- **Malformed URL Detection**: Find bookmarks with truly invalid URLs (excluding legitimate protocols)
+- **Quick Stats Dashboard**: Overview of bookmark health metrics
+
+### Phase 4 - Data Management (New)
+- **Export Bookmarks**: Export all bookmarks to JSON format
+- **Performance Caching**: Intelligent caching reduces redundant data fetches
+- **Consolidated Analytics**: Efficient single-pass domain analytics
 
 ## Installation
 
@@ -99,8 +109,10 @@ The extension will be available on the Chrome Web Store once published.
 ## Development
 
 ### Scripts
-- `npm run build`: Build the extension for production
-- `npm run dev`: Build with file watching for development
+- `npm run build`: Build CSS and JavaScript for production
+- `npm run build:css`: Build only Tailwind CSS
+- `npm run build:js`: Build only JavaScript with Rollup
+- `npm run dev`: Build and watch for development
 
 ### File Structure
 ```
@@ -109,15 +121,24 @@ bookmark-insights/
 ├── background.js          # Service worker
 ├── popup.html            # Popup interface HTML
 ├── dashboard.html        # Dashboard HTML
+├── tailwind.config.js    # Tailwind CSS configuration
 ├── icons/               # Extension icons
 ├── public/              # Built files
+│   ├── tailwind.css    # Built Tailwind CSS
+│   ├── popup.css       # Popup component styles
+│   ├── dashboard.css   # Dashboard component styles
+│   ├── popup.js        # Built popup bundle
+│   └── dashboard.js    # Built dashboard bundle
 ├── src/                 # Source code
 │   ├── App.svelte      # Main popup component
 │   ├── Dashboard.svelte # Dashboard component
 │   ├── BookmarkCard.svelte
+│   ├── BookmarkListItem.svelte
 │   ├── SearchBar.svelte
 │   ├── Sidebar.svelte
-│   ├── database.js     # Data access layer
+│   ├── database.js     # Data access layer with caching
+│   ├── utils.js        # Shared utility functions
+│   ├── tailwind.css    # Tailwind source CSS
 │   ├── popup.js        # Popup entry point
 │   └── dashboard.js    # Dashboard entry point
 └── rollup.config.js    # Build configuration
