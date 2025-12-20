@@ -32,7 +32,9 @@ const DEFAULT_SETTINGS = {
   enrichmentEnabled: true,
   enrichmentSchedule: 'manual', // 'manual' only - user triggers enrichment
   enrichmentBatchSize: 20,
-  enrichmentRateLimit: 1000, // milliseconds between requests
+  enrichmentConcurrency: 3, // Number of parallel requests (1-10)
+  enrichmentRateLimit: 1000, // milliseconds between requests (deprecated with concurrency)
+  enrichmentFreshnessDays: 30, // Re-enrich bookmarks older than this many days (0 = always re-enrich)
   autoCategorizationEnabled: true,
   deadLinkCheckEnabled: true,
   privacyMode: false, // If true, skip enrichment entirely

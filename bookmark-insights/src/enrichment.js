@@ -79,9 +79,13 @@ export async function enrichBookmark(bookmarkId) {
       return { success: false, error: 'Not an HTTP URL', skipped: true };
     }
 
-    // Skip if already enriched (has description or category)
-    if (bookmark.description || bookmark.category) {
-      console.log(`Skipping already enriched bookmark: ${bookmark.title}`);
+    // Skip if recently enriched (based on freshness settings)
+    const settings = await getSettings();
+    const freshnessDays = settings.enrichmentFreshnessDays || 30;
+    const freshnessThreshold = Date.now() - (freshnessDays * 24 * 60 * 60 * 1000);
+    
+    if (bookmark.lastChecked && bookmark.lastChecked > freshnessThreshold) {
+      console.log(`Skipping recently enriched bookmark: ${bookmark.title} (last checked: ${new Date(bookmark.lastChecked).toLocaleDateString()})`);
       return { success: true, skipped: true, alreadyEnriched: true };
     }
 
@@ -197,10 +201,8 @@ export async function fetchPageMetadata(url) {
 
     const html = await response.text();
     
-    // Parse HTML to extract metadata
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
+    // Parse HTML using regex (service worker compatible - no DOMParser available)
+    
     // Extract comprehensive raw metadata for future analysis
     const rawMetadata = {
       meta: {},
@@ -210,11 +212,21 @@ export async function fetchPageMetadata(url) {
       other: {}
     };
 
-    // Extract all meta tags
-    doc.querySelectorAll('meta').forEach(meta => {
-      const name = meta.getAttribute('name') || meta.getAttribute('property');
-      const content = meta.getAttribute('content');
-      if (name && content) {
+    // Extract all meta tags using regex
+    const metaTagRegex = /<meta\s+([^>]*?)>/gi;
+    let metaMatch;
+    
+    while ((metaMatch = metaTagRegex.exec(html)) !== null) {
+      const metaTag = metaMatch[1];
+      
+      // Extract name/property and content attributes
+      const nameMatch = metaTag.match(/(?:name|property)=["']([^"']+)["']/i);
+      const contentMatch = metaTag.match(/content=["']([^"']+)["']/i);
+      
+      if (nameMatch && contentMatch) {
+        const name = nameMatch[1];
+        const content = contentMatch[1];
+        
         if (name.startsWith('og:')) {
           rawMetadata.openGraph[name] = content;
         } else if (name.startsWith('twitter:')) {
@@ -223,30 +235,44 @@ export async function fetchPageMetadata(url) {
           rawMetadata.meta[name] = content;
         }
       }
-    });
+    }
 
     // Extract JSON-LD structured data
-    doc.querySelectorAll('script[type="application/ld+json"]').forEach(script => {
+    const jsonLdRegex = /<script\s+type=["']application\/ld\+json["']>(.*?)<\/script>/gis;
+    let jsonLdMatch;
+    
+    while ((jsonLdMatch = jsonLdRegex.exec(html)) !== null) {
       try {
-        const data = JSON.parse(script.textContent);
+        const data = JSON.parse(jsonLdMatch[1]);
         rawMetadata.jsonLd.push(data);
       } catch (e) {
         // Ignore invalid JSON-LD
       }
-    });
+    }
 
-    // Extract other useful tags
-    const titleTag = doc.querySelector('title');
-    if (titleTag) rawMetadata.other.title = titleTag.textContent;
+    // Extract title tag
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      rawMetadata.other.title = titleMatch[1].trim();
+    }
     
-    const canonicalLink = doc.querySelector('link[rel="canonical"]');
-    if (canonicalLink) rawMetadata.other.canonical = canonicalLink.getAttribute('href');
+    // Extract canonical link
+    const canonicalMatch = html.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i) ||
+                          html.match(/<link\s+href=["']([^"']+)["']\s+rel=["']canonical["']/i);
+    if (canonicalMatch) {
+      rawMetadata.other.canonical = canonicalMatch[1];
+    }
     
-    const langAttr = doc.documentElement.getAttribute('lang');
-    if (langAttr) rawMetadata.other.language = langAttr;
+    // Extract language attribute
+    const langMatch = html.match(/<html[^>]*\slang=["']([^"']+)["']/i);
+    if (langMatch) {
+      rawMetadata.other.language = langMatch[1];
+    }
 
-    const author = doc.querySelector('meta[name="author"]');
-    if (author) rawMetadata.other.author = author.getAttribute('content');
+    // Extract author from meta tag (already captured above, but set shortcut)
+    if (rawMetadata.meta.author) {
+      rawMetadata.other.author = rawMetadata.meta.author;
+    }
 
     // Extract processed metadata for immediate use
     const metadata = {
@@ -257,41 +283,46 @@ export async function fetchPageMetadata(url) {
       rawMetadata: rawMetadata // Include comprehensive raw data
     };
 
-    // Get description from meta tags
-    const ogDescription = doc.querySelector('meta[property="og:description"]');
-    const metaDescription = doc.querySelector('meta[name="description"]');
-    const twitterDescription = doc.querySelector('meta[name="twitter:description"]');
-    
+    // Get description from meta tags (priority: og:description > meta description > twitter:description)
     metadata.description = 
-      ogDescription?.content || 
-      metaDescription?.content || 
-      twitterDescription?.content ||
+      rawMetadata.openGraph['og:description'] || 
+      rawMetadata.meta.description || 
+      rawMetadata.twitterCard['twitter:description'] ||
       null;
 
     // Get keywords from meta tags
-    const metaKeywords = doc.querySelector('meta[name="keywords"]');
-    if (metaKeywords && metaKeywords.content) {
-      metadata.keywords = metaKeywords.content
+    if (rawMetadata.meta.keywords) {
+      metadata.keywords = rawMetadata.meta.keywords
         .split(',')
         .map(k => k.trim())
         .filter(k => k.length > 0)
         .slice(0, 10); // Limit to 10 keywords
     }
 
-    // Get favicon
-    const faviconLink = doc.querySelector('link[rel="icon"]') || 
-                       doc.querySelector('link[rel="shortcut icon"]');
-    if (faviconLink) {
-      const faviconHref = faviconLink.getAttribute('href');
-      if (faviconHref) {
-        metadata.faviconUrl = new URL(faviconHref, url).href;
+    // Get favicon using regex
+    const faviconMatch = html.match(/<link\s+([^>]*rel=["'](?:icon|shortcut icon)["'][^>]*)>/i);
+    if (faviconMatch) {
+      const hrefMatch = faviconMatch[1].match(/href=["']([^"']+)["']/i);
+      if (hrefMatch) {
+        try {
+          metadata.faviconUrl = new URL(hrefMatch[1], url).href;
+        } catch (e) {
+          // Invalid URL, skip
+        }
       }
     }
 
-    // Get snippet from first paragraph or text content
-    const firstParagraph = doc.querySelector('article p, main p, p');
-    if (firstParagraph && firstParagraph.textContent) {
-      metadata.snippet = firstParagraph.textContent.trim().substring(0, 200);
+    // Get snippet from first paragraph using regex
+    const paragraphMatch = html.match(/<p[^>]*>([^<]+)</i);
+    if (paragraphMatch) {
+      metadata.snippet = paragraphMatch[1]
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .trim()
+        .substring(0, 200);
     }
 
     return metadata;
@@ -353,8 +384,8 @@ export function categorizeBookmark(bookmark, metadata = {}) {
   }
 }
 
-// Process a batch of bookmarks from the enrichment queue
-export async function processEnrichmentBatch(batchSize = 10, progressCallback = null) {
+// Process a batch of bookmarks from the enrichment queue with parallel processing
+export async function processEnrichmentBatch(batchSize = 10, progressCallback = null, concurrency = 3) {
   try {
     const settings = await getSettings();
     if (!settings.enrichmentEnabled) {
@@ -362,29 +393,34 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
       return { processed: 0, success: 0, failed: 0, skipped: 0 };
     }
 
+    // Use settings concurrency if not explicitly provided
+    const maxConcurrency = concurrency || settings.enrichmentConcurrency || 3;
+    console.log(`Using concurrency: ${maxConcurrency} parallel requests`);
+
     const batch = await getNextEnrichmentBatch(batchSize);
     if (batch.length === 0) {
       console.log('No bookmarks in enrichment queue');
       return { processed: 0, success: 0, failed: 0, skipped: 0 };
     }
 
-    console.log(`Processing ${batch.length} bookmarks from enrichment queue`);
+    console.log(`Processing ${batch.length} bookmarks from enrichment queue with ${maxConcurrency} concurrent workers`);
 
     let success = 0;
     let failed = 0;
     let skipped = 0;
-    let currentIndex = 0;
+    let completed = 0;
 
-    for (const queueItem of batch) {
+    // Process bookmarks with concurrency control
+    const processBookmark = async (queueItem, index) => {
       try {
-        currentIndex++;
         const bookmark = await import('./db.js').then(m => m.getBookmark(queueItem.bookmarkId));
         
         // Send progress update
         if (progressCallback && bookmark) {
           progressCallback({
-            current: currentIndex,
+            current: index + 1,
             total: batch.length,
+            completed: completed,
             bookmarkId: queueItem.bookmarkId,
             url: bookmark.url,
             title: bookmark.title,
@@ -392,10 +428,9 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
           });
         }
 
-        // Rate limiting
-        await sleep(settings.enrichmentRateLimit || 1000);
-
         const result = await enrichBookmark(queueItem.bookmarkId);
+        
+        // Update counters
         if (result.success) {
           if (result.alreadyEnriched || result.skipped) {
             skipped++;
@@ -409,12 +444,15 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
             failed++;
           }
         }
+        
+        completed++;
 
         // Send completion update for this bookmark
         if (progressCallback && bookmark) {
           progressCallback({
-            current: currentIndex,
+            current: index + 1,
             total: batch.length,
+            completed: completed,
             bookmarkId: queueItem.bookmarkId,
             url: bookmark.url,
             title: bookmark.title,
@@ -425,22 +463,54 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
 
         // Remove from queue regardless of success/failure
         await removeFromEnrichmentQueue(queueItem.queueId);
+        
+        return { success: true, result };
       } catch (error) {
         console.error(`Error processing bookmark ${queueItem.bookmarkId}:`, error);
         failed++;
+        completed++;
+        
         await removeFromEnrichmentQueue(queueItem.queueId);
         
         if (progressCallback) {
           progressCallback({
-            current: currentIndex,
+            current: index + 1,
             total: batch.length,
+            completed: completed,
             bookmarkId: queueItem.bookmarkId,
             status: 'error',
             error: error.message
           });
         }
+        
+        return { success: false, error: error.message };
       }
+    };
+
+    // Process with concurrency limit using a worker pool
+    const workers = [];
+    let currentIndex = 0;
+
+    const runWorker = async () => {
+      while (currentIndex < batch.length) {
+        const index = currentIndex++;
+        const queueItem = batch[index];
+        await processBookmark(queueItem, index);
+        
+        // Small delay between requests to be respectful
+        if (currentIndex < batch.length) {
+          await sleep(100); // 100ms delay between starting new requests
+        }
+      }
+    };
+
+    // Start concurrent workers
+    for (let i = 0; i < Math.min(maxConcurrency, batch.length); i++) {
+      workers.push(runWorker());
     }
+
+    // Wait for all workers to complete
+    await Promise.all(workers);
 
     console.log(`Processed ${batch.length} bookmarks: ${success} success, ${failed} failed, ${skipped} skipped`);
     return { processed: batch.length, success, failed, skipped };

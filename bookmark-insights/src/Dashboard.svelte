@@ -106,6 +106,10 @@
   let enrichmentProgress = null; // Real-time progress tracking
   let enrichmentLogs = []; // Detailed progress logs
   
+  // Enrichment configuration
+  let enrichmentBatchSize = 20;
+  let enrichmentConcurrency = 3;
+  
   // Advanced insights data
   let domainHierarchy = [];
   let staleBookmarks = [];
@@ -806,6 +810,14 @@
       if (response.success) {
         enrichmentStatus = response;
       }
+      
+      // Load enrichment settings
+      const { getSettings } = await import('./database.js');
+      const settings = await getSettings();
+      if (settings) {
+        enrichmentBatchSize = settings.enrichmentBatchSize || 20;
+        enrichmentConcurrency = settings.enrichmentConcurrency || 3;
+      }
     } catch (err) {
       console.error('Error loading enrichment status:', err);
     }
@@ -820,7 +832,8 @@
     try {
       const response = await chrome.runtime.sendMessage({ 
         action: 'runEnrichment',
-        batchSize: 20
+        batchSize: enrichmentBatchSize,
+        concurrency: enrichmentConcurrency
       });
       
       if (response.success) {
@@ -1690,18 +1703,55 @@
                 </div>
               {/if}
               
+              <!-- Enrichment Configuration -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Batch Size
+                    <span class="text-xs text-gray-500 font-normal">(how many bookmarks to process)</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    min="5" 
+                    max="100" 
+                    bind:value={enrichmentBatchSize}
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    disabled={runningEnrichment}
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Concurrency
+                    <span class="text-xs text-gray-500 font-normal">(parallel requests)</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    max="10" 
+                    bind:value={enrichmentConcurrency}
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    disabled={runningEnrichment}
+                  />
+                  <p class="text-xs text-gray-500 mt-1">
+                    Higher = faster, but more resource intensive (recommended: 3-5)
+                  </p>
+                </div>
+              </div>
+              
               <!-- Real-time Progress Display -->
               {#if enrichmentProgress && runningEnrichment}
                 <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <div class="mb-3">
                     <div class="flex justify-between items-center mb-2">
                       <span class="text-sm font-medium text-blue-900">Processing...</span>
-                      <span class="text-sm text-blue-700">{enrichmentProgress.current} / {enrichmentProgress.total}</span>
+                      <span class="text-sm text-blue-700">
+                        {enrichmentProgress.completed || enrichmentProgress.current} / {enrichmentProgress.total} completed
+                      </span>
                     </div>
                     <div class="w-full bg-blue-200 rounded-full h-2">
                       <div 
                         class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                        style="width: {(enrichmentProgress.current / enrichmentProgress.total * 100)}%"
+                        style="width: {((enrichmentProgress.completed || enrichmentProgress.current) / enrichmentProgress.total * 100)}%"
                       ></div>
                     </div>
                   </div>

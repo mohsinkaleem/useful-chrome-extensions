@@ -1,26 +1,23 @@
-# Bookmark Insight - Chrome Extension
+# Bookmark Insights - Chrome Extension
 
-A powerful, local-first bookmark intelligence system with smart search, enrichment, insights, and maintenance tools.
+A powerful, privacy-first bookmark intelligence system with smart search, enrichment, insights, and maintenance tools.
 
 ## 🚀 What's New in v2.0
 
-Version 2.0 transforms Bookmark Insight into a smart bookmark intelligence system:
+Version 2.0 transforms Bookmark Insights into a smart bookmark intelligence system:
 
-- **IndexedDB Storage** - Faster queries with Dexie.js (replaces chrome.storage.local)
-- **FlexSearch Integration** - Powerful fuzzy search with ranking and suggestions
-- **Background Enrichment** - Automatic metadata extraction from bookmarked pages
-- **Real-Time Progress Tracking** - Live progress bar and detailed enrichment logs 🆕
-- **Raw Metadata Storage** - Comprehensive JSON storage of all meta tags, Open Graph, Twitter Cards, and structured data for future AI analysis 🆕
+- **IndexedDB Storage** - Lightning-fast queries with Dexie.js
+- **FlexSearch Integration** - Fuzzy search with intelligent ranking
+- **Background Enrichment** - Metadata extraction with real-time progress tracking
+- **Raw Metadata Storage** - Comprehensive data capture for future AI analysis
+- **Parallel Processing** - Configurable concurrency (3-10x faster enrichment)
+- **Smart Re-enrichment** - Automatic freshness detection with configurable periods
 - **Dead Link Detection** - Identifies broken bookmarks automatically
 - **Auto-Categorization** - Smart categorization based on domain, URL, and content
-- **TF-IDF Similarity** - Advanced semantic matching for similar bookmarks
-- **Domain Visualization** - Hierarchical view of your bookmark domains
+- **TF-IDF Similarity** - Advanced semantic matching for duplicate and related bookmarks
+- **Domain Visualization** - Hierarchical treemap view of your bookmark domains
 - **Data Insights Dashboard** - Stale bookmarks, reading lists, expertise areas
-- **Behavioral Analytics** - Track which bookmarks you actually use
-
-> 📖 **Latest Updates:**
-> - [Enrichment Enhancements](ENRICHMENT_ENHANCEMENTS.md) - Real-time progress UI and comprehensive metadata storage
-> - [Enrichment UI Guide](ENRICHMENT_UI_GUIDE.md) - Visual guide to the new progress interface
+- **Behavioral Analytics** - Track bookmark usage patterns (opt-in only)
 
 ## Features
 
@@ -41,16 +38,15 @@ Version 2.0 transforms Bookmark Insight into a smart bookmark intelligence syste
 - **Expertise Areas**: Discover your knowledge domains based on bookmarks
 
 ### 🔧 Enrichment Pipeline
-- **Real-Time Progress Tracking**: Live progress bar, current bookmark display, and detailed logs 🆕
-- **Comprehensive Metadata Storage**: Captures all meta tags, Open Graph, Twitter Cards, and JSON-LD structured data as raw JSON for future AI analysis 🆕
-- **Manual Trigger**: Click "Run Enrichment" button when you want
-- **Smart Skipping**: Already enriched bookmarks are automatically skipped
+- **Real-Time Progress Tracking**: Live progress bar, current bookmark display, and detailed logs
+- **Comprehensive Metadata Storage**: Captures all meta tags, Open Graph, Twitter Cards, and JSON-LD as raw JSON
+- **Parallel Processing**: Configurable concurrency (1-10 workers) for 3-10x faster processing
+- **Smart Freshness Detection**: Uses `lastChecked` timestamp with configurable re-enrichment period (default: 30 days)
+- **Manual Trigger**: Click "Run Enrichment" button when you want (never automatic)
 - **Metadata Extraction**: Title, description, Open Graph tags, keywords, and complete raw metadata
 - **Auto-Categorization**: 15+ categories based on domain, URL, and content
 - **Favicon Caching**: Visual identification at a glance
-- **Rate Limiting**: Respectful 1 request/second with configurable batch size
-
-> 📖 **[See Enrichment Enhancements Documentation](ENRICHMENT_ENHANCEMENTS.md)** for details on real-time progress UI and raw metadata storage
+- **Respectful Rate Limiting**: 100ms delay between requests with batch processing
 
 ### 🏥 Health & Maintenance
 - **Dead Link Checker**: HEAD/GET requests to verify bookmark health
@@ -122,47 +118,44 @@ The extension will be available on the Chrome Web Store once published.
 
 ### Technology Stack
 - **UI Framework**: Svelte 4.0 (compiled to vanilla JavaScript)
-- **Database**: IndexedDB via Dexie.js (with chrome.storage.local fallback)
-- **Search**: FlexSearch.js for fuzzy matching and ranking
-- **Charts**: Chart.js for insights visualization
-- **Styling**: Tailwind CSS
+- **Database**: IndexedDB via Dexie.js v3.x
+- **Search**: FlexSearch.js with weighted fields
+- **Similarity**: Custom TF-IDF with cosine similarity
+- **Charts**: Chart.js 4.x
+- **Styling**: Tailwind CSS 3.x
 - **Build Tool**: Rollup with ES modules
 
 ### Architecture
-- **Background Script**: Service worker with bookmark sync, enrichment pipeline, and tab monitoring
+- **Background Script**: Service worker with bookmark sync, enrichment pipeline, and tab monitoring (opt-in)
 - **IndexedDB Schema**: bookmarks, enrichmentQueue, events, cache, settings tables
 - **Popup**: Quick access interface (384x384px)
 - **Dashboard**: Full-featured interface with Bookmarks, Insights, and Health tabs
 
-### Database Schema
+### Database Schema (v2)
 ```javascript
-// Bookmarks with enrichment fields (v2 schema)
+// Bookmarks with enrichment fields
 {
   id, url, title, domain, dateAdded, folderPath, parentId,
   description, keywords[], category, tags[],
   isAlive, lastChecked, faviconUrl, contentSnippet,
-  rawMetadata: {  // 🆕 Comprehensive metadata storage
-    meta: {},      // All meta tags
-    openGraph: {}, // og:* tags
-    twitterCard: {}, // twitter:* tags
-    jsonLd: [],    // Structured data
-    other: {}      // canonical, language, etc.
-  },
+  rawMetadata: { meta, openGraph, twitterCard, jsonLd, other },
   lastAccessed, accessCount
 }
 
 // Supporting tables
 enrichmentQueue: { queueId, bookmarkId, addedAt, priority }
-events: { eventId, bookmarkId, type, timestamp }
+events: { eventId, bookmarkId, type, timestamp, ...metadata }
 cache: { key, value, timestamp, ttl }
-settings: { key, ...preferences }
+settings: { key, enrichmentEnabled, enrichmentBatchSize, enrichmentConcurrency, enrichmentFreshnessDays, ... }
 ```
 
+> 📖 **[See Technical Documentation](TECHNICAL_DOCUMENTATION.md)** for complete API reference, architecture details, and implementation guide
+
 ### Performance
-- **Indexed queries** on domain, category, dateAdded, isAlive
-- **Paginated loading** with virtual scrolling
-- **Cached search index** persisted to IndexedDB
-- **Rate-limited enrichment** (1 req/sec configurable)
+- **Parallel enrichment** with worker pools (3-10x faster)
+- **Indexed queries** on domain, category, dateAdded, isAlive, lastChecked
+- **Cached search index** with 5-minute TTL
+- **Freshness-based re-enrichment** (configurable 0-365 days)
 - **Scalable** to 5000+ bookmarks
 
 ## Development
@@ -233,26 +226,25 @@ This extension:
 Default settings (customizable in future settings UI):
 ```javascript
 {
-  enrichmentEnabled: true,      // Enable enrichment feature
-  enrichmentSchedule: 'manual', // Manual only - no automatic scheduling
-  enrichmentBatchSize: 20,      // Bookmarks per batch
-  enrichmentRateLimit: 1000,    // ms between requests
+  enrichmentEnabled: true,      //Health tab):
+```javascript
+{
+  enrichmentEnabled: true,           // Enable enrichment feature
+  enrichmentSchedule: 'manual',      // Manual only - no automatic scheduling
+  enrichmentBatchSize: 20,           // Bookmarks per batch (5-100)
+  enrichmentConcurrency: 3,          // Parallel workers (1-10)
+  enrichmentFreshnessDays: 30,       // Re-enrich after N days (0 = always)
   autoCategorizationEnabled: true,
   deadLinkCheckEnabled: true,
-  privacyMode: false,           // Disable all enrichment
-  trackBrowsingBehavior: false  // OFF by default - no tab monitoring
+  privacyMode: false,                // Disable all enrichment
+  trackBrowsingBehavior: false       // OFF by default - no tab monitoring
 }
 ```
 
 ### Privacy Controls
-- **Behavior Tracking**: Disabled by default. Your browsing is NOT monitored unless you explicitly enable `trackBrowsingBehavior`.
-- **Enrichment**: Manual trigger only - runs when YOU click the button, not automatically in the background.
-
-## Documentation
-
-- **[Enrichment Enhancements](ENRICHMENT_ENHANCEMENTS.md)** - Real-time progress tracking and raw metadata storage
-- **[Enrichment UI Guide](ENRICHMENT_UI_GUIDE.md)** - Visual guide to the progress interface
-- **[V2 Release Notes](V2_RELEASE_NOTES.md)** - Complete changelog for version 2.0
+- **Behavior Tracking**: Disabled by default. Your browsing is NOT monitored unless you explicitly enable it.
+- **ETechnical Documentation](TECHNICAL_DOCUMENTATION.md)** - Complete architecture, API reference, and implementation guide
+- **[Troubleshooting Guides](V2_RELEASE_NOTES.md)** - Complete changelog for version 2.0
 - **[Implementation Progress](IMPLEMENTATION_PROGRESS.md)** - Development status and roadmap
 - **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
 

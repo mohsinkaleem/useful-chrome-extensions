@@ -355,7 +355,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     };
 
-    processEnrichmentBatch(request.batchSize || 10, progressCallback).then((result) => {
+    processEnrichmentBatch(
+      request.batchSize || 10, 
+      progressCallback,
+      request.concurrency || 3
+    ).then((result) => {
       sendResponse({ success: true, result });
     }).catch((error) => {
       sendResponse({ success: false, error: error.message });
