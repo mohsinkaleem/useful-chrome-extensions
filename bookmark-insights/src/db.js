@@ -15,6 +15,18 @@ db.version(1).stores({
   settings: 'key'
 });
 
+// Schema version 2: Add rawMetadata field for comprehensive data storage
+db.version(2).stores({
+  bookmarks: 'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId',
+  enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
+  events: '++eventId, bookmarkId, type, timestamp',
+  cache: 'key',
+  settings: 'key'
+}).upgrade(tx => {
+  console.log('Upgrading database to version 2 - adding rawMetadata support');
+  // No need to modify existing records, new field will be added on enrichment
+});
+
 // Define default settings
 const DEFAULT_SETTINGS = {
   enrichmentEnabled: true,

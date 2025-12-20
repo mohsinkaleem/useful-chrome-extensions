@@ -113,6 +113,7 @@ export async function enrichBookmark(bookmarkId) {
     bookmark.lastChecked = Date.now();
     bookmark.faviconUrl = metadata.faviconUrl || bookmark.faviconUrl;
     bookmark.contentSnippet = metadata.snippet || bookmark.contentSnippet;
+    bookmark.rawMetadata = metadata.rawMetadata || bookmark.rawMetadata; // Store comprehensive metadata
 
     await upsertBookmark(bookmark);
     await logEvent(bookmarkId, 'enrichment', { 
@@ -200,12 +201,60 @@ export async function fetchPageMetadata(url) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
 
-    // Extract metadata
+    // Extract comprehensive raw metadata for future analysis
+    const rawMetadata = {
+      meta: {},
+      openGraph: {},
+      twitterCard: {},
+      jsonLd: [],
+      other: {}
+    };
+
+    // Extract all meta tags
+    doc.querySelectorAll('meta').forEach(meta => {
+      const name = meta.getAttribute('name') || meta.getAttribute('property');
+      const content = meta.getAttribute('content');
+      if (name && content) {
+        if (name.startsWith('og:')) {
+          rawMetadata.openGraph[name] = content;
+        } else if (name.startsWith('twitter:')) {
+          rawMetadata.twitterCard[name] = content;
+        } else {
+          rawMetadata.meta[name] = content;
+        }
+      }
+    });
+
+    // Extract JSON-LD structured data
+    doc.querySelectorAll('script[type="application/ld+json"]').forEach(script => {
+      try {
+        const data = JSON.parse(script.textContent);
+        rawMetadata.jsonLd.push(data);
+      } catch (e) {
+        // Ignore invalid JSON-LD
+      }
+    });
+
+    // Extract other useful tags
+    const titleTag = doc.querySelector('title');
+    if (titleTag) rawMetadata.other.title = titleTag.textContent;
+    
+    const canonicalLink = doc.querySelector('link[rel="canonical"]');
+    if (canonicalLink) rawMetadata.other.canonical = canonicalLink.getAttribute('href');
+    
+    const langAttr = doc.documentElement.getAttribute('lang');
+    if (langAttr) rawMetadata.other.language = langAttr;
+
+    const author = doc.querySelector('meta[name="author"]');
+    if (author) rawMetadata.other.author = author.getAttribute('content');
+
+    // Extract processed metadata for immediate use
     const metadata = {
       description: null,
       keywords: [],
       faviconUrl: null,
-      snippet: null
+      snippet: null,
+      rawMetadata: rawMetadata // Include comprehensive raw data
     };
 
     // Get description from meta tags
@@ -305,7 +354,7 @@ export function categorizeBookmark(bookmark, metadata = {}) {
 }
 
 // Process a batch of bookmarks from the enrichment queue
-export async function processEnrichmentBatch(batchSize = 10) {
+export async function processEnrichmentBatch(batchSize = 10, progressCallback = null) {
   try {
     const settings = await getSettings();
     if (!settings.enrichmentEnabled) {
@@ -324,9 +373,25 @@ export async function processEnrichmentBatch(batchSize = 10) {
     let success = 0;
     let failed = 0;
     let skipped = 0;
+    let currentIndex = 0;
 
     for (const queueItem of batch) {
       try {
+        currentIndex++;
+        const bookmark = await import('./db.js').then(m => m.getBookmark(queueItem.bookmarkId));
+        
+        // Send progress update
+        if (progressCallback && bookmark) {
+          progressCallback({
+            current: currentIndex,
+            total: batch.length,
+            bookmarkId: queueItem.bookmarkId,
+            url: bookmark.url,
+            title: bookmark.title,
+            status: 'processing'
+          });
+        }
+
         // Rate limiting
         await sleep(settings.enrichmentRateLimit || 1000);
 
@@ -345,12 +410,35 @@ export async function processEnrichmentBatch(batchSize = 10) {
           }
         }
 
+        // Send completion update for this bookmark
+        if (progressCallback && bookmark) {
+          progressCallback({
+            current: currentIndex,
+            total: batch.length,
+            bookmarkId: queueItem.bookmarkId,
+            url: bookmark.url,
+            title: bookmark.title,
+            status: result.success ? 'completed' : 'failed',
+            result: result
+          });
+        }
+
         // Remove from queue regardless of success/failure
         await removeFromEnrichmentQueue(queueItem.queueId);
       } catch (error) {
         console.error(`Error processing bookmark ${queueItem.bookmarkId}:`, error);
         failed++;
         await removeFromEnrichmentQueue(queueItem.queueId);
+        
+        if (progressCallback) {
+          progressCallback({
+            current: currentIndex,
+            total: batch.length,
+            bookmarkId: queueItem.bookmarkId,
+            status: 'error',
+            error: error.message
+          });
+        }
       }
     }
 

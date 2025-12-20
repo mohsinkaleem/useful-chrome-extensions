@@ -344,7 +344,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'runEnrichment') {
-    processEnrichmentBatch(request.batchSize || 10).then((result) => {
+    // Create progress callback to send updates to the requesting tab
+    const progressCallback = (progress) => {
+      // Send progress update to all dashboard tabs
+      chrome.runtime.sendMessage({
+        action: 'enrichmentProgress',
+        progress: progress
+      }).catch(() => {
+        // Ignore errors if no listeners
+      });
+    };
+
+    processEnrichmentBatch(request.batchSize || 10, progressCallback).then((result) => {
       sendResponse({ success: true, result });
     }).catch((error) => {
       sendResponse({ success: false, error: error.message });

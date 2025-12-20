@@ -103,6 +103,8 @@
   let enrichmentStatus = null;
   let runningEnrichment = false;
   let enrichmentResult = null;
+  let enrichmentProgress = null; // Real-time progress tracking
+  let enrichmentLogs = []; // Detailed progress logs
   
   // Advanced insights data
   let domainHierarchy = [];
@@ -148,6 +150,25 @@
     } finally {
       loading = false;
     }
+
+    // Listen for enrichment progress updates
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.action === 'enrichmentProgress' && message.progress) {
+        enrichmentProgress = message.progress;
+        
+        // Add to logs for detailed tracking
+        const logEntry = {
+          timestamp: Date.now(),
+          ...message.progress
+        };
+        enrichmentLogs = [...enrichmentLogs, logEntry];
+        
+        // Keep only last 100 log entries
+        if (enrichmentLogs.length > 100) {
+          enrichmentLogs = enrichmentLogs.slice(-100);
+        }
+      }
+    });
   });
   
   async function loadBookmarksPaginated(page = 0, append = false) {
@@ -793,6 +814,8 @@
   async function handleRunEnrichment() {
     runningEnrichment = true;
     enrichmentResult = null;
+    enrichmentProgress = null;
+    enrichmentLogs = [];
     
     try {
       const response = await chrome.runtime.sendMessage({ 
@@ -1667,6 +1690,35 @@
                 </div>
               {/if}
               
+              <!-- Real-time Progress Display -->
+              {#if enrichmentProgress && runningEnrichment}
+                <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div class="mb-3">
+                    <div class="flex justify-between items-center mb-2">
+                      <span class="text-sm font-medium text-blue-900">Processing...</span>
+                      <span class="text-sm text-blue-700">{enrichmentProgress.current} / {enrichmentProgress.total}</span>
+                    </div>
+                    <div class="w-full bg-blue-200 rounded-full h-2">
+                      <div 
+                        class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                        style="width: {(enrichmentProgress.current / enrichmentProgress.total * 100)}%"
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  {#if enrichmentProgress.title}
+                    <div class="text-xs text-blue-800 space-y-1">
+                      <div class="font-medium truncate" title="{enrichmentProgress.url}">
+                        {enrichmentProgress.status === 'processing' ? '⏳' : enrichmentProgress.status === 'completed' ? '✓' : '✗'} 
+                        {enrichmentProgress.title}
+                      </div>
+                      <div class="text-blue-600 truncate text-[10px]">{enrichmentProgress.url}</div>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+
+              <!-- Results Display -->
               {#if enrichmentResult}
                 <div class="mt-4 p-4 rounded-lg {enrichmentResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}">
                   {#if enrichmentResult.error}
@@ -1687,7 +1739,24 @@
                     </div>
                   {/if}
                 </div>
-              {:else}
+              {/if}
+
+              <!-- Progress Logs (collapsible) -->
+              {#if enrichmentLogs.length > 0}
+                <details class="mt-4">
+                  <summary class="cursor-pointer text-sm text-gray-600 hover:text-gray-800 font-medium">View Detailed Logs ({enrichmentLogs.length})</summary>
+                  <div class="mt-2 max-h-64 overflow-y-auto bg-gray-50 rounded p-3 space-y-1 text-xs font-mono">
+                    {#each enrichmentLogs.slice().reverse() as log}
+                      <div class="{log.status === 'completed' ? 'text-green-700' : log.status === 'failed' || log.status === 'error' ? 'text-red-700' : 'text-gray-600'}">
+                        <span class="text-gray-400">{new Date(log.timestamp).toLocaleTimeString()}</span> 
+                        [{log.current}/{log.total}] 
+                        {log.status === 'completed' ? '✓' : log.status === 'failed' || log.status === 'error' ? '✗' : '⏳'} 
+                        <span class="truncate inline-block max-w-md" title="{log.url}">{log.title || log.url}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </details>
+              {:else if !enrichmentResult}
                 <p class="text-gray-500 text-sm">
                   Click "Run Enrichment" to fetch metadata for bookmarks that haven't been enriched yet. 
                   Only new bookmarks without descriptions or categories will be processed.

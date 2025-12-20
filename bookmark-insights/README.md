@@ -9,12 +9,18 @@ Version 2.0 transforms Bookmark Insight into a smart bookmark intelligence syste
 - **IndexedDB Storage** - Faster queries with Dexie.js (replaces chrome.storage.local)
 - **FlexSearch Integration** - Powerful fuzzy search with ranking and suggestions
 - **Background Enrichment** - Automatic metadata extraction from bookmarked pages
+- **Real-Time Progress Tracking** - Live progress bar and detailed enrichment logs 🆕
+- **Raw Metadata Storage** - Comprehensive JSON storage of all meta tags, Open Graph, Twitter Cards, and structured data for future AI analysis 🆕
 - **Dead Link Detection** - Identifies broken bookmarks automatically
 - **Auto-Categorization** - Smart categorization based on domain, URL, and content
 - **TF-IDF Similarity** - Advanced semantic matching for similar bookmarks
 - **Domain Visualization** - Hierarchical view of your bookmark domains
 - **Data Insights Dashboard** - Stale bookmarks, reading lists, expertise areas
 - **Behavioral Analytics** - Track which bookmarks you actually use
+
+> 📖 **Latest Updates:**
+> - [Enrichment Enhancements](ENRICHMENT_ENHANCEMENTS.md) - Real-time progress UI and comprehensive metadata storage
+> - [Enrichment UI Guide](ENRICHMENT_UI_GUIDE.md) - Visual guide to the new progress interface
 
 ## Features
 
@@ -35,12 +41,16 @@ Version 2.0 transforms Bookmark Insight into a smart bookmark intelligence syste
 - **Expertise Areas**: Discover your knowledge domains based on bookmarks
 
 ### 🔧 Enrichment Pipeline
+- **Real-Time Progress Tracking**: Live progress bar, current bookmark display, and detailed logs 🆕
+- **Comprehensive Metadata Storage**: Captures all meta tags, Open Graph, Twitter Cards, and JSON-LD structured data as raw JSON for future AI analysis 🆕
 - **Manual Trigger**: Click "Run Enrichment" button when you want
 - **Smart Skipping**: Already enriched bookmarks are automatically skipped
-- **Metadata Extraction**: Title, description, Open Graph tags, keywords
+- **Metadata Extraction**: Title, description, Open Graph tags, keywords, and complete raw metadata
 - **Auto-Categorization**: 15+ categories based on domain, URL, and content
 - **Favicon Caching**: Visual identification at a glance
 - **Rate Limiting**: Respectful 1 request/second with configurable batch size
+
+> 📖 **[See Enrichment Enhancements Documentation](ENRICHMENT_ENHANCEMENTS.md)** for details on real-time progress UI and raw metadata storage
 
 ### 🏥 Health & Maintenance
 - **Dead Link Checker**: HEAD/GET requests to verify bookmark health
@@ -98,6 +108,10 @@ The extension will be available on the Chrome Web Store once published.
 - **Bookmarks Tab**: Browse and search all bookmarks with advanced filters
 - **Insights Tab**: View statistics and charts about your bookmarking habits
 - **Health Tab**: Find and fix issues with your bookmark collection
+  - **Enrichment**: Real-time progress tracking with live updates 🆕
+  - **Dead Link Checker**: Verify bookmark health
+  - **Duplicates & Similar**: Find and manage duplicate bookmarks
+  - **Maintenance**: Clean up malformed URLs and orphaned bookmarks
 
 ### Filters
 - **Date Filters**: This Week, This Month, This Year
@@ -122,11 +136,18 @@ The extension will be available on the Chrome Web Store once published.
 
 ### Database Schema
 ```javascript
-// Bookmarks with enrichment fields
+// Bookmarks with enrichment fields (v2 schema)
 {
   id, url, title, domain, dateAdded, folderPath, parentId,
   description, keywords[], category, tags[],
   isAlive, lastChecked, faviconUrl, contentSnippet,
+  rawMetadata: {  // 🆕 Comprehensive metadata storage
+    meta: {},      // All meta tags
+    openGraph: {}, // og:* tags
+    twitterCard: {}, // twitter:* tags
+    jsonLd: [],    // Structured data
+    other: {}      // canonical, language, etc.
+  },
   lastAccessed, accessCount
 }
 
@@ -227,14 +248,24 @@ Default settings (customizable in future settings UI):
 - **Behavior Tracking**: Disabled by default. Your browsing is NOT monitored unless you explicitly enable `trackBrowsingBehavior`.
 - **Enrichment**: Manual trigger only - runs when YOU click the button, not automatically in the background.
 
+## Documentation
+
+- **[Enrichment Enhancements](ENRICHMENT_ENHANCEMENTS.md)** - Real-time progress tracking and raw metadata storage
+- **[Enrichment UI Guide](ENRICHMENT_UI_GUIDE.md)** - Visual guide to the progress interface
+- **[V2 Release Notes](V2_RELEASE_NOTES.md)** - Complete changelog for version 2.0
+- **[Implementation Progress](IMPLEMENTATION_PROGRESS.md)** - Development status and roadmap
+- **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
+
 ## Roadmap
 
 Future enhancements:
 - Settings UI for enrichment configuration
+- AI-powered categorization using raw metadata
 - Backup/restore via dexie-export-import
 - Advanced search with regex support
 - Custom tagging system
 - Chrome sync for settings
+- Content change detection and notifications
 
 ## Contributing
 
