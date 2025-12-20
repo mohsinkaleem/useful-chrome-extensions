@@ -1,7 +1,8 @@
 // Enhanced similarity detection using TF-IDF and cosine similarity
 // Provides smarter duplicate and similar bookmark detection
+// Now with on-demand computation and caching for better performance
 
-import { getAllBookmarks, getCache, setCache } from './db.js';
+import { getAllBookmarks, getCache, setCache, getCachedMetric, CACHE_DURATIONS, getBookmark, getBookmarksByDomain, getBookmarksByCategory, storeSimilarities, getStoredSimilarities } from './db.js';
 
 // Calculate TF-IDF scores for a document
 function calculateTFIDF(documents) {
@@ -348,3 +349,206 @@ export async function findRelatedBookmarks(bookmarkId, limit = 10) {
     return [];
   }
 }
+
+// =============================================
+// Improved On-Demand Similarity Computation
+// =============================================
+
+/**
+ * Find candidates for similarity comparison using pre-filtering
+ * This dramatically reduces O(n²) complexity by only comparing relevant bookmarks
+ * @param {Object} bookmark - Target bookmark
+ * @returns {Promise<Array>} Array of candidate bookmarks
+ */
+async function findSimilarCandidates(bookmark) {
+  const candidates = new Map();
+  
+  // Step 1: Same domain bookmarks (most likely similar) - limit 50
+  try {
+    const sameDomain = await getBookmarksByDomain(bookmark.domain);
+    sameDomain
+      .filter(b => b.id !== bookmark.id)
+      .slice(0, 50)
+      .forEach(b => candidates.set(b.id, b));
+  } catch (e) {
+    // Domain query might not be available
+  }
+  
+  // Step 2: Same category bookmarks - limit 30
+  if (bookmark.category) {
+    try {
+      const sameCategory = await getBookmarksByCategory(bookmark.category);
+      sameCategory
+        .filter(b => b.id !== bookmark.id)
+        .slice(0, 30)
+        .forEach(b => candidates.set(b.id, b));
+    } catch (e) {
+      // Category query might not be available
+    }
+  }
+  
+  // Step 3: If we have keywords, look for bookmarks with matching keywords
+  if (bookmark.keywords && bookmark.keywords.length > 0) {
+    const allBookmarks = await getAllBookmarks();
+    const keywordSet = new Set(bookmark.keywords.map(k => k.toLowerCase()));
+    
+    allBookmarks
+      .filter(b => 
+        b.id !== bookmark.id && 
+        b.keywords && 
+        b.keywords.some(k => keywordSet.has(k.toLowerCase()))
+      )
+      .slice(0, 20)
+      .forEach(b => candidates.set(b.id, b));
+  }
+  
+  return Array.from(candidates.values());
+}
+
+/**
+ * Compute similarity for a single bookmark and store results
+ * Call this after enrichment to pre-compute similarities
+ * @param {string} bookmarkId - Bookmark ID
+ * @param {number} topN - Number of similar bookmarks to store
+ * @returns {Promise<Array>} Array of similar bookmarks
+ */
+export async function computeSimilarityForBookmark(bookmarkId, topN = 10) {
+  try {
+    const bookmark = await getBookmark(bookmarkId);
+    if (!bookmark) return [];
+    
+    // Get candidates (pre-filtered for performance)
+    const candidates = await findSimilarCandidates(bookmark);
+    
+    if (candidates.length === 0) {
+      await storeSimilarities(bookmarkId, []);
+      return [];
+    }
+    
+    // Prepare documents
+    const targetDoc = { id: bookmark.id, bookmark, words: extractWords(bookmark) };
+    
+    if (targetDoc.words.length === 0) {
+      await storeSimilarities(bookmarkId, []);
+      return [];
+    }
+    
+    const candidateDocs = candidates
+      .map(b => ({ id: b.id, bookmark: b, words: extractWords(b) }))
+      .filter(doc => doc.words.length > 0);
+    
+    // Calculate TF-IDF
+    const allDocs = [targetDoc, ...candidateDocs];
+    const tfidfVectors = calculateTFIDF(allDocs);
+    const targetVector = tfidfVectors[0];
+    
+    // Compute similarities
+    const similarities = candidateDocs.map((doc, index) => {
+      const score = cosineSimilarity(targetVector, tfidfVectors[index + 1]);
+      return {
+        bookmark2Id: doc.id,
+        score,
+        sameDomain: doc.bookmark.domain === bookmark.domain,
+        sameCategory: doc.bookmark.category === bookmark.category
+      };
+    });
+    
+    // Sort and get top N
+    const topSimilar = similarities
+      .filter(s => s.score > 0.1)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN);
+    
+    // Store results
+    await storeSimilarities(bookmarkId, topSimilar);
+    
+    return topSimilar;
+  } catch (error) {
+    console.error('Error computing similarity for bookmark:', error);
+    return [];
+  }
+}
+
+/**
+ * Get similar bookmarks with caching
+ * First checks stored similarities, computes if needed
+ * @param {string} bookmarkId - Bookmark ID
+ * @returns {Promise<Array>} Array of similar bookmarks with details
+ */
+export async function getSimilarBookmarksWithCache(bookmarkId) {
+  try {
+    // Check for stored similarities
+    const stored = await getStoredSimilarities(bookmarkId);
+    
+    if (stored && stored.length > 0) {
+      // Check freshness (24 hours)
+      const isStale = stored.some(s => 
+        !s.computedAt || (Date.now() - s.computedAt > CACHE_DURATIONS.similarities)
+      );
+      
+      if (!isStale) {
+        // Enrich with bookmark details
+        const allBookmarks = await getAllBookmarks();
+        const bookmarkMap = new Map(allBookmarks.map(b => [b.id, b]));
+        
+        return stored.map(s => ({
+          bookmark: bookmarkMap.get(s.bookmark2Id),
+          score: s.score,
+          sameDomain: s.sameDomain,
+          sameCategory: s.sameCategory
+        })).filter(s => s.bookmark);
+      }
+    }
+    
+    // Compute fresh similarities
+    const computed = await computeSimilarityForBookmark(bookmarkId);
+    
+    // Enrich with bookmark details
+    const allBookmarks = await getAllBookmarks();
+    const bookmarkMap = new Map(allBookmarks.map(b => [b.id, b]));
+    
+    return computed.map(s => ({
+      bookmark: bookmarkMap.get(s.bookmark2Id),
+      score: s.score,
+      sameDomain: s.sameDomain,
+      sameCategory: s.sameCategory
+    })).filter(s => s.bookmark);
+  } catch (error) {
+    console.error('Error getting similar bookmarks with cache:', error);
+    return [];
+  }
+}
+
+/**
+ * Batch compute similarities for all enriched bookmarks
+ * Run this as a background task after bulk enrichment
+ * @param {Function} progressCallback - Progress callback function
+ */
+export async function batchComputeSimilarities(progressCallback = null) {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const enrichedBookmarks = bookmarks.filter(b => b.lastChecked);
+    
+    let completed = 0;
+    const total = enrichedBookmarks.length;
+    
+    for (const bookmark of enrichedBookmarks) {
+      await computeSimilarityForBookmark(bookmark.id);
+      completed++;
+      
+      if (progressCallback && completed % 10 === 0) {
+        progressCallback({
+          completed,
+          total,
+          percentage: Math.round((completed / total) * 100)
+        });
+      }
+    }
+    
+    return { completed, total };
+  } catch (error) {
+    console.error('Error batch computing similarities:', error);
+    return { completed: 0, total: 0, error };
+  }
+}
+

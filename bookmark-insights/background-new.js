@@ -2,7 +2,7 @@
 // This uses Chrome's service worker pattern for Manifest V3
 // Now enhanced with IndexedDB storage via Dexie.js and enrichment pipeline
 
-import { db, initializeDatabase, bulkUpsertBookmarks, upsertBookmark, deleteBookmark as dbDeleteBookmark, addToEnrichmentQueue, logEvent, getSettings } from './src/db.js';
+import { db, initializeDatabase, bulkUpsertBookmarks, smartMergeBookmarks, upsertBookmark, deleteBookmark as dbDeleteBookmark, addToEnrichmentQueue, logEvent, getSettings, invalidateMetricCaches } from './src/db.js';
 import { processEnrichmentBatch } from './src/enrichment.js';
 import { addToIndex, updateInIndex, removeFromIndex, rebuildSearchIndex } from './src/search.js';
 
@@ -103,8 +103,8 @@ async function syncBookmarks() {
     
     flattenBookmarks(bookmarkTree);
     
-    // Store bookmarks in IndexedDB
-    await bulkUpsertBookmarks(flatBookmarks);
+    // Use smart merge to preserve enrichment data
+    await smartMergeBookmarks(flatBookmarks);
     
     // Keep chrome.storage.local updated for backward compatibility during transition
     await chrome.storage.local.set({ 
@@ -114,17 +114,31 @@ async function syncBookmarks() {
     
     console.log(`Synced ${flatBookmarks.length} bookmarks`);
     
-    // Add new bookmarks to enrichment queue
+    // Add ONLY genuinely new/unenriched bookmarks to enrichment queue
+    // We must check our IndexedDB, not the Chrome data which doesn't have enrichment info
     const settings = await import('./src/db.js').then(m => m.getSettings());
     if (settings.enrichmentEnabled) {
-      console.log('Queueing new bookmarks for enrichment...');
+      const { getAllBookmarks, clearEnrichmentQueue } = await import('./src/db.js');
+      const storedBookmarks = await getAllBookmarks();
+      const enrichedIds = new Set(
+        storedBookmarks
+          .filter(b => b.lastChecked || b.description || b.category)
+          .map(b => b.id)
+      );
+      
+      // Clear existing queue and only add truly unenriched bookmarks
+      await clearEnrichmentQueue();
+      
+      let queuedCount = 0;
       for (const bookmark of flatBookmarks) {
-        // Only queue http/https bookmarks without existing enrichment data
+        // Only queue http/https bookmarks that haven't been enriched
         if ((bookmark.url.startsWith('http://') || bookmark.url.startsWith('https://')) && 
-            !bookmark.description && !bookmark.category) {
+            !enrichedIds.has(bookmark.id)) {
           await addToEnrichmentQueue(bookmark.id, 0);
+          queuedCount++;
         }
       }
+      console.log(`Queued ${queuedCount} unenriched bookmarks for enrichment`);
     }
   } catch (error) {
     console.error('Error syncing bookmarks:', error);
@@ -198,6 +212,9 @@ async function handleBookmarkCreated(id, bookmark) {
       // Log event
       await logEvent(id, 'create');
       
+      // Invalidate relevant caches
+      await invalidateMetricCaches('add');
+      
       // Add to enrichment queue if enabled
       const settings = await import('./src/db.js').then(m => m.getSettings());
       if (settings.enrichmentEnabled && 
@@ -217,6 +234,8 @@ async function handleBookmarkRemoved(id, removeInfo) {
     await removeFromIndex(id);
     await dbDeleteBookmark(id);
     await logEvent(id, 'delete');
+    // Invalidate relevant caches
+    await invalidateMetricCaches('delete');
   } catch (error) {
     console.error('Error handling bookmark removal:', error);
   }
@@ -332,9 +351,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     import('./src/db.js').then(async (m) => {
       const queueSize = await m.getEnrichmentQueueSize();
       const settings = await m.getSettings();
+      
+      // Get actual enrichment stats from IndexedDB
+      const bookmarks = await m.getAllBookmarks();
+      const httpBookmarks = bookmarks.filter(b => 
+        b.url && (b.url.startsWith('http://') || b.url.startsWith('https://'))
+      );
+      const enrichedCount = httpBookmarks.filter(b => b.lastChecked).length;
+      const pendingCount = httpBookmarks.length - enrichedCount;
+      
       sendResponse({ 
         success: true, 
-        queueSize, 
+        queueSize: pendingCount, // Use actual pending count, not queue table size
+        totalBookmarks: httpBookmarks.length,
+        enrichedCount,
+        pendingCount,
         enabled: settings.enrichmentEnabled 
       });
     }).catch((error) => {

@@ -2,9 +2,19 @@
 
 A powerful, privacy-first bookmark intelligence system with smart search, enrichment, insights, and maintenance tools.
 
-## 🚀 What's New in v2.0
+## 🚀 What's New in v2.1
 
-Version 2.0 transforms Bookmark Insights into a smart bookmark intelligence system:
+Version 2.1 brings major architectural improvements and performance enhancements:
+
+- **Consolidated Database Layer** - Single `db.js` module with all database operations
+- **Smart Bookmark Merging** - Preserves enrichment data during Chrome sync (fixes data loss bug)
+- **Metrics Caching System** - Intelligent caching with configurable TTL and smart invalidation
+- **Reactive Svelte Stores** - New `stores.js` with auto-refreshing stats and domain explorer
+- **Improved Similarity Algorithm** - Pre-filtering by domain/category reduces O(n²) complexity
+- **On-Demand Similarity** - Similarities computed and cached after enrichment
+- **Schema v3** - New `similarities` and `computedMetrics` tables for caching
+
+### Previous in v2.0
 
 - **IndexedDB Storage** - Lightning-fast queries with Dexie.js
 - **FlexSearch Integration** - Fuzzy search with intelligent ranking
@@ -66,9 +76,10 @@ Version 2.0 transforms Bookmark Insights into a smart bookmark intelligence syst
 
 ### 💾 Data Management
 - **Export to JSON**: Full bookmark export with metadata
-- **IndexedDB Storage**: Fast, scalable local database
-- **Automatic Migration**: Seamless upgrade from v1.x
-- **Performance Caching**: Intelligent caching for speed
+- **IndexedDB Storage**: Fast, scalable local database (schema v3)
+- **Automatic Migration**: Seamless upgrade from v1.x/v2.x
+- **Smart Metrics Caching**: Configurable TTL with intelligent invalidation
+- **Reactive State Management**: Auto-refreshing stats via Svelte stores
 
 ## Installation
 
@@ -131,7 +142,7 @@ The extension will be available on the Chrome Web Store once published.
 - **Popup**: Quick access interface (384x384px)
 - **Dashboard**: Full-featured interface with Bookmarks, Insights, and Health tabs
 
-### Database Schema (v2)
+### Database Schema (v3)
 ```javascript
 // Bookmarks with enrichment fields
 {
@@ -146,7 +157,11 @@ The extension will be available on the Chrome Web Store once published.
 enrichmentQueue: { queueId, bookmarkId, addedAt, priority }
 events: { eventId, bookmarkId, type, timestamp, ...metadata }
 cache: { key, value, timestamp, ttl }
-settings: { key, enrichmentEnabled, enrichmentBatchSize, enrichmentConcurrency, enrichmentFreshnessDays, ... }
+settings: { key, enrichmentEnabled, enrichmentBatchSize, ... }
+
+// New in v3 - Caching tables
+similarities: { id, bookmark1Id, bookmark2Id, score, computedAt }
+computedMetrics: { key, value, computedAt, ttl }
 ```
 
 > 📖 **[See Technical Documentation](TECHNICAL_DOCUMENTATION.md)** for complete API reference, architecture details, and implementation guide
@@ -182,13 +197,12 @@ bookmark-insights/
 │   ├── popup.js            # Built popup bundle
 │   └── dashboard.js        # Built dashboard bundle
 └── src/                    # Source code
-    ├── db.js               # Dexie IndexedDB layer
+    ├── db.js               # Consolidated IndexedDB layer (all DB operations)
+    ├── stores.js           # Svelte stores for reactive state management
     ├── enrichment.js       # Background enrichment pipeline
     ├── search.js           # FlexSearch integration
-    ├── similarity.js       # TF-IDF similarity detection
+    ├── similarity.js       # TF-IDF similarity with caching
     ├── insights.js         # Domain hierarchy & analytics
-    ├── database.js         # Original data access layer
-    ├── database-compat.js  # Compatibility wrapper
     ├── utils.js            # Shared utilities
     ├── App.svelte          # Main popup component
     ├── Dashboard.svelte    # Dashboard with insights

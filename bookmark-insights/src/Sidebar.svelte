@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
-  import { getDomainsByRecency, getDomainsByCount, getUniqueFolders } from './database.js';
+  import { getDomainsByRecency, getDomainsByCount, getUniqueFolders } from './db.js';
   
   const dispatch = createEventDispatcher();
   

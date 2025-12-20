@@ -15,14 +15,14 @@
     getDomainStats,
     getActivityTimeline,
     findDuplicates,
-    findOrphans,
     findMalformedUrls,
     findSimilarBookmarks,
     deleteBookmark,
     deleteBookmarks,
-    checkDeadLinks,
+    getDeadLinks,
     exportBookmarks,
     getQuickStats,
+    getSettings,
     // Analytics functions
     getTitleWordFrequency,
     getTitlePatterns,
@@ -30,19 +30,20 @@
     getBookmarkCreationPatterns,
     getUrlPatterns,
     getUrlParameterUsage,
-    getDomainDistribution
-  } from './database.js';
+    getDomainDistribution,
+    // Backup functions
+    downloadBackup,
+    restoreFromBackup,
+    validateBackup,
+    createAutoBackup,
+    listAutoBackups,
+    restoreFromAutoBackup
+  } from './db.js';
   
   // Import new insights functions
   import {
     getDomainHierarchy,
     getDomainTreemapData,
-    getStaleBookmarks,
-    getReadingListSuggestions,
-    getMostAccessedBookmarks,
-    getCategoryTrends,
-    getExpertiseAreas,
-    getBookmarkAndForget,
     getContentFreshness,
     getInsightsSummary,
     getEventStatistics,
@@ -85,18 +86,15 @@
   let urlPatternsChart = null;
   let domainDistributionChart = null;
   let domainHierarchyChart = null;
-  let categoryTrendsChart = null;
   let freshnessChart = null;
-  let expertiseChart = null;
   let accessPatternChart = null;
   
   // Health data
   let duplicates = [];
-  let orphans = [];
   let malformedUrls = [];
   let similarBookmarks = [];
-  let deadLinkResults = null;
-  let checkingDeadLinks = false;
+  let deadLinks = [];
+  let loadingDeadLinks = false;
   let quickStats = null;
   
   // Enrichment state
@@ -112,12 +110,6 @@
   
   // Advanced insights data
   let domainHierarchy = [];
-  let staleBookmarks = [];
-  let readingList = [];
-  let mostAccessed = [];
-  let categoryTrends = null;
-  let expertiseAreas = [];
-  let bookmarkAndForget = [];
   let contentFreshness = [];
   let insightsSummary = null;
   let eventStats = null;
@@ -125,16 +117,23 @@
   // Health section loading states (for progressive loading)
   let loadingDuplicates = false;
   let loadingSimilar = false;
-  let loadingOrphans = false;
   let loadingMalformed = false;
   
   // Health section display limits (for on-demand loading)
   let duplicatesDisplayLimit = 10;
   let similarDisplayLimit = 10;
-  let orphansDisplayLimit = 12;
+  let deadLinksDisplayLimit = 10;
   
   // URL parameter data (for insights)
   let urlParameterData = null;
+  
+  // Backup state
+  let backupInProgress = false;
+  let restoreInProgress = false;
+  let autoBackups = [];
+  let showRestoreDialog = false;
+  let restoreFile = null;
+  let backupValidation = null;
   
   // Multi-select state
   let selectedBookmarks = new Set();
@@ -289,12 +288,6 @@
         domainDistribution,
         // New insights data
         hierarchyData,
-        staleData,
-        readingData,
-        accessedData,
-        trendsData,
-        expertiseData,
-        forgetData,
         freshnessData,
         summaryData,
         eventData
@@ -310,12 +303,6 @@
         getDomainDistribution(),
         // New insights functions
         getDomainHierarchy(),
-        getStaleBookmarks(90),
-        getReadingListSuggestions(20),
-        getMostAccessedBookmarks(20),
-        getCategoryTrends(),
-        getExpertiseAreas(),
-        getBookmarkAndForget(),
         getContentFreshness(),
         getInsightsSummary(),
         getEventStatistics()
@@ -326,12 +313,6 @@
       
       // Store new insights data
       domainHierarchy = hierarchyData;
-      staleBookmarks = staleData;
-      readingList = readingData;
-      mostAccessed = accessedData;
-      categoryTrends = trendsData;
-      expertiseAreas = expertiseData;
-      bookmarkAndForget = forgetData;
       contentFreshness = freshnessData;
       insightsSummary = summaryData;
       eventStats = eventData;
@@ -643,41 +624,6 @@
           });
         }
 
-        // Category Trends Chart (line chart over time)
-        const trendsCtx = document.getElementById('categoryTrendsChart');
-        if (trendsCtx && trendsData.months && trendsData.months.length > 0) {
-          if (categoryTrendsChart) categoryTrendsChart.destroy();
-          const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6'];
-          categoryTrendsChart = new Chart(trendsCtx, {
-            type: 'line',
-            data: {
-              labels: trendsData.months,
-              datasets: trendsData.datasets.map((ds, idx) => ({
-                label: ds.category,
-                data: ds.data,
-                borderColor: colors[idx % colors.length],
-                backgroundColor: colors[idx % colors.length] + '20',
-                fill: false,
-                tension: 0.3
-              }))
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Category Trends Over Time'
-                }
-              },
-              scales: {
-                y: {
-                  beginAtZero: true
-                }
-              }
-            }
-          });
-        }
-
         // Content Freshness Chart (doughnut)
         const freshnessCtx = document.getElementById('freshnessChart');
         if (freshnessCtx && freshnessData.length > 0) {
@@ -702,40 +648,6 @@
             }
           });
         }
-
-        // Expertise Areas Chart (polar area)
-        const expertiseCtx = document.getElementById('expertiseChart');
-        if (expertiseCtx && expertiseData.length > 0) {
-          if (expertiseChart) expertiseChart.destroy();
-          expertiseChart = new Chart(expertiseCtx, {
-            type: 'polarArea',
-            data: {
-              labels: expertiseData.slice(0, 8).map(d => d.area),
-              datasets: [{
-                data: expertiseData.slice(0, 8).map(d => d.score),
-                backgroundColor: [
-                  'rgba(59, 130, 246, 0.7)',
-                  'rgba(239, 68, 68, 0.7)',
-                  'rgba(16, 185, 129, 0.7)',
-                  'rgba(245, 158, 11, 0.7)',
-                  'rgba(139, 92, 246, 0.7)',
-                  'rgba(236, 72, 153, 0.7)',
-                  'rgba(20, 184, 166, 0.7)',
-                  'rgba(249, 115, 22, 0.7)'
-                ]
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Expertise Areas (by category + access)'
-                }
-              }
-            }
-          });
-        }
       }, 100);
     } catch (err) {
       console.error('Error loading insights:', err);
@@ -746,13 +658,13 @@
     // Reset display limits
     duplicatesDisplayLimit = 10;
     similarDisplayLimit = 10;
-    orphansDisplayLimit = 12;
+    deadLinksDisplayLimit = 10;
     
     try {
       // Load quick stats first (fast) - shows something immediately
       loadingDuplicates = true;
       loadingSimilar = true;
-      loadingOrphans = true;
+      loadingDeadLinks = true;
       loadingMalformed = true;
       
       // Load quick stats immediately
@@ -771,13 +683,13 @@
         loadingDuplicates = false;
       });
       
-      // Orphans load
-      findOrphans().then(orphanedBookmarks => {
-        orphans = orphanedBookmarks;
-        loadingOrphans = false;
+      // Dead links load (from stored data)
+      getDeadLinks().then(links => {
+        deadLinks = links;
+        loadingDeadLinks = false;
       }).catch(err => {
-        console.error('Error loading orphans:', err);
-        loadingOrphans = false;
+        console.error('Error loading dead links:', err);
+        loadingDeadLinks = false;
       });
       
       // Malformed URLs load
@@ -811,8 +723,7 @@
         enrichmentStatus = response;
       }
       
-      // Load enrichment settings
-      const { getSettings } = await import('./database.js');
+      // Load enrichment settings - getSettings is already imported at the top
       const settings = await getSettings();
       if (settings) {
         enrichmentBatchSize = settings.enrichmentBatchSize || 20;
@@ -830,6 +741,10 @@
     enrichmentLogs = [];
     
     try {
+      // Create auto-backup before enrichment
+      console.log('Creating auto-backup before enrichment...');
+      await createAutoBackup();
+      
       const response = await chrome.runtime.sendMessage({ 
         action: 'runEnrichment',
         batchSize: enrichmentBatchSize,
@@ -861,16 +776,12 @@
       } else {
         console.log(`Bookmark ${bookmarkId} no longer exists`);
       }
-      // Remove the pair from the list immediately for better UX
+      // Remove the pair from the list immediately - no need to reload since data is precomputed
       similarBookmarks = similarBookmarks.filter((_, idx) => idx !== pairIndex);
     } catch (err) {
       console.error('Error deleting bookmark:', err);
-      // Reload similar bookmarks to refresh the list
-      loadingSimilar = true;
-      findSimilarBookmarks().then(similar => {
-        similarBookmarks = similar;
-        loadingSimilar = false;
-      });
+      // Even on error, just remove the pair from display - don't reload
+      similarBookmarks = similarBookmarks.filter((_, idx) => idx !== pairIndex);
     }
   }
   
@@ -882,8 +793,8 @@
     similarDisplayLimit += 10;
   }
   
-  function loadMoreOrphans() {
-    orphansDisplayLimit += 12;
+  function loadMoreDeadLinks() {
+    deadLinksDisplayLimit += 10;
   }
   
   async function deleteDuplicate(bookmarkId, groupIndex) {
@@ -1000,15 +911,101 @@
     viewMode = viewMode === 'list' ? 'card' : 'list';
   }
   
-  async function handleCheckDeadLinks() {
-    checkingDeadLinks = true;
+  // Backup & Restore handlers
+  async function handleDownloadBackup() {
+    backupInProgress = true;
     try {
-      deadLinkResults = await checkDeadLinks(null, 20);
+      const result = await downloadBackup();
+      if (result.success) {
+        alert(`Backup saved: ${result.filename}\n\nContains:\n- ${result.metadata.totalBookmarks} bookmarks\n- ${result.metadata.enrichedCount} enriched\n- ${result.metadata.categorizedCount} categorized`);
+      }
     } catch (err) {
-      console.error('Error checking dead links:', err);
-      alert('Error checking dead links. Please try again.');
+      console.error('Error creating backup:', err);
+      alert('Error creating backup: ' + err.message);
     } finally {
-      checkingDeadLinks = false;
+      backupInProgress = false;
+    }
+  }
+  
+  async function handleRestoreBackup() {
+    if (!restoreFile) {
+      alert('Please select a backup file first');
+      return;
+    }
+    
+    if (!backupValidation || !backupValidation.valid) {
+      alert('Please select a valid backup file');
+      return;
+    }
+    
+    if (!confirm(`Restore backup from ${backupValidation.createdAt}?\n\nThis will replace your current data with:\n- ${backupValidation.metadata.totalBookmarks} bookmarks\n- ${backupValidation.metadata.enrichedCount} enriched\n\nYour current data will be auto-backed up first.`)) {
+      return;
+    }
+    
+    restoreInProgress = true;
+    try {
+      // Create auto-backup first
+      await createAutoBackup();
+      
+      // Read and parse the file
+      const text = await restoreFile.text();
+      const backup = JSON.parse(text);
+      
+      // Restore
+      const result = await restoreFromBackup(backup);
+      
+      if (result.success) {
+        alert(`Restore complete!\n\n- ${result.results.bookmarksRestored} bookmarks restored\n- ${result.results.similaritiesRestored} similarities restored\n\nRefreshing...`);
+        showRestoreDialog = false;
+        restoreFile = null;
+        backupValidation = null;
+        // Reload the page to refresh all data
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Error restoring backup:', err);
+      alert('Error restoring backup: ' + err.message);
+    } finally {
+      restoreInProgress = false;
+    }
+  }
+  
+  async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    restoreFile = file;
+    
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      backupValidation = validateBackup(backup);
+    } catch (err) {
+      backupValidation = { valid: false, issues: ['Invalid JSON file'] };
+    }
+  }
+  
+  async function loadAutoBackups() {
+    autoBackups = await listAutoBackups();
+  }
+  
+  async function handleRestoreAutoBackup(index) {
+    if (!confirm(`Restore auto-backup from ${autoBackups[index].createdAt}?\n\nThis will replace your current data.`)) {
+      return;
+    }
+    
+    restoreInProgress = true;
+    try {
+      const result = await restoreFromAutoBackup(index);
+      if (result.success) {
+        alert('Restore complete! Refreshing...');
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('Error restoring auto-backup:', err);
+      alert('Error: ' + err.message);
+    } finally {
+      restoreInProgress = false;
     }
   }
   
@@ -1428,18 +1425,6 @@
             {/if}
             
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <!-- Category Trends -->
-              <div>
-                <canvas id="categoryTrendsChart" width="400" height="300"></canvas>
-              </div>
-              
-              <!-- Expertise Areas -->
-              <div>
-                <canvas id="expertiseChart" width="400" height="300"></canvas>
-              </div>
-            </div>
-            
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
               <!-- Content Freshness -->
               <div>
                 <canvas id="freshnessChart" width="400" height="300"></canvas>
@@ -1469,140 +1454,8 @@
             </div>
           </div>
           
-          <!-- NEW: Stale Bookmarks & Reading List (Step 11) -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Stale Bookmarks -->
-            <div class="bg-white p-6 rounded-lg shadow">
-              <h3 class="text-lg font-semibold text-gray-900 mb-4">
-                <svg class="w-5 h-5 inline-block mr-2 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-                Stale Bookmarks
-                <span class="text-sm font-normal text-gray-500 ml-2">({staleBookmarks.length} bookmarks older than 90 days, never accessed)</span>
-              </h3>
-              {#if staleBookmarks.length > 0}
-                <div class="space-y-2 max-h-64 overflow-y-auto">
-                  {#each staleBookmarks.slice(0, 10) as bookmark}
-                    <div class="p-2 bg-orange-50 rounded border border-orange-100 hover:bg-orange-100 transition-colors">
-                      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" class="block">
-                        <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
-                        <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                        <div class="text-xs text-orange-600 mt-1">
-                          Added {new Date(bookmark.dateAdded).toLocaleDateString()}
-                        </div>
-                      </a>
-                    </div>
-                  {/each}
-                  {#if staleBookmarks.length > 10}
-                    <div class="text-center text-sm text-gray-500 py-2">
-                      +{staleBookmarks.length - 10} more stale bookmarks
-                    </div>
-                  {/if}
-                </div>
-              {:else}
-                <p class="text-sm text-gray-500">No stale bookmarks found. Great!</p>
-              {/if}
-            </div>
-            
-            <!-- Reading List Suggestions -->
-            <div class="bg-white p-6 rounded-lg shadow">
-              <h3 class="text-lg font-semibold text-gray-900 mb-4">
-                <svg class="w-5 h-5 inline-block mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                </svg>
-                Reading List
-                <span class="text-sm font-normal text-gray-500 ml-2">(Recently added, not yet visited)</span>
-              </h3>
-              {#if readingList.length > 0}
-                <div class="space-y-2 max-h-64 overflow-y-auto">
-                  {#each readingList.slice(0, 10) as bookmark}
-                    <div class="p-2 bg-green-50 rounded border border-green-100 hover:bg-green-100 transition-colors">
-                      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" class="block">
-                        <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
-                        <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                        <div class="text-xs text-green-600 mt-1">
-                          Added {new Date(bookmark.dateAdded).toLocaleDateString()}
-                        </div>
-                      </a>
-                    </div>
-                  {/each}
-                  {#if readingList.length > 10}
-                    <div class="text-center text-sm text-gray-500 py-2">
-                      +{readingList.length - 10} more to read
-                    </div>
-                  {/if}
-                </div>
-              {:else}
-                <p class="text-sm text-gray-500">All recent bookmarks have been accessed!</p>
-              {/if}
-            </div>
-          </div>
-          
-          <!-- NEW: Most Accessed & Bookmark and Forget (Step 11 + 12) -->
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <!-- Most Accessed Bookmarks -->
-            <div class="bg-white p-6 rounded-lg shadow">
-              <h3 class="text-lg font-semibold text-gray-900 mb-4">
-                <svg class="w-5 h-5 inline-block mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
-                </svg>
-                Most Accessed
-              </h3>
-              {#if mostAccessed.length > 0}
-                <div class="space-y-2 max-h-64 overflow-y-auto">
-                  {#each mostAccessed.slice(0, 10) as bookmark}
-                    <div class="p-2 bg-blue-50 rounded border border-blue-100 hover:bg-blue-100 transition-colors flex items-center justify-between">
-                      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" class="flex-1 min-w-0">
-                        <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
-                        <div class="text-xs text-gray-500 truncate">{bookmark.domain}</div>
-                      </a>
-                      <span class="ml-2 px-2 py-1 bg-blue-200 text-blue-800 text-xs font-bold rounded-full">
-                        {bookmark.accessCount}x
-                      </span>
-                    </div>
-                  {/each}
-                </div>
-              {:else}
-                <p class="text-sm text-gray-500">No access data yet. Start browsing your bookmarks!</p>
-              {/if}
-            </div>
-            
-            <!-- Bookmark and Forget Detection -->
-            <div class="bg-white p-6 rounded-lg shadow">
-              <h3 class="text-lg font-semibold text-gray-900 mb-4">
-                <svg class="w-5 h-5 inline-block mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
-                </svg>
-                "Bookmark and Forget"
-                <span class="text-sm font-normal text-gray-500 ml-2">({bookmarkAndForget.length} bookmarks 6+ months old, never accessed)</span>
-              </h3>
-              {#if bookmarkAndForget.length > 0}
-                <div class="space-y-2 max-h-64 overflow-y-auto">
-                  {#each bookmarkAndForget.slice(0, 10) as bookmark}
-                    <div class="p-2 bg-red-50 rounded border border-red-100 hover:bg-red-100 transition-colors">
-                      <a href={bookmark.url} target="_blank" rel="noopener noreferrer" class="block">
-                        <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
-                        <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                        <div class="text-xs text-red-600 mt-1">
-                          Added {new Date(bookmark.dateAdded).toLocaleDateString()} - Consider removing?
-                        </div>
-                      </a>
-                    </div>
-                  {/each}
-                  {#if bookmarkAndForget.length > 10}
-                    <div class="text-center text-sm text-gray-500 py-2">
-                      +{bookmarkAndForget.length - 10} more forgotten bookmarks
-                    </div>
-                  {/if}
-                </div>
-              {:else}
-                <p class="text-sm text-gray-500">No "bookmark and forget" patterns detected.</p>
-              {/if}
-            </div>
-          </div>
-          
           <!-- Summary Statistics -->
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div class="bg-white p-6 rounded-lg shadow text-center">
               <div class="text-3xl font-bold text-blue-600">{bookmarks.length || 0}</div>
               <div class="text-gray-500">Total Bookmarks</div>
@@ -1610,10 +1463,6 @@
             <div class="bg-white p-6 rounded-lg shadow text-center">
               <div class="text-3xl font-bold text-green-600">{duplicates.length}</div>
               <div class="text-gray-500">Duplicate Groups</div>
-            </div>
-            <div class="bg-white p-6 rounded-lg shadow text-center">
-              <div class="text-3xl font-bold text-orange-600">{orphans.length}</div>
-              <div class="text-gray-500">Orphaned Bookmarks</div>
             </div>
             <div class="bg-white p-6 rounded-lg shadow text-center">
               <div class="text-3xl font-bold text-purple-600">{new Set(bookmarks.map(b => b.domain)).size}</div>
@@ -1641,8 +1490,8 @@
                 <div class="text-xs text-gray-500">Duplicate Groups</div>
               </div>
               <div class="bg-white p-4 rounded-lg shadow text-center">
-                <div class="text-2xl font-bold text-orange-600">{quickStats.uncategorized}</div>
-                <div class="text-xs text-gray-500">Uncategorized</div>
+                <div class="text-2xl font-bold text-orange-600">{quickStats.deadLinks}</div>
+                <div class="text-xs text-gray-500">Dead Links</div>
               </div>
               <div class="bg-white p-4 rounded-lg shadow text-center">
                 <div class="text-2xl font-bold text-purple-600">{quickStats.uniqueDomains}</div>
@@ -1709,29 +1558,29 @@
                   <label class="block text-sm font-medium text-gray-700 mb-1">
                     Batch Size
                     <span class="text-xs text-gray-500 font-normal">(how many bookmarks to process)</span>
+                    <input 
+                      type="number" 
+                      min="5" 
+                      max="100" 
+                      bind:value={enrichmentBatchSize}
+                      class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      disabled={runningEnrichment}
+                    />
                   </label>
-                  <input 
-                    type="number" 
-                    min="5" 
-                    max="100" 
-                    bind:value={enrichmentBatchSize}
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                    disabled={runningEnrichment}
-                  />
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">
                     Concurrency
                     <span class="text-xs text-gray-500 font-normal">(parallel requests)</span>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      max="10" 
+                      bind:value={enrichmentConcurrency}
+                      class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      disabled={runningEnrichment}
+                    />
                   </label>
-                  <input 
-                    type="number" 
-                    min="1" 
-                    max="10" 
-                    bind:value={enrichmentConcurrency}
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                    disabled={runningEnrichment}
-                  />
                   <p class="text-xs text-gray-500 mt-1">
                     Higher = faster, but more resource intensive (recommended: 3-5)
                   </p>
@@ -1815,56 +1664,56 @@
             </div>
           </div>
           
-          <!-- Dead Link Checker -->
+          <!-- Dead Links Section -->
           <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+            <div class="px-6 py-4 border-b border-gray-200">
               <h3 class="text-lg font-medium text-gray-900">
-                Dead Link Checker
+                Dead Links {#if !loadingDeadLinks}({deadLinks.length}){/if}
               </h3>
-              <button
-                on:click={handleCheckDeadLinks}
-                disabled={checkingDeadLinks}
-                class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >
-                {#if checkingDeadLinks}
-                  <span class="flex items-center">
-                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Checking...
-                  </span>
-                {:else}
-                  Check Links (Sample)
-                {/if}
-              </button>
+              <p class="text-xs text-gray-500 mt-1">Bookmarks detected as unreachable during enrichment</p>
             </div>
             <div class="p-6">
-              {#if deadLinkResults}
-                <div class="space-y-4">
-                  <div class="flex gap-4 text-sm">
-                    <span class="text-gray-600">Checked: <strong>{deadLinkResults.checked}</strong></span>
-                    <span class="text-green-600">Alive: <strong>{deadLinkResults.alive.length}</strong></span>
-                    <span class="text-red-600">Dead/Timeout: <strong>{deadLinkResults.dead.length + deadLinkResults.errors.length}</strong></span>
-                    {#if deadLinkResults.remaining > 0}
-                      <span class="text-gray-400">Remaining: {deadLinkResults.remaining}</span>
-                    {/if}
-                  </div>
-                  {#if deadLinkResults.dead.length > 0 || deadLinkResults.errors.length > 0}
-                    <div class="space-y-2">
-                      <h4 class="text-sm font-medium text-red-700">Potentially Dead Links:</h4>
-                      {#each [...deadLinkResults.dead, ...deadLinkResults.errors] as item}
-                        <div class="p-2 bg-red-50 rounded text-sm">
-                          <div class="font-medium truncate">{item.bookmark.title}</div>
-                          <div class="text-xs text-gray-500 truncate">{item.bookmark.url}</div>
-                          <div class="text-xs text-red-600">{item.reason}</div>
-                        </div>
-                      {/each}
-                    </div>
-                  {/if}
+              {#if loadingDeadLinks}
+                <div class="flex items-center justify-center py-8">
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                  <span class="ml-3 text-gray-500">Loading dead links...</span>
                 </div>
+              {:else if deadLinks.length === 0}
+                <p class="text-gray-500">No dead links detected. Run enrichment to check bookmark availability.</p>
               {:else}
-                <p class="text-gray-500 text-sm">Click "Check Links" to scan a sample of your bookmarks for dead links. Note: Due to browser security restrictions, some links may show false positives.</p>
+                <div class="space-y-2 max-h-[32rem] overflow-y-auto">
+                  {#each deadLinks.slice(0, deadLinksDisplayLimit) as bookmark}
+                    <div class="p-3 bg-red-50 rounded border border-red-200">
+                      <div class="flex items-start justify-between">
+                        <div class="flex-1 min-w-0">
+                          <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
+                          <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                          <div class="text-xs text-red-600 mt-1">
+                            Last checked: {bookmark.lastChecked ? new Date(bookmark.lastChecked).toLocaleDateString() : 'Unknown'}
+                          </div>
+                        </div>
+                        <a 
+                          href={bookmark.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          class="ml-2 px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex-shrink-0"
+                        >
+                          Try Again
+                        </a>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+                {#if deadLinks.length > deadLinksDisplayLimit}
+                  <div class="mt-4 text-center">
+                    <button
+                      on:click={loadMoreDeadLinks}
+                      class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                    >
+                      Load More ({deadLinksDisplayLimit} of {deadLinks.length} shown)
+                    </button>
+                  </div>
+                {/if}
               {/if}
             </div>
           </div>
@@ -1998,42 +1847,6 @@
             </div>
           </div>
           
-          <!-- Uncategorized Bookmarks (formerly Orphans) -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
-                Uncategorized Bookmarks {#if !loadingOrphans}({orphans.length}){/if}
-              </h3>
-              <p class="text-xs text-gray-500 mt-1">Bookmarks in root folders without subfolder organization</p>
-            </div>
-            <div class="p-6">
-              {#if loadingOrphans}
-                <div class="flex items-center justify-center py-8">
-                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
-                  <span class="ml-3 text-gray-500">Finding uncategorized...</span>
-                </div>
-              {:else if orphans.length === 0}
-                <p class="text-gray-500">All bookmarks are organized in folders.</p>
-              {:else}
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[32rem] overflow-y-auto">
-                  {#each orphans.slice(0, orphansDisplayLimit) as bookmark}
-                    <BookmarkCard {bookmark} />
-                  {/each}
-                </div>
-                {#if orphans.length > orphansDisplayLimit}
-                  <div class="mt-4 text-center">
-                    <button
-                      on:click={loadMoreOrphans}
-                      class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-                    >
-                      Load More ({orphansDisplayLimit} of {orphans.length} shown)
-                    </button>
-                  </div>
-                {/if}
-              {/if}
-            </div>
-          </div>
-          
           <!-- Malformed URLs -->
           <div class="bg-white rounded-lg shadow">
             <div class="px-6 py-4 border-b border-gray-200">
@@ -2057,6 +1870,138 @@
                   {/each}
                 </div>
               {/if}
+            </div>
+          </div>
+          
+          <!-- Backup & Restore Panel -->
+          <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200">
+              <h3 class="text-lg font-medium text-gray-900">
+                <svg class="w-5 h-5 inline-block mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+                </svg>
+                Backup & Restore
+              </h3>
+              <p class="text-sm text-gray-500 mt-1">
+                Protect your enrichment data - backup regularly!
+              </p>
+            </div>
+            <div class="p-6">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Backup Section -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                  <h4 class="font-medium text-gray-900 mb-3">Create Backup</h4>
+                  <p class="text-sm text-gray-600 mb-4">
+                    Download a complete backup of your bookmarks including all enrichment data, categories, and metadata.
+                  </p>
+                  <button
+                    on:click={handleDownloadBackup}
+                    disabled={backupInProgress}
+                    class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center justify-center"
+                  >
+                    {#if backupInProgress}
+                      <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Creating Backup...
+                    {:else}
+                      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                      </svg>
+                      Download Backup
+                    {/if}
+                  </button>
+                </div>
+                
+                <!-- Restore Section -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                  <h4 class="font-medium text-gray-900 mb-3">Restore Backup</h4>
+                  <p class="text-sm text-gray-600 mb-4">
+                    Restore from a backup file. Your current data will be auto-backed up first.
+                  </p>
+                  
+                  <label class="block">
+                    <span class="sr-only">Choose backup file</span>
+                    <input 
+                      type="file" 
+                      accept=".json"
+                      on:change={handleFileSelect}
+                      class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                  </label>
+                  
+                  {#if backupValidation}
+                    <div class="mt-3 p-3 rounded-md {backupValidation.valid ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}">
+                      {#if backupValidation.valid}
+                        <p class="text-sm text-green-800">
+                          ✓ Valid backup from {backupValidation.createdAt}<br>
+                          <span class="text-xs text-green-600">
+                            {backupValidation.metadata?.totalBookmarks || 0} bookmarks, 
+                            {backupValidation.metadata?.enrichedCount || 0} enriched
+                          </span>
+                        </p>
+                        <button
+                          on:click={handleRestoreBackup}
+                          disabled={restoreInProgress}
+                          class="mt-2 w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm"
+                        >
+                          {restoreInProgress ? 'Restoring...' : 'Restore This Backup'}
+                        </button>
+                      {:else}
+                        <p class="text-sm text-red-800">✗ Invalid backup file</p>
+                        <ul class="text-xs text-red-600 mt-1">
+                          {#each backupValidation.issues as issue}
+                            <li>• {issue}</li>
+                          {/each}
+                        </ul>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              </div>
+              
+              <!-- Auto-backups Section -->
+              <div class="mt-6 border-t border-gray-200 pt-6">
+                <div class="flex justify-between items-center mb-3">
+                  <h4 class="font-medium text-gray-900">Auto-Backups</h4>
+                  <button
+                    on:click={loadAutoBackups}
+                    class="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <p class="text-sm text-gray-600 mb-3">
+                  Auto-backups are created before restore operations and enrichment runs. Last 3 are kept.
+                </p>
+                
+                {#if autoBackups.length === 0}
+                  <p class="text-gray-500 text-sm">No auto-backups yet. They will appear after your first restore or enrichment run.</p>
+                {:else}
+                  <div class="space-y-2">
+                    {#each autoBackups as backup, index}
+                      <div class="flex justify-between items-center p-3 bg-gray-50 rounded-md">
+                        <div>
+                          <span class="text-sm font-medium text-gray-900">
+                            {new Date(backup.createdAt).toLocaleString()}
+                          </span>
+                          <span class="text-xs text-gray-500 ml-2">
+                            ({backup.metadata?.totalBookmarks || 0} bookmarks, {backup.metadata?.enrichedCount || 0} enriched)
+                          </span>
+                        </div>
+                        <button
+                          on:click={() => handleRestoreAutoBackup(index)}
+                          disabled={restoreInProgress}
+                          class="text-sm px-3 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
             </div>
           </div>
         {/if}

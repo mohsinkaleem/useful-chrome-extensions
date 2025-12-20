@@ -3,7 +3,7 @@
   import BookmarkCard from './BookmarkCard.svelte';
   import SearchBar from './SearchBar.svelte';
   import Sidebar from './Sidebar.svelte';
-  import { searchBookmarks, getAllBookmarks, getBookmarksByDomain, getBookmarksByDateRange, getBookmarksByFolder } from './database.js';
+  import { searchBookmarks, getAllBookmarks, getBookmarksByDomain, getBookmarksByDateRange, getBookmarksByFolder } from './db.js';
   
   let bookmarks = [];
   let loading = true;

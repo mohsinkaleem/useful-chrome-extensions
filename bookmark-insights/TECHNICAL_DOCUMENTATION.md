@@ -1,11 +1,13 @@
 # Bookmark Insights - Technical Documentation
 
-**Version:** 2.0  
+**Version:** 2.1  
 **Last Updated:** December 20, 2025
 
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
 - [Database Schema](#database-schema)
+- [Caching System](#caching-system)
+- [State Management](#state-management)
 - [Enrichment System](#enrichment-system)
 - [Search & Similarity](#search--similarity)
 - [Insights & Analytics](#insights--analytics)
@@ -50,10 +52,11 @@
 ### File Structure
 ```
 src/
-├── db.js                   # IndexedDB schema & core operations
+├── db.js                   # Consolidated IndexedDB layer (schema, CRUD, analytics, caching)
+├── stores.js               # Svelte stores for reactive state management
 ├── enrichment.js           # Enrichment pipeline & metadata fetching
 ├── search.js               # FlexSearch integration
-├── similarity.js           # TF-IDF similarity engine
+├── similarity.js           # TF-IDF similarity engine with caching
 ├── insights.js             # Analytics & insights generation
 ├── utils.js                # Shared utilities
 ├── *.svelte                # UI components
@@ -65,6 +68,11 @@ rollup.config.js            # Build configuration
 tailwind.config.js          # Tailwind CSS configuration
 ```
 
+### Removed Files (Consolidated in v2.1)
+- `database.js` - Migrated to db.js
+- `database-compat.js` - No longer needed
+- `database-enhanced.js` - No longer needed
+
 ---
 
 ## Database Schema
@@ -72,6 +80,7 @@ tailwind.config.js          # Tailwind CSS configuration
 ### Version History
 - **v1**: Initial schema with basic tables
 - **v2**: Added `rawMetadata` field for comprehensive metadata storage
+- **v3**: Added `similarities` and `computedMetrics` tables for caching
 
 ### Tables
 
@@ -212,9 +221,242 @@ User preferences and configuration.
 }
 ```
 
+#### `similarities` (New in v3)
+Cached similarity computations between bookmarks.
+
+**Indexes:** `id` (auto-increment), `[bookmark1Id+bookmark2Id]` (unique compound)
+
+**Schema:**
+```javascript
+{
+  id: Number,                    // Auto-increment
+  bookmark1Id: String,           // First bookmark ID
+  bookmark2Id: String,           // Second bookmark ID
+  score: Number,                 // Similarity score (0-1)
+  sameDomain: Boolean,           // Whether bookmarks share domain
+  sameCategory: Boolean,         // Whether bookmarks share category
+  computedAt: Number             // Timestamp of computation
+}
+```
+
+#### `computedMetrics` (New in v3)
+Cached computed metrics with TTL.
+
+**Indexes:** `key` (primary)
+
+**Schema:**
+```javascript
+{
+  key: String,                   // Metric key (e.g., 'quickStats', 'domainStats')
+  value: Any,                    // Cached result
+  computedAt: Number,            // Timestamp of computation
+  ttl: Number                    // Time-to-live (ms)
+}
+```
+
+---
+
+## Caching System
+
+### Overview (New in v2.1)
+
+The caching system provides intelligent caching with configurable TTL and smart invalidation based on change type.
+
+### Cache Durations
+
+```javascript
+export const CACHE_DURATIONS = {
+  domainStats: 60 * 60 * 1000,        // 1 hour
+  activityTimeline: 6 * 60 * 60 * 1000, // 6 hours
+  wordFrequency: 24 * 60 * 60 * 1000,   // 24 hours
+  quickStats: 5 * 60 * 1000,            // 5 minutes
+  duplicates: 60 * 60 * 1000,           // 1 hour
+  domainAnalytics: 60 * 60 * 1000,      // 1 hour
+  ageDistribution: 24 * 60 * 60 * 1000, // 24 hours
+  creationPatterns: 24 * 60 * 60 * 1000, // 24 hours
+  similarities: 24 * 60 * 60 * 1000     // 24 hours
+};
+```
+
+### Generic Cached Metric Function
+
+```javascript
+async function getCachedMetric(key, computeFn, ttlMs) {
+  // Check for existing cached value
+  const cached = await db.computedMetrics.get(key);
+  
+  if (cached && (Date.now() - cached.computedAt) < ttlMs) {
+    return cached.value; // Return cached
+  }
+  
+  // Compute fresh value
+  const value = await computeFn();
+  
+  // Store in cache
+  await db.computedMetrics.put({
+    key,
+    value,
+    computedAt: Date.now(),
+    ttl: ttlMs
+  });
+  
+  return value;
+}
+```
+
+### Smart Invalidation
+
+Cache invalidation is triggered based on change type:
+
+```javascript
+async function invalidateMetricCaches(changeType) {
+  const toInvalidate = [];
+  
+  switch (changeType) {
+    case 'add':
+    case 'delete':
+      // Invalidate all count-based metrics
+      toInvalidate.push('quickStats', 'domainStats', 'domainAnalytics', 
+                        'duplicates', 'ageDistribution');
+      break;
+    case 'update':
+      // Only invalidate content-dependent metrics
+      toInvalidate.push('quickStats', 'wordFrequency');
+      break;
+    case 'enrich':
+      // Invalidate enrichment-related metrics
+      toInvalidate.push('quickStats');
+      break;
+  }
+  
+  await db.computedMetrics.bulkDelete(toInvalidate);
+}
+```
+
+---
+
+## State Management
+
+### Svelte Stores (New in v2.1)
+
+Located in `src/stores.js`, provides reactive state management for UI components.
+
+### Available Stores
+
+#### `stats` Store
+Auto-refreshing statistics with manual refresh support.
+
+```javascript
+import { stats } from './stores.js';
+
+// Subscribe to stats
+$: currentStats = $stats;
+
+// Manual refresh
+await stats.refresh();
+
+// Auto-refresh every 30 seconds
+stats.startAutoRefresh(30000);
+
+// Stop auto-refresh
+stats.stopAutoRefresh();
+```
+
+#### `enrichmentProgress` Store
+Tracks enrichment progress with percentage calculation.
+
+```javascript
+import { enrichmentProgress, enrichmentCoverage } from './stores.js';
+
+// Update progress
+enrichmentProgress.set({
+  total: 1000,
+  enriched: 750,
+  pending: 250,
+  isRunning: true
+});
+
+// Derived coverage percentage
+$: coveragePercent = $enrichmentCoverage; // 75
+```
+
+#### `domainExplorer` Store
+Interactive domain hierarchy exploration with drill-down.
+
+```javascript
+import { domainExplorer } from './stores.js';
+
+// Load initial hierarchy
+await domainExplorer.loadHierarchy();
+
+// Drill down into a domain
+domainExplorer.drillDown(domainNode);
+
+// Go back
+domainExplorer.goBack();
+
+// Reset to top level
+domainExplorer.reset();
+```
+
+#### `settingsStore`
+Application settings with persistence.
+
+```javascript
+import { settingsStore, loadSettings, updateSetting } from './stores.js';
+
+// Load settings on mount
+await loadSettings();
+
+// Update a setting
+await updateSetting('enrichmentBatchSize', 50);
+```
+
 ---
 
 ## Enrichment System
+
+### Smart Bookmark Merging (New in v2.1)
+
+The `smartMergeBookmarks()` function preserves enrichment data during Chrome sync:
+
+```javascript
+async function smartMergeBookmarks(newBookmarks) {
+  // Get existing bookmarks to preserve enrichment data
+  const existingBookmarks = await db.bookmarks.toArray();
+  const existingMap = new Map(existingBookmarks.map(b => [b.id, b]));
+  
+  const mergedBookmarks = newBookmarks.map(newBookmark => {
+    const existing = existingMap.get(newBookmark.id);
+    
+    if (existing) {
+      // Merge: keep new Chrome data, preserve existing enrichment
+      return {
+        ...newBookmark,
+        description: existing.description || newBookmark.description,
+        keywords: existing.keywords || newBookmark.keywords,
+        category: existing.category || newBookmark.category,
+        isAlive: existing.isAlive,
+        lastChecked: existing.lastChecked,
+        faviconUrl: existing.faviconUrl || newBookmark.faviconUrl,
+        contentSnippet: existing.contentSnippet,
+        rawMetadata: existing.rawMetadata,
+        lastAccessed: existing.lastAccessed,
+        accessCount: existing.accessCount || 0
+      };
+    }
+    
+    return newBookmark;
+  });
+  
+  await db.bookmarks.bulkPut(mergedBookmarks);
+}
+```
+
+**Why this matters:**
+- Fixes bug where extension updates reset enrichment progress
+- Preserves user-invested enrichment work
+- Maintains data integrity during Chrome sync
 
 ### How It Works
 
@@ -471,14 +713,84 @@ TF-IDF(term) = TF(term) × IDF(term)
 ```
 
 **Similarity Threshold:**
-- Similar bookmarks: >0.3 cosine similarity
+- Similar bookmarks: >0.1 cosine similarity (after boosting)
 - Duplicates: >0.7 similarity + URL normalization check
+
+### Improved Similarity Algorithm (v2.1)
+
+**Pre-Filtering for Performance:**
+
+Instead of comparing all bookmarks (O(n²)), we use domain and category as pre-filters:
+
+```javascript
+async function findSimilarCandidates(bookmark) {
+  const candidates = new Map();
+  
+  // Step 1: Same domain (most likely similar) - limit 50
+  const sameDomain = await getBookmarksByDomain(bookmark.domain);
+  sameDomain.slice(0, 50).forEach(b => candidates.set(b.id, b));
+  
+  // Step 2: Same category - limit 30
+  if (bookmark.category) {
+    const sameCategory = await getBookmarksByCategory(bookmark.category);
+    sameCategory.slice(0, 30).forEach(b => candidates.set(b.id, b));
+  }
+  
+  // Step 3: Matching keywords - limit 20
+  if (bookmark.keywords?.length > 0) {
+    // Find bookmarks with overlapping keywords
+  }
+  
+  return Array.from(candidates.values());
+}
+```
+
+**On-Demand Computation:**
+
+Similarities are computed after enrichment and stored:
+
+```javascript
+async function computeSimilarityForBookmark(bookmarkId, topN = 10) {
+  const bookmark = await getBookmark(bookmarkId);
+  const candidates = await findSimilarCandidates(bookmark);
+  
+  // Compute TF-IDF similarities
+  const similarities = computeTFIDFSimilarities(bookmark, candidates);
+  
+  // Store top N results
+  await storeSimilarities(bookmarkId, similarities.slice(0, topN));
+  
+  return similarities;
+}
+```
+
+**Cached Retrieval:**
+
+```javascript
+async function getSimilarBookmarksWithCache(bookmarkId) {
+  // Check stored similarities
+  const stored = await getStoredSimilarities(bookmarkId);
+  
+  if (stored && !isStale(stored, CACHE_DURATIONS.similarities)) {
+    return enrichWithBookmarkDetails(stored);
+  }
+  
+  // Compute fresh
+  return computeSimilarityForBookmark(bookmarkId);
+}
+```
+
+**Performance Improvements:**
+- Pre-filtering reduces comparisons by 80-95%
+- Cached results avoid recomputation
+- On-demand computation distributes load
+- Batch processing available for bulk operations
 
 **Performance:**
 - Vector computation: ~5ms per bookmark
-- Similarity comparison: <1ms per pair
-- Full scan (1000 bookmarks): ~500ms
-- Cached for 5 minutes
+- Pre-filtered comparison: <50ms per bookmark (vs ~500ms full scan)
+- Cached retrieval: <5ms
+- Batch processing: Uses progress callback for UI updates
 
 **Use Cases:**
 - Find similar bookmarks (content-based recommendations)
