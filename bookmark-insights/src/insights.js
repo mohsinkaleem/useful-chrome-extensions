@@ -509,3 +509,118 @@ export async function getHourlyAccessPatterns() {
     return Array(24).fill(0).map((_, hour) => ({ hour: `${hour.toString().padStart(2, '0')}:00`, count: 0 }));
   }
 }
+
+/**
+ * Get dead link insights and categorization
+ * Provides analytics on dead/broken bookmarks by domain, age, and other factors
+ */
+export async function getDeadLinkInsights() {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    const deadLinks = bookmarks.filter(b => b.isAlive === false);
+    const now = Date.now();
+    
+    if (deadLinks.length === 0) {
+      return {
+        total: 0,
+        byDomain: [],
+        byAge: { recent: 0, moderate: 0, old: 0, ancient: 0 },
+        byCategory: [],
+        oldestDeadLinks: [],
+        recentlyDied: [],
+        deadLinkRate: 0,
+        checkedCount: 0
+      };
+    }
+    
+    // Group by domain
+    const domainCounts = {};
+    deadLinks.forEach(bookmark => {
+      const domain = bookmark.domain || 'Unknown';
+      domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+    });
+    
+    const byDomain = Object.entries(domainCounts)
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+    
+    // Group by age (when bookmark was created)
+    const oneWeekAgo = now - (7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
+    const oneYearAgo = now - (365 * 24 * 60 * 60 * 1000);
+    
+    const byAge = {
+      recent: deadLinks.filter(b => b.dateAdded > oneWeekAgo).length,      // < 1 week old
+      moderate: deadLinks.filter(b => b.dateAdded <= oneWeekAgo && b.dateAdded > oneMonthAgo).length, // 1 week - 1 month
+      old: deadLinks.filter(b => b.dateAdded <= oneMonthAgo && b.dateAdded > oneYearAgo).length,       // 1 month - 1 year
+      ancient: deadLinks.filter(b => b.dateAdded <= oneYearAgo).length     // > 1 year old
+    };
+    
+    // Group by category
+    const categoryCounts = {};
+    deadLinks.forEach(bookmark => {
+      const category = bookmark.category || 'Uncategorized';
+      categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+    });
+    
+    const byCategory = Object.entries(categoryCounts)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+    
+    // Oldest dead links (bookmarks that have been dead longest, based on when they were created)
+    const oldestDeadLinks = [...deadLinks]
+      .sort((a, b) => a.dateAdded - b.dateAdded)
+      .slice(0, 5)
+      .map(b => ({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        domain: b.domain,
+        dateAdded: b.dateAdded,
+        lastChecked: b.lastChecked
+      }));
+    
+    // Recently died (most recently checked and found dead)
+    const recentlyDied = [...deadLinks]
+      .filter(b => b.lastChecked)
+      .sort((a, b) => b.lastChecked - a.lastChecked)
+      .slice(0, 5)
+      .map(b => ({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        domain: b.domain,
+        dateAdded: b.dateAdded,
+        lastChecked: b.lastChecked
+      }));
+    
+    // Calculate dead link rate
+    const checkedCount = bookmarks.filter(b => b.isAlive !== null && b.isAlive !== undefined).length;
+    const deadLinkRate = checkedCount > 0 ? ((deadLinks.length / checkedCount) * 100).toFixed(1) : 0;
+    
+    return {
+      total: deadLinks.length,
+      byDomain,
+      byAge,
+      byCategory,
+      oldestDeadLinks,
+      recentlyDied,
+      deadLinkRate: parseFloat(deadLinkRate),
+      checkedCount
+    };
+  } catch (error) {
+    console.error('Error getting dead link insights:', error);
+    return {
+      total: 0,
+      byDomain: [],
+      byAge: { recent: 0, moderate: 0, old: 0, ancient: 0 },
+      byCategory: [],
+      oldestDeadLinks: [],
+      recentlyDied: [],
+      deadLinkRate: 0,
+      checkedCount: 0
+    };
+  }
+}

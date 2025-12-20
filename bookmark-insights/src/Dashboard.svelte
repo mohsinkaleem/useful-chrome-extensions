@@ -48,8 +48,16 @@
     getContentFreshness,
     getInsightsSummary,
     getEventStatistics,
-    getHourlyAccessPatterns
+    getHourlyAccessPatterns,
+    getDeadLinkInsights
   } from './insights.js';
+  
+  // Import enhanced similarity functions
+  import {
+    findSimilarBookmarksEnhancedFuzzy,
+    findUselessBookmarks,
+    getUselessBookmarkIds
+  } from './similarity.js';
   
   Chart.register(...registerables);
   
@@ -117,16 +125,36 @@
   let contentFreshness = [];
   let insightsSummary = null;
   let eventStats = null;
+  let deadLinkInsights = null;
   
   // Health section loading states (for progressive loading)
   let loadingDuplicates = false;
   let loadingSimilar = false;
   let loadingMalformed = false;
+  let deletingDeadLinks = false;
+  let loadingUseless = false;
+  let loadingEnhancedSimilar = false;
   
   // Health section display limits (for on-demand loading)
   let duplicatesDisplayLimit = 10;
   let similarDisplayLimit = 10;
   let deadLinksDisplayLimit = 10;
+  
+  // Enhanced similarity detection
+  let enhancedSimilarPairs = [];
+  let enhancedSimilarStats = null;
+  let selectedComparisonPair = null; // For side-by-side comparison modal
+  
+  // Useless bookmarks detection
+  let uselessBookmarks = null;
+  let uselessDisplayLimits = {
+    deadLinks: 10,
+    oldUnused: 10,
+    genericTitles: 10,
+    temporaryUrls: 10,
+    lowScore: 10
+  };
+  let deletingUseless = false;
   
   // URL parameter data (for insights)
   let urlParameterData = null;
@@ -756,6 +784,13 @@
         loadingDeadLinks = false;
       });
       
+      // Dead link insights load
+      getDeadLinkInsights().then(insights => {
+        deadLinkInsights = insights;
+      }).catch(err => {
+        console.error('Error loading dead link insights:', err);
+      });
+      
       // Malformed URLs load
       findMalformedUrls().then(malformed => {
         malformedUrls = malformed;
@@ -772,6 +807,31 @@
       }).catch(err => {
         console.error('Error loading similar bookmarks:', err);
         loadingSimilar = false;
+      });
+      
+      // Enhanced similar bookmarks with fuzzy matching
+      loadingEnhancedSimilar = true;
+      findSimilarBookmarksEnhancedFuzzy({ 
+        minSimilarity: 0.4, 
+        maxPairs: 100,
+        prioritizeSameDomain: true
+      }).then(result => {
+        enhancedSimilarPairs = result.pairs;
+        enhancedSimilarStats = result.stats;
+        loadingEnhancedSimilar = false;
+      }).catch(err => {
+        console.error('Error loading enhanced similar bookmarks:', err);
+        loadingEnhancedSimilar = false;
+      });
+      
+      // Useless bookmarks detection
+      loadingUseless = true;
+      findUselessBookmarks().then(result => {
+        uselessBookmarks = result;
+        loadingUseless = false;
+      }).catch(err => {
+        console.error('Error finding useless bookmarks:', err);
+        loadingUseless = false;
       });
       
     } catch (err) {
@@ -861,6 +921,72 @@
     deadLinksDisplayLimit += 10;
   }
   
+  // Delete a single dead link
+  async function deleteDeadLink(bookmarkId) {
+    try {
+      // First check if the bookmark still exists
+      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
+      if (existingBookmarks && existingBookmarks.length > 0) {
+        await chrome.bookmarks.remove(bookmarkId);
+        console.log(`Deleted dead link: ${bookmarkId}`);
+      } else {
+        console.log(`Bookmark ${bookmarkId} no longer exists`);
+      }
+      
+      // Update the dead links list without full reload
+      deadLinks = deadLinks.filter(b => b.id !== bookmarkId);
+      
+      // Update dead link insights
+      if (deadLinkInsights) {
+        deadLinkInsights = {
+          ...deadLinkInsights,
+          total: deadLinkInsights.total - 1
+        };
+      }
+      
+      // Remove from IndexedDB
+      await deleteBookmark(bookmarkId);
+      
+    } catch (err) {
+      console.error('Error deleting dead link:', err);
+    }
+  }
+  
+  // Delete all dead links
+  async function deleteAllDeadLinks() {
+    if (deadLinks.length === 0) return;
+    
+    const confirmed = confirm(`Are you sure you want to delete all ${deadLinks.length} dead links? This action cannot be undone.`);
+    if (!confirmed) return;
+    
+    deletingDeadLinks = true;
+    
+    try {
+      const bookmarkIds = deadLinks.map(b => b.id);
+      const result = await deleteBookmarks(bookmarkIds);
+      
+      console.log(`Deleted ${result.success} dead links, ${result.errors.length} errors`);
+      
+      // Clear the dead links list
+      deadLinks = [];
+      deadLinkInsights = null;
+      
+      // Refresh dead link insights
+      getDeadLinkInsights().then(insights => {
+        deadLinkInsights = insights;
+      });
+      
+    } catch (err) {
+      console.error('Error deleting all dead links:', err);
+      // Reload dead links on error
+      getDeadLinks().then(links => {
+        deadLinks = links;
+      });
+    } finally {
+      deletingDeadLinks = false;
+    }
+  }
+
   async function deleteDuplicate(bookmarkId, groupIndex) {
     try {
       // First check if the bookmark still exists
@@ -891,6 +1017,113 @@
     }
   }
   
+  // Enhanced similar bookmarks functions
+  function openComparisonModal(pair) {
+    selectedComparisonPair = pair;
+  }
+  
+  function closeComparisonModal() {
+    selectedComparisonPair = null;
+  }
+  
+  async function deleteFromComparison(bookmarkId) {
+    try {
+      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
+      if (existingBookmarks && existingBookmarks.length > 0) {
+        await chrome.bookmarks.remove(bookmarkId);
+      }
+      
+      await deleteBookmark(bookmarkId);
+      
+      // Remove pairs containing this bookmark
+      enhancedSimilarPairs = enhancedSimilarPairs.filter(
+        p => p.bookmark1.id !== bookmarkId && p.bookmark2.id !== bookmarkId
+      );
+      
+      // Close modal if the deleted bookmark was in comparison
+      if (selectedComparisonPair && 
+          (selectedComparisonPair.bookmark1.id === bookmarkId || 
+           selectedComparisonPair.bookmark2.id === bookmarkId)) {
+        closeComparisonModal();
+      }
+      
+    } catch (err) {
+      console.error('Error deleting bookmark from comparison:', err);
+    }
+  }
+  
+  // Useless bookmarks functions
+  function loadMoreUseless(category) {
+    uselessDisplayLimits = {
+      ...uselessDisplayLimits,
+      [category]: uselessDisplayLimits[category] + 10
+    };
+  }
+  
+  async function deleteUselessBookmark(bookmarkId, category) {
+    try {
+      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
+      if (existingBookmarks && existingBookmarks.length > 0) {
+        await chrome.bookmarks.remove(bookmarkId);
+      }
+      
+      await deleteBookmark(bookmarkId);
+      
+      // Update the useless bookmarks list
+      if (uselessBookmarks) {
+        uselessBookmarks = {
+          ...uselessBookmarks,
+          [category]: uselessBookmarks[category].filter(b => b.id !== bookmarkId),
+          summary: {
+            ...uselessBookmarks.summary,
+            total: uselessBookmarks.summary.total - 1,
+            byCategory: {
+              ...uselessBookmarks.summary.byCategory,
+              [category]: uselessBookmarks.summary.byCategory[category] - 1
+            }
+          }
+        };
+      }
+      
+    } catch (err) {
+      console.error('Error deleting useless bookmark:', err);
+    }
+  }
+  
+  async function deleteAllUselessInCategory(category) {
+    if (!uselessBookmarks || !uselessBookmarks[category] || uselessBookmarks[category].length === 0) return;
+    
+    const count = uselessBookmarks[category].length;
+    const confirmed = confirm(`Are you sure you want to delete all ${count} bookmarks in "${category}"? This action cannot be undone.`);
+    if (!confirmed) return;
+    
+    deletingUseless = true;
+    
+    try {
+      const bookmarkIds = uselessBookmarks[category].map(b => b.id);
+      await deleteBookmarks(bookmarkIds);
+      
+      // Update the useless bookmarks list
+      uselessBookmarks = {
+        ...uselessBookmarks,
+        [category]: [],
+        summary: {
+          ...uselessBookmarks.summary,
+          total: uselessBookmarks.summary.total - count,
+          byCategory: {
+            ...uselessBookmarks.summary.byCategory,
+            [category]: 0
+          }
+        }
+      };
+      
+    } catch (err) {
+      console.error('Error deleting useless bookmarks:', err);
+    } finally {
+      deletingUseless = false;
+    }
+  }
+
   function toggleMultiSelectMode() {
     multiSelectMode = !multiSelectMode;
     if (!multiSelectMode) {
@@ -1740,11 +1973,27 @@
           
           <!-- Dead Links Section -->
           <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
-                Dead Links {#if !loadingDeadLinks}({deadLinks.length}){/if}
-              </h3>
-              <p class="text-xs text-gray-500 mt-1">Bookmarks detected as unreachable during enrichment</p>
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">
+                  Dead Links {#if !loadingDeadLinks}({deadLinks.length}){/if}
+                </h3>
+                <p class="text-xs text-gray-500 mt-1">Bookmarks detected as unreachable during enrichment</p>
+              </div>
+              {#if deadLinks.length > 0}
+                <button
+                  on:click={deleteAllDeadLinks}
+                  disabled={deletingDeadLinks}
+                  class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  {#if deletingDeadLinks}
+                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Deleting...
+                  {:else}
+                    🗑️ Delete All
+                  {/if}
+                </button>
+              {/if}
             </div>
             <div class="p-6">
               {#if loadingDeadLinks}
@@ -1755,6 +2004,88 @@
               {:else if deadLinks.length === 0}
                 <p class="text-gray-500">No dead links detected. Run enrichment to check bookmark availability.</p>
               {:else}
+                <!-- Dead Link Insights Summary -->
+                {#if deadLinkInsights && deadLinkInsights.total > 0}
+                  <div class="mb-6 p-4 bg-red-50 rounded-lg border border-red-200">
+                    <h4 class="text-sm font-semibold text-red-800 mb-3">📊 Dead Link Insights</h4>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      <div class="text-center">
+                        <div class="text-2xl font-bold text-red-700">{deadLinkInsights.total}</div>
+                        <div class="text-xs text-red-600">Total Dead</div>
+                      </div>
+                      <div class="text-center">
+                        <div class="text-2xl font-bold text-red-700">{deadLinkInsights.deadLinkRate}%</div>
+                        <div class="text-xs text-red-600">Dead Link Rate</div>
+                      </div>
+                      <div class="text-center">
+                        <div class="text-2xl font-bold text-red-700">{deadLinkInsights.checkedCount}</div>
+                        <div class="text-xs text-red-600">Total Checked</div>
+                      </div>
+                      <div class="text-center">
+                        <div class="text-2xl font-bold text-red-700">{deadLinkInsights.byDomain.length}</div>
+                        <div class="text-xs text-red-600">Affected Domains</div>
+                      </div>
+                    </div>
+                    
+                    <!-- Age Distribution -->
+                    <div class="mb-4">
+                      <h5 class="text-xs font-medium text-red-700 mb-2">By Bookmark Age</h5>
+                      <div class="flex gap-2 flex-wrap">
+                        {#if deadLinkInsights.byAge.recent > 0}
+                          <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                            &lt; 1 week: {deadLinkInsights.byAge.recent}
+                          </span>
+                        {/if}
+                        {#if deadLinkInsights.byAge.moderate > 0}
+                          <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                            1 week - 1 month: {deadLinkInsights.byAge.moderate}
+                          </span>
+                        {/if}
+                        {#if deadLinkInsights.byAge.old > 0}
+                          <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                            1 month - 1 year: {deadLinkInsights.byAge.old}
+                          </span>
+                        {/if}
+                        {#if deadLinkInsights.byAge.ancient > 0}
+                          <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                            &gt; 1 year: {deadLinkInsights.byAge.ancient}
+                          </span>
+                        {/if}
+                      </div>
+                    </div>
+                    
+                    <!-- Top Domains with Dead Links -->
+                    {#if deadLinkInsights.byDomain.length > 0}
+                      <div class="mb-4">
+                        <h5 class="text-xs font-medium text-red-700 mb-2">Top Domains with Dead Links</h5>
+                        <div class="flex gap-2 flex-wrap">
+                          {#each deadLinkInsights.byDomain.slice(0, 5) as domainInfo}
+                            <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                              {domainInfo.domain}: {domainInfo.count}
+                            </span>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
+                    
+                    <!-- By Category -->
+                    {#if deadLinkInsights.byCategory.length > 0}
+                      <div>
+                        <h5 class="text-xs font-medium text-red-700 mb-2">By Category</h5>
+                        <div class="flex gap-2 flex-wrap">
+                          {#each deadLinkInsights.byCategory.slice(0, 5) as catInfo}
+                            <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                              {catInfo.category}: {catInfo.count}
+                            </span>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+                
+                <!-- Dead Links List -->
                 <div class="space-y-2 max-h-[32rem] overflow-y-auto">
                   {#each deadLinks.slice(0, deadLinksDisplayLimit) as bookmark}
                     <div class="p-3 bg-red-50 rounded border border-red-200">
@@ -1762,18 +2093,32 @@
                         <div class="flex-1 min-w-0">
                           <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
                           <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                          <div class="text-xs text-red-600 mt-1">
-                            Last checked: {bookmark.lastChecked ? new Date(bookmark.lastChecked).toLocaleDateString() : 'Unknown'}
+                          <div class="text-xs text-red-600 mt-1 flex items-center gap-3">
+                            <span>Last checked: {bookmark.lastChecked ? new Date(bookmark.lastChecked).toLocaleDateString() : 'Unknown'}</span>
+                            {#if bookmark.domain}
+                              <span class="text-gray-500">• {bookmark.domain}</span>
+                            {/if}
+                            {#if bookmark.category}
+                              <span class="text-gray-500">• {bookmark.category}</span>
+                            {/if}
                           </div>
                         </div>
-                        <a 
-                          href={bookmark.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          class="ml-2 px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex-shrink-0"
-                        >
-                          Try Again
-                        </a>
+                        <div class="flex gap-1 ml-2 flex-shrink-0">
+                          <a 
+                            href={bookmark.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            class="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                          >
+                            Try Again
+                          </a>
+                          <button
+                            on:click={() => deleteDeadLink(bookmark.id)}
+                            class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   {/each}
@@ -1915,6 +2260,326 @@
                     >
                       Load More ({similarDisplayLimit} of {similarBookmarks.length} shown)
                     </button>
+                  </div>
+                {/if}
+              {/if}
+            </div>
+          </div>
+          
+          <!-- Enhanced Similar Bookmarks (Fuzzy Matching) -->
+          <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200">
+              <h3 class="text-lg font-medium text-gray-900">
+                🔍 Smart Similar Detection {#if !loadingEnhancedSimilar && enhancedSimilarStats}({enhancedSimilarStats.total} pairs){/if}
+              </h3>
+              <p class="text-xs text-gray-500 mt-1">Advanced fuzzy matching using title, description, keywords & domain analysis</p>
+            </div>
+            <div class="p-6">
+              {#if loadingEnhancedSimilar}
+                <div class="flex items-center justify-center py-8">
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                  <span class="ml-3 text-gray-500">Running smart similarity analysis...</span>
+                </div>
+              {:else if enhancedSimilarPairs.length === 0}
+                <p class="text-gray-500">No similar bookmarks detected with enhanced matching.</p>
+              {:else}
+                <!-- Stats Summary -->
+                {#if enhancedSimilarStats}
+                  <div class="mb-4 p-3 bg-indigo-50 rounded-lg flex items-center justify-between">
+                    <div class="flex gap-4 text-sm">
+                      <span class="text-indigo-700">
+                        <strong>{enhancedSimilarStats.sameDomain}</strong> same-domain pairs
+                      </span>
+                      <span class="text-indigo-600">
+                        <strong>{enhancedSimilarStats.crossDomain}</strong> cross-domain pairs
+                      </span>
+                      <span class="text-indigo-500">
+                        Avg: <strong>{(enhancedSimilarStats.avgSimilarity * 100).toFixed(0)}%</strong> similar
+                      </span>
+                    </div>
+                  </div>
+                {/if}
+                
+                <div class="space-y-3 max-h-[40rem] overflow-y-auto">
+                  {#each enhancedSimilarPairs.slice(0, similarDisplayLimit) as pair, idx}
+                    <div class="border {pair.sameDomain ? 'border-indigo-200 bg-indigo-50' : 'border-purple-200 bg-purple-50'} rounded-lg p-4">
+                      <div class="flex justify-between items-center mb-3">
+                        <div class="flex items-center gap-2">
+                          <span class="text-xs font-semibold px-2 py-1 rounded {pair.sameDomain ? 'bg-indigo-200 text-indigo-800' : 'bg-purple-200 text-purple-800'}">
+                            {Math.round(pair.similarity * 100)}% match
+                          </span>
+                          {#if pair.sameDomain}
+                            <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">Same Domain</span>
+                          {/if}
+                          {#if pair.sameCategory}
+                            <span class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">Same Category</span>
+                          {/if}
+                        </div>
+                        <button
+                          on:click={() => openComparisonModal(pair)}
+                          class="text-xs px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                        >
+                          Compare Details
+                        </button>
+                      </div>
+                      
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <!-- Bookmark 1 -->
+                        <div class="p-3 bg-white rounded border border-gray-200">
+                          <div class="flex justify-between items-start mb-2">
+                            <div class="flex-1 min-w-0">
+                              <div class="text-sm font-medium text-gray-800 truncate" title={pair.bookmark1.title}>
+                                {pair.bookmark1.title}
+                              </div>
+                              <div class="text-xs text-gray-500 truncate" title={pair.bookmark1.url}>
+                                {pair.bookmark1.url}
+                              </div>
+                            </div>
+                          </div>
+                          <div class="flex items-center justify-between mt-2">
+                            <div class="text-xs text-gray-400">
+                              Coverage: {pair.coverage1.percentage.toFixed(0)}%
+                            </div>
+                            <div class="flex gap-1">
+                              <a href={pair.bookmark1.url} target="_blank" rel="noopener" 
+                                 class="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">Open</a>
+                              <button
+                                on:click={() => deleteFromComparison(pair.bookmark1.id)}
+                                class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                              >Delete</button>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- Bookmark 2 -->
+                        <div class="p-3 bg-white rounded border border-gray-200">
+                          <div class="flex justify-between items-start mb-2">
+                            <div class="flex-1 min-w-0">
+                              <div class="text-sm font-medium text-gray-800 truncate" title={pair.bookmark2.title}>
+                                {pair.bookmark2.title}
+                              </div>
+                              <div class="text-xs text-gray-500 truncate" title={pair.bookmark2.url}>
+                                {pair.bookmark2.url}
+                              </div>
+                            </div>
+                          </div>
+                          <div class="flex items-center justify-between mt-2">
+                            <div class="text-xs text-gray-400">
+                              Coverage: {pair.coverage2.percentage.toFixed(0)}%
+                            </div>
+                            <div class="flex gap-1">
+                              <a href={pair.bookmark2.url} target="_blank" rel="noopener" 
+                                 class="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">Open</a>
+                              <button
+                                on:click={() => deleteFromComparison(pair.bookmark2.id)}
+                                class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                              >Delete</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+                
+                {#if enhancedSimilarPairs.length > similarDisplayLimit}
+                  <div class="mt-4 text-center">
+                    <button
+                      on:click={loadMoreSimilar}
+                      class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                    >
+                      Load More ({similarDisplayLimit} of {enhancedSimilarPairs.length} shown)
+                    </button>
+                  </div>
+                {/if}
+              {/if}
+            </div>
+          </div>
+          
+          <!-- Useless Bookmarks Detection -->
+          <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200">
+              <h3 class="text-lg font-medium text-gray-900">
+                🗑️ Cleanup Candidates {#if uselessBookmarks}({uselessBookmarks.summary.total} found){/if}
+              </h3>
+              <p class="text-xs text-gray-500 mt-1">Bookmarks that may be candidates for removal based on various criteria</p>
+            </div>
+            <div class="p-6">
+              {#if loadingUseless}
+                <div class="flex items-center justify-center py-8">
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
+                  <span class="ml-3 text-gray-500">Analyzing bookmarks for cleanup...</span>
+                </div>
+              {:else if !uselessBookmarks || uselessBookmarks.summary.total === 0}
+                <p class="text-gray-500">No cleanup candidates found. Your bookmarks look great!</p>
+              {:else}
+                <!-- Summary Cards -->
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                  <div class="p-3 bg-red-50 rounded-lg text-center">
+                    <div class="text-2xl font-bold text-red-600">{uselessBookmarks.summary.byCategory.deadLinks || 0}</div>
+                    <div class="text-xs text-red-500">Dead Links</div>
+                  </div>
+                  <div class="p-3 bg-orange-50 rounded-lg text-center">
+                    <div class="text-2xl font-bold text-orange-600">{uselessBookmarks.summary.byCategory.oldUnused || 0}</div>
+                    <div class="text-xs text-orange-500">Old & Unused</div>
+                  </div>
+                  <div class="p-3 bg-yellow-50 rounded-lg text-center">
+                    <div class="text-2xl font-bold text-yellow-600">{uselessBookmarks.summary.byCategory.genericTitles || 0}</div>
+                    <div class="text-xs text-yellow-600">Generic Titles</div>
+                  </div>
+                  <div class="p-3 bg-purple-50 rounded-lg text-center">
+                    <div class="text-2xl font-bold text-purple-600">{uselessBookmarks.summary.byCategory.temporaryUrls || 0}</div>
+                    <div class="text-xs text-purple-500">Temp/Dev URLs</div>
+                  </div>
+                  <div class="p-3 bg-gray-100 rounded-lg text-center">
+                    <div class="text-2xl font-bold text-gray-600">{uselessBookmarks.summary.byCategory.lowScore || 0}</div>
+                    <div class="text-xs text-gray-500">Low Quality</div>
+                  </div>
+                </div>
+                
+                <!-- Old & Unused Section -->
+                {#if uselessBookmarks.oldUnused.length > 0}
+                  <div class="mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                      <h4 class="text-sm font-semibold text-orange-700">📅 Old & Never Accessed ({uselessBookmarks.oldUnused.length})</h4>
+                      <button
+                        on:click={() => deleteAllUselessInCategory('oldUnused')}
+                        disabled={deletingUseless}
+                        class="text-xs px-2 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50"
+                      >
+                        Delete All
+                      </button>
+                    </div>
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                      {#each uselessBookmarks.oldUnused.slice(0, uselessDisplayLimits.oldUnused) as bookmark}
+                        <div class="p-2 bg-orange-50 rounded border border-orange-200 flex items-center justify-between">
+                          <div class="flex-1 min-w-0">
+                            <div class="text-sm truncate">{bookmark.title}</div>
+                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                            <div class="text-xs text-orange-600 mt-1">
+                              Score: {bookmark.usefulnessScore} • Created: {new Date(bookmark.dateAdded).toLocaleDateString()}
+                            </div>
+                          </div>
+                          <button
+                            on:click={() => deleteUselessBookmark(bookmark.id, 'oldUnused')}
+                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          >Delete</button>
+                        </div>
+                      {/each}
+                    </div>
+                    {#if uselessBookmarks.oldUnused.length > uselessDisplayLimits.oldUnused}
+                      <button on:click={() => loadMoreUseless('oldUnused')} class="mt-2 text-xs text-orange-600 hover:underline">
+                        Show more ({uselessDisplayLimits.oldUnused} of {uselessBookmarks.oldUnused.length})
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+                
+                <!-- Generic Titles Section -->
+                {#if uselessBookmarks.genericTitles.length > 0}
+                  <div class="mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                      <h4 class="text-sm font-semibold text-yellow-700">📝 Generic/Placeholder Titles ({uselessBookmarks.genericTitles.length})</h4>
+                      <button
+                        on:click={() => deleteAllUselessInCategory('genericTitles')}
+                        disabled={deletingUseless}
+                        class="text-xs px-2 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50"
+                      >
+                        Delete All
+                      </button>
+                    </div>
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                      {#each uselessBookmarks.genericTitles.slice(0, uselessDisplayLimits.genericTitles) as bookmark}
+                        <div class="p-2 bg-yellow-50 rounded border border-yellow-200 flex items-center justify-between">
+                          <div class="flex-1 min-w-0">
+                            <div class="text-sm truncate">{bookmark.title}</div>
+                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                          </div>
+                          <button
+                            on:click={() => deleteUselessBookmark(bookmark.id, 'genericTitles')}
+                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          >Delete</button>
+                        </div>
+                      {/each}
+                    </div>
+                    {#if uselessBookmarks.genericTitles.length > uselessDisplayLimits.genericTitles}
+                      <button on:click={() => loadMoreUseless('genericTitles')} class="mt-2 text-xs text-yellow-600 hover:underline">
+                        Show more ({uselessDisplayLimits.genericTitles} of {uselessBookmarks.genericTitles.length})
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+                
+                <!-- Temporary URLs Section -->
+                {#if uselessBookmarks.temporaryUrls.length > 0}
+                  <div class="mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                      <h4 class="text-sm font-semibold text-purple-700">🔧 Temporary/Dev URLs ({uselessBookmarks.temporaryUrls.length})</h4>
+                      <button
+                        on:click={() => deleteAllUselessInCategory('temporaryUrls')}
+                        disabled={deletingUseless}
+                        class="text-xs px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+                      >
+                        Delete All
+                      </button>
+                    </div>
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                      {#each uselessBookmarks.temporaryUrls.slice(0, uselessDisplayLimits.temporaryUrls) as bookmark}
+                        <div class="p-2 bg-purple-50 rounded border border-purple-200 flex items-center justify-between">
+                          <div class="flex-1 min-w-0">
+                            <div class="text-sm truncate">{bookmark.title}</div>
+                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                          </div>
+                          <button
+                            on:click={() => deleteUselessBookmark(bookmark.id, 'temporaryUrls')}
+                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          >Delete</button>
+                        </div>
+                      {/each}
+                    </div>
+                    {#if uselessBookmarks.temporaryUrls.length > uselessDisplayLimits.temporaryUrls}
+                      <button on:click={() => loadMoreUseless('temporaryUrls')} class="mt-2 text-xs text-purple-600 hover:underline">
+                        Show more ({uselessDisplayLimits.temporaryUrls} of {uselessBookmarks.temporaryUrls.length})
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+                
+                <!-- Low Score Section -->
+                {#if uselessBookmarks.lowScore.length > 0}
+                  <div>
+                    <div class="flex items-center justify-between mb-3">
+                      <h4 class="text-sm font-semibold text-gray-700">⚠️ Low Quality Score ({uselessBookmarks.lowScore.length})</h4>
+                      <button
+                        on:click={() => deleteAllUselessInCategory('lowScore')}
+                        disabled={deletingUseless}
+                        class="text-xs px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        Delete All
+                      </button>
+                    </div>
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                      {#each uselessBookmarks.lowScore.slice(0, uselessDisplayLimits.lowScore) as bookmark}
+                        <div class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center justify-between">
+                          <div class="flex-1 min-w-0">
+                            <div class="text-sm truncate">{bookmark.title}</div>
+                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                            <div class="text-xs text-gray-400 mt-1">
+                              Score: {bookmark.usefulnessScore} • {bookmark.uselessReasons?.join(', ')}
+                            </div>
+                          </div>
+                          <button
+                            on:click={() => deleteUselessBookmark(bookmark.id, 'lowScore')}
+                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          >Delete</button>
+                        </div>
+                      {/each}
+                    </div>
+                    {#if uselessBookmarks.lowScore.length > uselessDisplayLimits.lowScore}
+                      <button on:click={() => loadMoreUseless('lowScore')} class="mt-2 text-xs text-gray-600 hover:underline">
+                        Show more ({uselessDisplayLimits.lowScore} of {uselessBookmarks.lowScore.length})
+                      </button>
+                    {/if}
                   </div>
                 {/if}
               {/if}
@@ -2085,3 +2750,189 @@
     {/if}
   </div>
 </div>
+
+<!-- Comparison Modal for Similar Bookmarks -->
+{#if selectedComparisonPair}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" on:click={closeComparisonModal}>
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" on:click|stopPropagation>
+      <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+        <h3 class="text-lg font-semibold text-gray-900">Compare Similar Bookmarks</h3>
+        <button on:click={closeComparisonModal} class="text-gray-400 hover:text-gray-600">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      
+      <div class="p-6">
+        <!-- Similarity Score -->
+        <div class="text-center mb-6">
+          <div class="inline-flex items-center px-4 py-2 bg-indigo-100 rounded-full">
+            <span class="text-2xl font-bold text-indigo-700">{Math.round(selectedComparisonPair.similarity * 100)}%</span>
+            <span class="ml-2 text-sm text-indigo-600">Overall Similarity</span>
+          </div>
+        </div>
+        
+        <!-- Similarity Breakdown -->
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+          <h4 class="text-sm font-semibold text-gray-700 mb-3">Similarity Breakdown</h4>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div class="text-center">
+              <div class="text-lg font-bold text-blue-600">{Math.round((selectedComparisonPair.breakdown?.titleFuzzy || 0) * 100)}%</div>
+              <div class="text-xs text-gray-500">Title (Fuzzy)</div>
+            </div>
+            <div class="text-center">
+              <div class="text-lg font-bold text-green-600">{Math.round((selectedComparisonPair.breakdown?.titleWords || 0) * 100)}%</div>
+              <div class="text-xs text-gray-500">Title (Words)</div>
+            </div>
+            <div class="text-center">
+              <div class="text-lg font-bold text-purple-600">{Math.round((selectedComparisonPair.breakdown?.descriptionWords || 0) * 100)}%</div>
+              <div class="text-xs text-gray-500">Description</div>
+            </div>
+            <div class="text-center">
+              <div class="text-lg font-bold text-orange-600">{Math.round((selectedComparisonPair.breakdown?.keywordsOverlap || 0) * 100)}%</div>
+              <div class="text-xs text-gray-500">Keywords</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Side by Side Comparison -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Bookmark 1 -->
+          <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <div class="bg-blue-50 px-4 py-2 border-b border-blue-200">
+              <span class="text-sm font-medium text-blue-800">Bookmark 1</span>
+            </div>
+            <div class="p-4 space-y-3">
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Title</div>
+                <div class="text-sm font-medium">{selectedComparisonPair.bookmark1.title}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">URL</div>
+                <a href={selectedComparisonPair.bookmark1.url} target="_blank" rel="noopener" 
+                   class="text-sm text-blue-600 hover:underline break-all">{selectedComparisonPair.bookmark1.url}</a>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Domain</div>
+                <div class="text-sm">{selectedComparisonPair.bookmark1.domain || 'N/A'}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Category</div>
+                <div class="text-sm">{selectedComparisonPair.bookmark1.category || 'Uncategorized'}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Description</div>
+                <div class="text-sm text-gray-600">{selectedComparisonPair.bookmark1.description || 'No description'}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Keywords</div>
+                <div class="flex flex-wrap gap-1">
+                  {#if selectedComparisonPair.bookmark1.keywords?.length > 0}
+                    {#each selectedComparisonPair.bookmark1.keywords.slice(0, 5) as keyword}
+                      <span class="px-2 py-0.5 bg-gray-100 text-xs rounded">{keyword}</span>
+                    {/each}
+                  {:else}
+                    <span class="text-sm text-gray-400">No keywords</span>
+                  {/if}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Added</div>
+                <div class="text-sm">{new Date(selectedComparisonPair.bookmark1.dateAdded).toLocaleDateString()}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Metadata Coverage</div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                  <div class="bg-blue-600 h-2 rounded-full" style="width: {selectedComparisonPair.coverage1.percentage}%"></div>
+                </div>
+                <div class="text-xs text-gray-400 mt-1">{selectedComparisonPair.coverage1.percentage.toFixed(0)}%</div>
+              </div>
+              
+              <div class="pt-3 border-t border-gray-200 flex gap-2">
+                <a href={selectedComparisonPair.bookmark1.url} target="_blank" rel="noopener" 
+                   class="flex-1 px-3 py-2 text-center text-sm bg-gray-100 rounded hover:bg-gray-200">
+                  Open
+                </a>
+                <button
+                  on:click={() => deleteFromComparison(selectedComparisonPair.bookmark1.id)}
+                  class="flex-1 px-3 py-2 text-center text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                  Delete This
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Bookmark 2 -->
+          <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <div class="bg-green-50 px-4 py-2 border-b border-green-200">
+              <span class="text-sm font-medium text-green-800">Bookmark 2</span>
+            </div>
+            <div class="p-4 space-y-3">
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Title</div>
+                <div class="text-sm font-medium">{selectedComparisonPair.bookmark2.title}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">URL</div>
+                <a href={selectedComparisonPair.bookmark2.url} target="_blank" rel="noopener" 
+                   class="text-sm text-blue-600 hover:underline break-all">{selectedComparisonPair.bookmark2.url}</a>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Domain</div>
+                <div class="text-sm">{selectedComparisonPair.bookmark2.domain || 'N/A'}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Category</div>
+                <div class="text-sm">{selectedComparisonPair.bookmark2.category || 'Uncategorized'}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Description</div>
+                <div class="text-sm text-gray-600">{selectedComparisonPair.bookmark2.description || 'No description'}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Keywords</div>
+                <div class="flex flex-wrap gap-1">
+                  {#if selectedComparisonPair.bookmark2.keywords?.length > 0}
+                    {#each selectedComparisonPair.bookmark2.keywords.slice(0, 5) as keyword}
+                      <span class="px-2 py-0.5 bg-gray-100 text-xs rounded">{keyword}</span>
+                    {/each}
+                  {:else}
+                    <span class="text-sm text-gray-400">No keywords</span>
+                  {/if}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Added</div>
+                <div class="text-sm">{new Date(selectedComparisonPair.bookmark2.dateAdded).toLocaleDateString()}</div>
+              </div>
+              <div>
+                <div class="text-xs text-gray-500 uppercase mb-1">Metadata Coverage</div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                  <div class="bg-green-600 h-2 rounded-full" style="width: {selectedComparisonPair.coverage2.percentage}%"></div>
+                </div>
+                <div class="text-xs text-gray-400 mt-1">{selectedComparisonPair.coverage2.percentage.toFixed(0)}%</div>
+              </div>
+              
+              <div class="pt-3 border-t border-gray-200 flex gap-2">
+                <a href={selectedComparisonPair.bookmark2.url} target="_blank" rel="noopener" 
+                   class="flex-1 px-3 py-2 text-center text-sm bg-gray-100 rounded hover:bg-gray-200">
+                  Open
+                </a>
+                <button
+                  on:click={() => deleteFromComparison(selectedComparisonPair.bookmark2.id)}
+                  class="flex-1 px-3 py-2 text-center text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                  Delete This
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}

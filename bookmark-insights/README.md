@@ -2,7 +2,27 @@
 
 A powerful, privacy-first bookmark intelligence system with smart search, enrichment, insights, and maintenance tools.
 
-## 🚀 What's New in v2.2
+## 🚀 What's New in v2.3
+
+Version 2.3 introduces the **Data Explorer** - a powerful new tool for understanding your bookmark data:
+
+- **🗄️ Database Browser** - Explore all 7 database tables interactively
+- **📊 Field Coverage Analysis** - Visual bars showing data completeness per field
+- **💾 Cache Inspector** - Monitor cached metrics with live validity status
+- **🔀 Metrics Flow Diagram** - Interactive Mermaid.js visualization of data dependencies
+- **🔍 Interactive Data Table** - Sort, search, filter, paginate, and expand records
+- **📥 JSON Export** - Export any table with optional filtering
+
+### Data Explorer Features
+- Click any database table card to browse its records
+- Sort by any column (click headers)
+- Search within specific fields or across all data
+- Click coverage bars to filter "has field" / "missing field"
+- Expand rows to see ALL fields with copy/open URL actions
+- View cached metric data and clear stale caches
+- Live Mermaid diagram shows cache status with color coding
+
+## What's in v2.2
 
 Version 2.2 brings a completely revamped search experience:
 
@@ -133,6 +153,11 @@ The extension will be available on the Chrome Web Store once published.
   - **Dead Links**: View bookmarks detected as unreachable
   - **Duplicates & Similar**: Find and manage duplicate bookmarks
   - **Maintenance**: Clean up malformed URLs
+- **Data Tab**: Explore your database and understand how metrics work
+  - **Table Browser**: Interactive exploration of all database tables
+  - **Field Analysis**: See data coverage and quality metrics
+  - **Cache Status**: Monitor and manage cached computations
+  - **Metrics Flow**: Visual diagram of data dependencies
 
 ### Filters
 - **Date Filters**: This Week, This Month, This Year
@@ -148,6 +173,7 @@ The extension will be available on the Chrome Web Store once published.
 - **Search**: FlexSearch.js with weighted fields
 - **Similarity**: Custom TF-IDF with cosine similarity
 - **Charts**: Chart.js 4.x
+- **Diagrams**: Mermaid.js 10.x (for Data Explorer flow visualization)
 - **Styling**: Tailwind CSS 3.x
 - **Build Tool**: Rollup with ES modules
 
@@ -213,6 +239,7 @@ bookmark-insights/
 │   └── dashboard.js        # Built dashboard bundle
 └── src/                    # Source code
     ├── db.js               # Consolidated IndexedDB layer (all DB operations)
+    ├── db-explorer.js      # Database exploration utilities (new in v2.3)
     ├── stores.js           # Svelte stores for reactive state management
     ├── enrichment.js       # Background enrichment pipeline
     ├── search.js           # FlexSearch integration
@@ -221,6 +248,7 @@ bookmark-insights/
     ├── utils.js            # Shared utilities
     ├── App.svelte          # Main popup component
     ├── Dashboard.svelte    # Dashboard with insights
+    ├── DataExplorer.svelte # Database explorer component (new in v2.3)
     ├── BookmarkCard.svelte # Card view component
     ├── BookmarkListItem.svelte
     ├── SearchBar.svelte    # Enhanced search with suggestions
