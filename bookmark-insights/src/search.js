@@ -274,6 +274,135 @@ export async function updateInIndex(bookmark) {
   await addToIndex(bookmark);
 }
 
+/**
+ * Parse special filter prefixes from search query
+ * Supports: category:X, domain:X, accessed:yes/no, stale:yes, enriched:yes/no, dead:yes
+ * @param {string} query - Raw search query
+ * @returns {Object} { filters, remainingQuery }
+ */
+export function parseSpecialFilters(query) {
+  if (!query || !query.trim()) {
+    return { filters: {}, remainingQuery: '' };
+  }
+  
+  const filters = {};
+  let remaining = query;
+  
+  // Category filter: category:value
+  const categoryMatch = remaining.match(/category:(\S+)/i);
+  if (categoryMatch) {
+    filters.category = categoryMatch[1].toLowerCase();
+    remaining = remaining.replace(categoryMatch[0], '').trim();
+  }
+  
+  // Domain filter: domain:value
+  const domainMatch = remaining.match(/domain:(\S+)/i);
+  if (domainMatch) {
+    filters.domain = domainMatch[1].toLowerCase();
+    remaining = remaining.replace(domainMatch[0], '').trim();
+  }
+  
+  // Accessed filter: accessed:yes/no
+  const accessedMatch = remaining.match(/accessed:(yes|no)/i);
+  if (accessedMatch) {
+    filters.accessed = accessedMatch[1].toLowerCase() === 'yes';
+    remaining = remaining.replace(accessedMatch[0], '').trim();
+  }
+  
+  // Stale filter: stale:yes (old and never accessed)
+  const staleMatch = remaining.match(/stale:(yes|no)/i);
+  if (staleMatch) {
+    filters.stale = staleMatch[1].toLowerCase() === 'yes';
+    remaining = remaining.replace(staleMatch[0], '').trim();
+  }
+  
+  // Enriched filter: enriched:yes/no
+  const enrichedMatch = remaining.match(/enriched:(yes|no)/i);
+  if (enrichedMatch) {
+    filters.enriched = enrichedMatch[1].toLowerCase() === 'yes';
+    remaining = remaining.replace(enrichedMatch[0], '').trim();
+  }
+  
+  // Dead link filter: dead:yes/no
+  const deadMatch = remaining.match(/dead:(yes|no)/i);
+  if (deadMatch) {
+    filters.dead = deadMatch[1].toLowerCase() === 'yes';
+    remaining = remaining.replace(deadMatch[0], '').trim();
+  }
+  
+  // Folder filter: folder:value or folder:"value with spaces"
+  const folderMatch = remaining.match(/folder:(?:"([^"]+)"|(\S+))/i);
+  if (folderMatch) {
+    filters.folder = (folderMatch[1] || folderMatch[2]).toLowerCase();
+    remaining = remaining.replace(folderMatch[0], '').trim();
+  }
+  
+  return { filters, remainingQuery: remaining };
+}
+
+/**
+ * Apply special filters to bookmarks
+ * @param {Array} bookmarks - Array of bookmarks
+ * @param {Object} filters - Special filters from parseSpecialFilters
+ * @returns {Array} Filtered bookmarks
+ */
+export function applySpecialFilters(bookmarks, filters) {
+  const now = Date.now();
+  const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+  
+  return bookmarks.filter(bookmark => {
+    // Category filter
+    if (filters.category) {
+      const bookmarkCategory = (bookmark.category || 'uncategorized').toLowerCase();
+      if (bookmarkCategory !== filters.category) return false;
+    }
+    
+    // Domain filter
+    if (filters.domain) {
+      const bookmarkDomain = (bookmark.domain || '').toLowerCase();
+      if (!bookmarkDomain.includes(filters.domain)) return false;
+    }
+    
+    // Accessed filter
+    if (filters.accessed !== undefined) {
+      const wasAccessed = bookmark.accessCount && bookmark.accessCount > 0;
+      if (filters.accessed !== wasAccessed) return false;
+    }
+    
+    // Stale filter (old + never accessed)
+    if (filters.stale) {
+      const isOld = bookmark.dateAdded < thirtyDaysAgo;
+      const neverAccessed = !bookmark.accessCount || bookmark.accessCount === 0;
+      const isAlive = bookmark.isAlive !== false;
+      if (!(isOld && neverAccessed && isAlive)) return false;
+    }
+    
+    // Enriched filter
+    if (filters.enriched !== undefined) {
+      const isEnriched = Boolean(
+        bookmark.description || 
+        (bookmark.keywords && bookmark.keywords.length > 0) ||
+        bookmark.contentSnippet
+      );
+      if (filters.enriched !== isEnriched) return false;
+    }
+    
+    // Dead link filter
+    if (filters.dead !== undefined) {
+      const isDead = bookmark.isAlive === false;
+      if (filters.dead !== isDead) return false;
+    }
+    
+    // Folder filter
+    if (filters.folder) {
+      const folderPath = (bookmark.folderPath || '').toLowerCase();
+      if (!folderPath.includes(filters.folder)) return false;
+    }
+    
+    return true;
+  });
+}
+
 // Search bookmarks with advanced query support
 export async function searchBookmarks(query, options = {}) {
   const {
@@ -294,25 +423,39 @@ export async function searchBookmarks(query, options = {}) {
     };
   }
 
-  // Parse the advanced query
-  const parsedQuery = parseAdvancedQuery(query);
+  // Parse special filters first
+  const { filters: specialFilters, remainingQuery } = parseSpecialFilters(query);
+
+  // Parse the advanced query from remaining text
+  const parsedQuery = parseAdvancedQuery(remainingQuery);
   
-  // Get all bookmarks and filter
-  const allBookmarks = await getAllBookmarks();
+  // Get all bookmarks
+  let allBookmarks = await getAllBookmarks();
   
-  // Filter bookmarks based on parsed query
-  let filteredBookmarks = allBookmarks.filter(bookmark => 
-    matchesAdvancedQuery(bookmark, parsedQuery)
-  );
+  // Apply special filters first
+  if (Object.keys(specialFilters).length > 0) {
+    allBookmarks = applySpecialFilters(allBookmarks, specialFilters);
+  }
   
-  // Calculate relevance scores and sort
-  filteredBookmarks = filteredBookmarks.map(bookmark => ({
-    ...bookmark,
-    _searchScore: calculateRelevanceScore(bookmark, parsedQuery)
-  }));
-  
-  // Sort by relevance score (highest first)
-  filteredBookmarks.sort((a, b) => b._searchScore - a._searchScore);
+  // If there's remaining text query, filter further
+  let filteredBookmarks;
+  if (remainingQuery.trim()) {
+    filteredBookmarks = allBookmarks.filter(bookmark => 
+      matchesAdvancedQuery(bookmark, parsedQuery)
+    );
+    
+    // Calculate relevance scores and sort
+    filteredBookmarks = filteredBookmarks.map(bookmark => ({
+      ...bookmark,
+      _searchScore: calculateRelevanceScore(bookmark, parsedQuery)
+    }));
+    
+    // Sort by relevance score (highest first)
+    filteredBookmarks.sort((a, b) => b._searchScore - a._searchScore);
+  } else {
+    // No text query, just use filtered results sorted by date
+    filteredBookmarks = allBookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
+  }
   
   const total = filteredBookmarks.length;
   
@@ -320,7 +463,8 @@ export async function searchBookmarks(query, options = {}) {
     results: filteredBookmarks.slice(offset, offset + limit),
     total,
     hasMore: offset + limit < total,
-    parsedQuery
+    parsedQuery,
+    specialFilters
   };
 }
 

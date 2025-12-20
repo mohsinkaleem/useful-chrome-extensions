@@ -1,6 +1,6 @@
 # Bookmark Insights - Technical Documentation
 
-**Version:** 2.1  
+**Version:** 2.4  
 **Last Updated:** December 20, 2025
 
 ## Table of Contents
@@ -11,6 +11,7 @@
 - [Enrichment System](#enrichment-system)
 - [Search & Similarity](#search--similarity)
 - [Insights & Analytics](#insights--analytics)
+- [Visual Insights Dashboard](#visual-insights-dashboard)
 - [Performance & Optimization](#performance--optimization)
 - [Privacy & Security](#privacy--security)
 
@@ -34,8 +35,15 @@
 ├─────────────────────────────────────────────────┤
 │  Popup (384x384)    │    Dashboard (Full Page)  │
 │  - Quick Search     │    - Bookmarks Tab        │
-│  - Recent Items     │    - Insights Tab         │
-│  - Dashboard Link   │    - Health Tab           │
+│  - Recent Items     │    - Insights Tab (NEW)   │
+│  - Dashboard Link   │      └─ VisualInsights    │
+│                     │         ├─ Health Tab     │
+│                     │         ├─ Content Tab    │
+│                     │         ├─ Actions Tab    │
+│                     │         ├─ Domains Tab    │
+│                     │         └─ Time Tab       │
+│                     │    - Health Tab           │
+│                     │    - Data Explorer Tab    │
 ├─────────────────────────────────────────────────┤
 │         Background Service Worker                │
 │  - Bookmark Event Listeners                      │
@@ -45,7 +53,7 @@
 ├─────────────────────────────────────────────────┤
 │              IndexedDB Layer (Dexie)            │
 │  - bookmarks, enrichmentQueue, events           │
-│  - cache, settings                              │
+│  - cache, settings, similarities, computedMetrics│
 └─────────────────────────────────────────────────┘
 ```
 
@@ -55,11 +63,14 @@ src/
 ├── db.js                   # Consolidated IndexedDB layer (schema, CRUD, analytics, caching)
 ├── stores.js               # Svelte stores for reactive state management
 ├── enrichment.js           # Enrichment pipeline & metadata fetching
-├── search.js               # FlexSearch integration
+├── search.js               # FlexSearch integration with special filters
 ├── similarity.js           # TF-IDF similarity engine with caching
-├── insights.js             # Analytics & insights generation
+├── insights.js             # Analytics & insights generation (5 major functions)
 ├── utils.js                # Shared utilities
-├── *.svelte                # UI components
+├── Dashboard.svelte        # Main dashboard component
+├── VisualInsights.svelte   # NEW: Interactive insights dashboard (5 tabs)
+├── InsightCard.svelte      # NEW: Reusable card component for insights
+├── *.svelte                # Other UI components
 ├── popup.js                # Popup entry point
 └── dashboard.js            # Dashboard entry point
 
@@ -859,6 +870,179 @@ domain → subdomain → paths
 - Requires explicit opt-in
 - All data stored locally (IndexedDB)
 - No external tracking or telemetry
+
+---
+
+## Visual Insights Dashboard
+
+### Architecture
+
+The Visual Insights dashboard (`VisualInsights.svelte`) is a self-contained component with 5 interactive tabs:
+
+```
+VisualInsights.svelte
+├── InsightCard.svelte (reusable card component)
+└── insights.js (computation functions)
+```
+
+### Insight Functions (insights.js)
+
+#### Collection Health Metrics
+```javascript
+getCollectionHealthMetrics() → {
+  total: Number,              // Total bookmark count
+  roi: Number,                // % of bookmarks accessed (0-100)
+  decayRate: Number,          // % of 90+ day old bookmarks never accessed
+  deadLinkRatio: Number,      // % of checked links that are dead
+  enrichmentCoverage: Number, // % with description/keywords
+  categorizationCoverage: Number, // % with category assigned
+  duplicateScore: Number,     // % duplicate URLs
+  healthScore: Number,        // Weighted overall score (0-100)
+  metrics: {
+    accessed: Number,
+    neverAccessed: Number,
+    old: Number,
+    decayed: Number,
+    checked: Number,
+    dead: Number,
+    enriched: Number,
+    categorized: Number,
+    duplicates: Number
+  }
+}
+```
+
+**Health Score Calculation:**
+```javascript
+healthScore = (roi * 0.25) +                    // Usage weight
+              ((100 - decayRate) * 0.20) +      // Low decay is good
+              ((100 - deadLinkRatio) * 0.20) +  // Low dead links is good
+              (enrichmentCoverage * 0.15) +     // Enrichment helps
+              (categorizationCoverage * 0.10) + // Categories help
+              ((100 - duplicateScore) * 0.10);  // Low duplicates is good
+```
+
+#### Content Analysis
+```javascript
+getContentAnalysis() → {
+  categoryBreakdown: [{ category, count, percentage }],
+  topicClusters: [{ keyword, count }],         // From meta keywords
+  contentTypeMix: [{ type, count, percentage }], // articles/videos/docs/etc
+  languageDistribution: [{ language, count, percentage }],
+  folderDistribution: [{ folder, count, percentage }],
+  totalBookmarks: Number
+}
+```
+
+#### Actionable Insights
+```javascript
+getActionableInsights() → {
+  staleQueue: [{                // Old + never accessed bookmarks
+    id, title, url, domain, dateAdded, category, folderPath, ageInDays
+  }],
+  cleanupCandidates: [{         // Dead links + very old unused
+    id, title, url, domain, dateAdded, isAlive, accessCount, reason, ageInDays
+  }],
+  rediscoveryFeed: [{           // Random old bookmarks (shuffled)
+    id, title, url, domain, dateAdded, category, description, ageInDays
+  }],
+  lowValueDomains: [{           // Domains with 1-2 bookmarks only
+    domain, count, bookmarks: [{ id, title, url, dateAdded }]
+  }],
+  stats: {
+    totalStale, totalCleanupCandidates, totalLowValueDomains,
+    deadLinksCount, oldUnusedCount
+  }
+}
+```
+
+#### Domain Intelligence
+```javascript
+getDomainIntelligence() → {
+  reliabilityScores: [{         // Domains with dead link data
+    domain, total, dead, checked, reliabilityScore, deadRate
+  }],
+  ephemeralSources: [{          // High dead link rate domains (>30%)
+    domain, deadRate, dead, checked
+  }],
+  valuableDomains: [{           // High access count domains
+    domain, total, accessed, totalAccess, engagementRate, avgAccess
+  }],
+  dependencyWarnings: [{        // Domains with >10% of bookmarks
+    domain, count, percentage, topCategory
+  }],
+  knowledgeMap: [{              // Top 25 domains with details
+    domain, total, accessed, dead, checked, percentage, topCategory, categories
+  }],
+  diversityScore: Number,       // 0-100 domain diversity
+  uniqueDomains: Number,
+  totalBookmarks: Number
+}
+```
+
+#### Time-Based Analysis
+```javascript
+getTimeBasedAnalysis() → {
+  bookmarkingHours: [{ hour, hourLabel, count }],  // 24-hour distribution
+  peakHours: String[],          // Hours with max activity
+  dayOfWeekDistribution: [{ day, dayName, count }],
+  weekdayVsWeekend: {
+    weekday: { count, percentage },
+    weekend: { count, percentage }
+  },
+  ageDistribution: [{ period, count, percentage }],
+  avgAgeDays: Number,
+  monthlyCreationTrend: [{ month, monthLabel, count }],  // Last 12 months
+  totalBookmarks: Number
+}
+```
+
+### Interactive Features
+
+| Feature | Interaction | Result |
+|---------|-------------|--------|
+| Health metric cards | Click | Navigate to filtered bookmark view |
+| Category chart segments | Click | Filter bookmarks by category |
+| Domain reliability bars | Click | Filter bookmarks by domain |
+| Topic cloud keywords | Click | Search for keyword |
+| Cleanup candidates | Checkbox select | Bulk delete selected |
+| Rediscovery feed | Shuffle button | Randomize selection |
+
+### Event Dispatchers
+
+The VisualInsights component dispatches events to the parent Dashboard:
+
+```javascript
+dispatch('filterByCategory', { category })
+dispatch('filterByDomain', { domain })
+dispatch('filterByAccessed', { accessed: true })
+dispatch('filterByStale')
+dispatch('filterByDead')
+dispatch('filterByUnenriched')
+dispatch('filterByUncategorized')
+dispatch('showDuplicates')
+dispatch('deleteBookmarks', { ids: [...] })
+dispatch('searchQuery', { query })
+```
+
+### Search Filter Syntax
+
+Enhanced search supports special filter prefixes:
+
+```javascript
+parseSpecialFilters(query) → { filters, remainingQuery }
+
+// Supported filters:
+category:code           // Filter by category
+domain:github          // Filter by domain (partial match)
+accessed:yes|no        // Filter by access status
+stale:yes              // Old + never accessed + alive
+enriched:yes|no        // Has description/keywords/snippet
+dead:yes|no            // Dead link status
+folder:"My Folder"     // Filter by folder path
+```
+
+---
 
 ### Insights Computed
 

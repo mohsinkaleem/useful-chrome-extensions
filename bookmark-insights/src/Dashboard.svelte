@@ -6,6 +6,7 @@
   import SearchBar from './SearchBar.svelte';
   import Sidebar from './Sidebar.svelte';
   import DataExplorer from './DataExplorer.svelte';
+  import VisualInsights from './VisualInsights.svelte';
   import { SORT_OPTIONS } from './utils.js';
   import { searchBookmarks, computeSearchResultStats } from './search.js';
   import { 
@@ -858,6 +859,86 @@
     }
   }
   
+  // ============================================================================
+  // VISUAL INSIGHTS EVENT HANDLERS
+  // ============================================================================
+  
+  function handleInsightCategoryFilter(event) {
+    const { category } = event.detail;
+    currentFilters = { ...currentFilters, searchQuery: `category:${category}` };
+    currentView = 'bookmarks';
+    loadBookmarksPaginated(0, false);
+  }
+  
+  function handleInsightDomainFilter(event) {
+    const { domain } = event.detail;
+    currentFilters = { ...currentFilters, domains: [domain] };
+    currentView = 'bookmarks';
+    loadBookmarksPaginated(0, false);
+  }
+  
+  async function handleFilterByAccessed(event) {
+    // Filter to show only accessed bookmarks
+    searchQuery = 'accessed:yes';
+    currentView = 'bookmarks';
+    await handleSearch(searchQuery);
+  }
+  
+  async function handleFilterByStale() {
+    // Filter to show stale/unused bookmarks
+    searchQuery = 'stale:yes';
+    currentView = 'bookmarks';
+    await handleSearch(searchQuery);
+  }
+  
+  async function handleFilterByDead() {
+    // Switch to health view and show dead links
+    currentView = 'health';
+    await loadHealthData();
+  }
+  
+  async function handleFilterByUnenriched() {
+    searchQuery = 'enriched:no';
+    currentView = 'bookmarks';
+    await handleSearch(searchQuery);
+  }
+  
+  async function handleFilterByUncategorized() {
+    searchQuery = 'category:uncategorized';
+    currentView = 'bookmarks';
+    await handleSearch(searchQuery);
+  }
+  
+  function handleShowDuplicates() {
+    currentView = 'health';
+    loadHealthData();
+  }
+  
+  async function handleBulkDeleteFromInsights(event) {
+    const { ids } = event.detail;
+    if (!ids || ids.length === 0) return;
+    
+    if (confirm(`Are you sure you want to delete ${ids.length} bookmark(s)?`)) {
+      try {
+        await deleteBookmarks(ids);
+        // Refresh the current view
+        await loadBookmarksPaginated(0, false);
+      } catch (err) {
+        console.error('Error deleting bookmarks:', err);
+        alert('Failed to delete some bookmarks. Please try again.');
+      }
+    }
+  }
+  
+  async function handleSearchFromInsights(event) {
+    const { query } = event.detail;
+    searchQuery = query;
+    currentView = 'bookmarks';
+    await handleSearch(query);
+  }
+  
+  // ============================================================================
+  
   async function handleRunEnrichment() {
     runningEnrichment = true;
     enrichmentResult = null;
@@ -1563,221 +1644,19 @@
         </div>
       </div>
     {:else if currentView === 'insights'}
-      <div class="space-y-8">
-        {#if loading}
-          <div class="flex items-center justify-center h-64">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        {:else}
-          <!-- Domain Analysis Section -->
-          <div class="bg-white p-6 rounded-lg shadow">
-            <h3 class="text-xl font-semibold text-gray-900 mb-6">Domain Analysis</h3>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div>
-                <canvas id="domainChart" width="400" height="300"></canvas>
-              </div>
-              <div>
-                <canvas id="domainDistributionChart" width="400" height="300"></canvas>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Content Analysis Section -->
-          <div class="bg-white p-6 rounded-lg shadow">
-            <h3 class="text-xl font-semibold text-gray-900 mb-6">Content Analysis</h3>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div>
-                <canvas id="wordCloudChart" width="400" height="300"></canvas>
-              </div>
-              <div>
-                <canvas id="titlePatternsChart" width="400" height="300"></canvas>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Temporal Analysis Section -->
-          <div class="bg-white p-6 rounded-lg shadow">
-            <h3 class="text-xl font-semibold text-gray-900 mb-6">Temporal Analysis</h3>
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div>
-                <canvas id="activityChart" width="400" height="300"></canvas>
-              </div>
-              <div>
-                <canvas id="ageDistributionChart" width="400" height="300"></canvas>
-              </div>
-              <div>
-                <canvas id="creationPatternsChart" width="400" height="300"></canvas>
-              </div>
-            </div>
-          </div>
-          
-          <!-- URL Structure Analysis Section -->
-          <div class="bg-white p-6 rounded-lg shadow">
-            <h3 class="text-xl font-semibold text-gray-900 mb-6">URL Structure Analysis</h3>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div>
-                <canvas id="urlPatternsChart" width="400" height="300"></canvas>
-              </div>
-              <div class="bg-gray-50 p-4 rounded-lg">
-                <h4 class="text-lg font-medium text-gray-900 mb-4">URL Parameter Usage</h4>
-                {#if urlParameterData}
-                  <div class="space-y-2">
-                    <div class="text-sm text-gray-600">
-                      URLs with parameters: <span class="font-semibold">{urlParameterData.percentage}%</span>
-                      <span class="text-xs text-gray-400">({urlParameterData.urlsWithParams} of {urlParameterData.totalUrls})</span>
-                    </div>
-                    {#if urlParameterData.parameters.length > 0}
-                      <div class="space-y-1 mt-3">
-                        <div class="text-sm font-medium text-gray-700">Most Common Parameters:</div>
-                        {#each urlParameterData.parameters.slice(0, 10) as [param, count]}
-                          <div class="flex justify-between text-xs text-gray-600 py-1 border-b border-gray-200">
-                            <span class="font-mono bg-gray-100 px-1 rounded">{param}</span>
-                            <span class="font-semibold">{count}</span>
-                          </div>
-                        {/each}
-                      </div>
-                    {:else}
-                      <p class="text-sm text-gray-500 mt-2">No URL parameters found in bookmarks.</p>
-                    {/if}
-                  </div>
-                {:else}
-                  <p class="text-sm text-gray-500">Loading parameter data...</p>
-                {/if}
-              </div>
-            </div>
-          </div>
-          
-          <!-- NEW: Domain Hierarchy Visualization (Step 9) -->
-          <div class="bg-white p-6 rounded-lg shadow">
-            <h3 class="text-xl font-semibold text-gray-900 mb-6">
-              <svg class="w-6 h-6 inline-block mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
-              </svg>
-              Domain Hierarchy
-            </h3>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div>
-                <canvas id="domainHierarchyChart" width="400" height="400"></canvas>
-              </div>
-              <div class="bg-gray-50 p-4 rounded-lg max-h-96 overflow-y-auto">
-                <h4 class="text-lg font-medium text-gray-900 mb-4">Domain Breakdown</h4>
-                {#if domainHierarchy.length > 0}
-                  <div class="space-y-3">
-                    {#each domainHierarchy.slice(0, 10) as domain}
-                      <div class="border border-gray-200 rounded p-3 bg-white">
-                        <div class="flex justify-between items-center">
-                          <span class="font-medium text-gray-800">{domain.name}</span>
-                          <span class="text-sm font-bold text-blue-600">{domain.count}</span>
-                        </div>
-                        {#if domain.subdomains.length > 0}
-                          <div class="mt-2 pl-4 border-l-2 border-gray-200">
-                            {#each domain.subdomains.slice(0, 3) as subdomain}
-                              <div class="text-sm text-gray-600 flex justify-between py-1">
-                                <span>{subdomain.name}</span>
-                                <span class="text-gray-500">{subdomain.count}</span>
-                              </div>
-                            {/each}
-                            {#if domain.subdomains.length > 3}
-                              <div class="text-xs text-gray-400">+{domain.subdomains.length - 3} more...</div>
-                            {/if}
-                          </div>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {:else}
-                  <p class="text-gray-500 text-sm">No domain data available.</p>
-                {/if}
-              </div>
-            </div>
-          </div>
-          
-          <!-- NEW: Data Insights Dashboard (Step 11) -->
-          <div class="bg-white p-6 rounded-lg shadow">
-            <h3 class="text-xl font-semibold text-gray-900 mb-6">
-              <svg class="w-6 h-6 inline-block mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
-              </svg>
-              Data Insights
-            </h3>
-            
-            {#if insightsSummary}
-              <!-- Insights Summary Cards -->
-              <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-                <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg text-center">
-                  <div class="text-2xl font-bold text-blue-700">{insightsSummary.totalBookmarks}</div>
-                  <div class="text-xs text-blue-600">Total Bookmarks</div>
-                </div>
-                <div class="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg text-center">
-                  <div class="text-2xl font-bold text-green-700">{insightsSummary.categorizedPercentage}%</div>
-                  <div class="text-xs text-green-600">Categorized</div>
-                </div>
-                <div class="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg text-center">
-                  <div class="text-2xl font-bold text-purple-700">{insightsSummary.enrichedPercentage}%</div>
-                  <div class="text-xs text-purple-600">Enriched</div>
-                </div>
-                <div class="bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg text-center">
-                  <div class="text-2xl font-bold text-orange-700">{insightsSummary.neverAccessedPercentage}%</div>
-                  <div class="text-xs text-orange-600">Never Accessed</div>
-                </div>
-                <div class="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg text-center">
-                  <div class="text-2xl font-bold text-red-700">{insightsSummary.deadLinks}</div>
-                  <div class="text-xs text-red-600">Dead Links</div>
-                </div>
-                <div class="bg-gradient-to-br from-cyan-50 to-cyan-100 p-4 rounded-lg text-center">
-                  <div class="text-2xl font-bold text-cyan-700">{insightsSummary.uniqueDomains}</div>
-                  <div class="text-xs text-cyan-600">Unique Domains</div>
-                </div>
-              </div>
-            {/if}
-            
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <!-- Content Freshness -->
-              <div>
-                <canvas id="freshnessChart" width="400" height="300"></canvas>
-              </div>
-              
-              <!-- Top Categories -->
-              <div class="bg-gray-50 p-4 rounded-lg">
-                <h4 class="text-lg font-medium text-gray-900 mb-4">Top Categories</h4>
-                {#if insightsSummary && insightsSummary.topCategories}
-                  <div class="space-y-2">
-                    {#each insightsSummary.topCategories as [category, count]}
-                      <div class="flex items-center justify-between py-2 border-b border-gray-200">
-                        <span class="font-medium text-gray-700 capitalize">{category}</span>
-                        <div class="flex items-center">
-                          <div class="w-24 bg-gray-200 rounded-full h-2 mr-3">
-                            <div class="bg-purple-600 h-2 rounded-full" style="width: {Math.min(100, (count / insightsSummary.topCategories[0][1]) * 100)}%"></div>
-                          </div>
-                          <span class="text-sm font-bold text-gray-600">{count}</span>
-                        </div>
-                      </div>
-                    {/each}
-                  </div>
-                {:else}
-                  <p class="text-sm text-gray-500">No category data available.</p>
-                {/if}
-              </div>
-            </div>
-          </div>
-          
-          <!-- Summary Statistics -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="bg-white p-6 rounded-lg shadow text-center">
-              <div class="text-3xl font-bold text-blue-600">{bookmarks.length || 0}</div>
-              <div class="text-gray-500">Total Bookmarks</div>
-            </div>
-            <div class="bg-white p-6 rounded-lg shadow text-center">
-              <div class="text-3xl font-bold text-green-600">{duplicates.length}</div>
-              <div class="text-gray-500">Duplicate Groups</div>
-            </div>
-            <div class="bg-white p-6 rounded-lg shadow text-center">
-              <div class="text-3xl font-bold text-purple-600">{new Set(bookmarks.map(b => b.domain)).size}</div>
-              <div class="text-gray-500">Unique Domains</div>
-            </div>
-          </div>
-        {/if}
-      </div>
+      <!-- New Visual Insights Component -->
+      <VisualInsights 
+        on:filterByCategory={handleInsightCategoryFilter}
+        on:filterByDomain={handleInsightDomainFilter}
+        on:filterByAccessed={handleFilterByAccessed}
+        on:filterByStale={handleFilterByStale}
+        on:filterByDead={handleFilterByDead}
+        on:filterByUnenriched={handleFilterByUnenriched}
+        on:filterByUncategorized={handleFilterByUncategorized}
+        on:showDuplicates={handleShowDuplicates}
+        on:deleteBookmarks={handleBulkDeleteFromInsights}
+        on:searchQuery={handleSearchFromInsights}
+      />
     {:else if currentView === 'health'}
       <div class="space-y-8">
         {#if loading}

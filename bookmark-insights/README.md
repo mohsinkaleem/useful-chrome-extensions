@@ -2,9 +2,60 @@
 
 A powerful, privacy-first bookmark intelligence system with smart search, enrichment, insights, and maintenance tools.
 
-## 🚀 What's New in v2.3
+## 🚀 What's New in v2.4
 
-Version 2.3 introduces the **Data Explorer** - a powerful new tool for understanding your bookmark data:
+Version 2.4 introduces a **completely redesigned Visual Insights dashboard** with actionable metrics and interactive tools:
+
+### ❤️ Collection Health Dashboard
+- **Health Score (0-100)** - Overall collection quality at a glance
+- **Bookmark ROI** - What % of your bookmarks have you actually used?
+- **Decay Rate** - How fast do bookmarks become "dead weight"?
+- **Dead Link Ratio** - Link rot detection across your collection
+- **Enrichment Coverage** - Data completeness metrics
+- **Improvement Tips** - Actionable recommendations based on your data
+
+### 📚 Content Analysis
+- **Category Donut Chart** - Click any segment to filter bookmarks
+- **Content Type Mix** - Articles vs. videos vs. tools vs. docs
+- **Topic Clusters** - Interactive keyword tag cloud from your bookmarks
+- **Folder Distribution** - Visual breakdown of your folder structure
+- **Language Distribution** - Multilingual content analysis
+
+### ⚡ Actionable Insights
+- **Rediscovery Feed** - Random old bookmarks you might've forgotten (with shuffle!)
+- **Cleanup Candidates** - Dead links + old unused bookmarks with bulk delete
+- **Stale Queue** - Review unread bookmarks older than 30 days
+- **Low-Value Domains** - Domains with only 1-2 bookmarks
+
+### 🌐 Domain Intelligence
+- **Domain Reliability Chart** - Click to filter by domain
+- **Valuable Domains** - Sites you actually use and return to
+- **Concentration Warnings** - Alerts when >10% of bookmarks are from one source
+- **Ephemeral Sources** - Domains with high dead link rates
+- **Knowledge Map** - Visual grid of your top 25 domains
+
+### ⏰ Time-Based Analysis
+- **Bookmarking by Hour** - When do you save bookmarks?
+- **Day of Week Distribution** - Weekday vs. weekend patterns
+- **Collection Age Histogram** - How old is your collection?
+- **Monthly Trend** - Last 12 months of activity
+
+### Enhanced Search Filters
+New special filter syntax:
+```
+category:code          # Filter by category
+domain:github          # Filter by domain
+accessed:yes           # Only accessed bookmarks
+accessed:no            # Never accessed bookmarks
+stale:yes              # Old + never accessed
+enriched:no            # Missing metadata
+dead:yes               # Dead links only
+folder:"My Folder"     # Filter by folder path
+```
+
+## What's in v2.3
+
+Version 2.3 introduced the **Data Explorer** - a powerful tool for understanding your bookmark data:
 
 - **🗄️ Database Browser** - Explore all 7 database tables interactively
 - **📊 Field Coverage Analysis** - Visual bars showing data completeness per field
@@ -60,9 +111,10 @@ javascript -video         # Find "javascript" but exclude "video"
 - **Raw Metadata Storage** - Comprehensive data capture for future AI analysis
 - **Parallel Processing** - Configurable concurrency (3-10x faster enrichment)
 - **Smart Re-enrichment** - Automatic freshness detection with configurable periods
-- **Dead Link Detection** - Identifies broken bookmarks automatically
+- **Dead Link Detection** - Identifies broken bookmarks with delete functionality and insights
+- **Cleanup Candidates** - Find useless bookmarks (old/unused, generic titles, temp/dev URLs)
 - **Auto-Categorization** - Smart categorization based on domain, URL, and content
-- **TF-IDF Similarity** - Advanced semantic matching for duplicate and related bookmarks
+- **Enhanced Similarity** - Fuzzy matching with side-by-side comparison and metadata coverage analysis
 - **Domain Visualization** - Hierarchical treemap view of your bookmark domains
 - **Behavioral Analytics** - Track bookmark usage patterns (opt-in only)
 
@@ -78,13 +130,16 @@ javascript -video         # Find "javascript" but exclude "video"
 - **Keyboard shortcuts** - Enter for instant search, Escape to clear
 
 ### 📊 Visual Analytics & Insights
-- **Domain Analysis**: Most bookmarked domains with distribution charts
+- **5 Interactive Tabs**: Health, Content, Actions, Domains, Time
+- **Collection Health Score**: Overall quality metric (0-100) with component breakdown
+- **Bookmark ROI**: Track what % of bookmarks you actually use
+- **Category Distribution**: Interactive donut chart - click to filter
+- **Topic Clusters**: Keyword tag cloud from bookmark metadata
+- **Content Type Analysis**: Articles vs. videos vs. tools vs. documentation
+- **Domain Intelligence**: Reliability scores, valuable domains, concentration warnings
+- **Time Patterns**: Hourly/daily bookmarking habits, age distribution
+- **Actionable Insights**: Stale queue, cleanup candidates, rediscovery feed
 - **Domain Hierarchy**: Interactive domain → subdomain → path visualization
-- **Content Analysis**: Word frequency and title pattern detection
-- **Temporal Analysis**: Activity timeline, age distribution, creation patterns
-- **URL Structure**: TLD distribution and parameter usage analysis
-- **Category Trends**: Track how your interests evolve over time
-- **Expertise Areas**: Discover your knowledge domains based on bookmarks
 
 ### 🔧 Enrichment Pipeline
 - **Real-Time Progress Tracking**: Live progress bar, current bookmark display, and detailed logs
@@ -98,9 +153,10 @@ javascript -video         # Find "javascript" but exclude "video"
 - **Respectful Rate Limiting**: 100ms delay between requests with batch processing
 
 ### 🏥 Health & Maintenance
-- **Dead Links List**: View bookmarks detected as unreachable during enrichment
+- **Dead Links List**: View and delete unreachable bookmarks with insights by domain, age, and category
 - **Duplicate Detection**: Exact and normalized URL matching
-- **Similar Bookmarks**: TF-IDF similarity with cosine scoring (instant deletion, no recomputation)
+- **Smart Similar Detection**: Enhanced fuzzy matching using title, description, keywords & domain analysis with side-by-side comparison
+- **Cleanup Candidates**: Automatic detection of useless bookmarks (old/unused, generic titles, temp URLs, low quality)
 - **Malformed URL Detection**: Find invalid bookmark URLs
 
 ### 📈 Behavioral Analytics (Opt-In)
