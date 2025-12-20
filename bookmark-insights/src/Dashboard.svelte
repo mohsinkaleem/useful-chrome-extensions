@@ -6,8 +6,8 @@
   import SearchBar from './SearchBar.svelte';
   import Sidebar from './Sidebar.svelte';
   import { SORT_OPTIONS } from './utils.js';
+  import { searchBookmarks, computeSearchResultStats } from './search.js';
   import { 
-    searchBookmarks, 
     getBookmarksPaginated, 
     getBookmarksByDomain, 
     getBookmarksByDateRange, 
@@ -96,6 +96,9 @@
   let deadLinks = [];
   let loadingDeadLinks = false;
   let quickStats = null;
+  
+  // Search result stats for sidebar (domains/folders from search results)
+  let searchResultStats = null;
   
   // Enrichment state
   let enrichmentStatus = null;
@@ -215,7 +218,60 @@
     try {
       loading = true;
       currentPage = 0;
-      await loadBookmarksPaginated();
+      
+      if (query && query.trim()) {
+        // Use advanced search with +/- term support
+        const searchResult = await searchBookmarks(query, { limit: 1000 });
+        const allResults = searchResult.results || [];
+        
+        // Compute stats from ALL search results for sidebar
+        searchResultStats = computeSearchResultStats(allResults);
+        
+        // Apply additional filters (domains, folders, date range) if any
+        let filteredResults = allResults;
+        
+        if (currentFilters.domains && currentFilters.domains.length > 0) {
+          filteredResults = filteredResults.filter(b => currentFilters.domains.includes(b.domain));
+        }
+        if (currentFilters.folders && currentFilters.folders.length > 0) {
+          filteredResults = filteredResults.filter(b => currentFilters.folders.includes(b.folderPath));
+        }
+        if (currentFilters.dateRange) {
+          filteredResults = filteredResults.filter(b => 
+            b.dateAdded >= currentFilters.dateRange.startDate && 
+            b.dateAdded <= currentFilters.dateRange.endDate
+          );
+        }
+        
+        // Apply sorting
+        const sortBy = currentFilters.sortBy || 'relevance';
+        if (sortBy !== 'relevance') {
+          switch (sortBy) {
+            case 'date_desc':
+              filteredResults.sort((a, b) => b.dateAdded - a.dateAdded);
+              break;
+            case 'date_asc':
+              filteredResults.sort((a, b) => a.dateAdded - b.dateAdded);
+              break;
+            case 'title_asc':
+              filteredResults.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+              break;
+            case 'title_desc':
+              filteredResults.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+              break;
+          }
+        }
+        
+        // Paginate
+        const startIndex = currentPage * pageSize;
+        bookmarks = filteredResults.slice(startIndex, startIndex + pageSize);
+        totalCount = filteredResults.length;
+        hasMore = startIndex + pageSize < filteredResults.length;
+      } else {
+        // No search query - clear search stats and load all bookmarks
+        searchResultStats = null;
+        await loadBookmarksPaginated();
+      }
     } catch (err) {
       error = err.message;
     } finally {
@@ -230,6 +286,13 @@
     try {
       loading = true;
       currentPage = 0;
+      
+      // Re-run search with new filters if there's a search query
+      if (searchQuery && searchQuery.trim()) {
+        await handleSearch({ detail: { query: searchQuery } });
+        return;
+      }
+      
       await loadBookmarksPaginated();
     } catch (err) {
       error = err.message;
@@ -1090,13 +1153,13 @@
   
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     {#if currentView === 'bookmarks'}
-      <div class="mb-6">
+      <div class="mb-4">
         <SearchBar on:search={handleSearch} />
       </div>
       
       <div class="flex gap-6 min-h-0">
         <div class="flex-shrink-0">
-          <Sidebar on:filter={handleFilter} />
+          <Sidebar on:filter={handleFilter} {searchResultStats} isSearchActive={!!searchQuery} />
         </div>
         
         <div class="flex-1 min-w-0 overflow-hidden">

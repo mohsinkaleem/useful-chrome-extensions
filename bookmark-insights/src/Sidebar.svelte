@@ -4,6 +4,10 @@
   
   const dispatch = createEventDispatcher();
   
+  // Props for search result stats
+  export let searchResultStats = null;
+  export let isSearchActive = false;
+  
   let domainsByRecency = [];
   let domainsByCount = [];
   let folders = [];
@@ -12,7 +16,7 @@
     folders: [],
     dateRange: null
   };
-  let domainSortMode = 'recency'; // 'recency' or 'count'
+  let domainSortMode = 'count'; // 'recency' or 'count'
   
   onMount(async () => {
     try {
@@ -28,7 +32,15 @@
     domainsByCount = await getDomainsByCount();
   }
 
-  $: currentDomains = domainSortMode === 'recency' ? domainsByRecency : domainsByCount;
+  // Use search result stats when available, otherwise use full domain list
+  $: displayDomains = isSearchActive && searchResultStats?.domains 
+    ? searchResultStats.domains 
+    : (domainSortMode === 'recency' ? domainsByRecency : domainsByCount);
+  
+  // Use search result folders when available
+  $: displayFolders = isSearchActive && searchResultStats?.folders 
+    ? searchResultStats.folders.map(f => f.folder)
+    : folders;
   
   function toggleDomainFilter(domain) {
     if (selectedFilters.domains.includes(domain)) {
@@ -199,33 +211,39 @@
   <div class="mb-6">
     <div class="flex items-center justify-between mb-2">
       <h4 class="text-xs font-medium text-gray-700 uppercase tracking-wide">
-        Domains ({currentDomains.length})
+        {#if isSearchActive}
+          <span class="text-blue-600">Matching Domains ({displayDomains.length})</span>
+        {:else}
+          Domains ({displayDomains.length})
+        {/if}
       </h4>
-      <div class="flex space-x-1">
-        <button
-          on:click={() => domainSortMode = 'recency'}
-          class="text-xs px-2 py-1 rounded"
-          class:bg-blue-100={domainSortMode === 'recency'}
-          class:text-blue-700={domainSortMode === 'recency'}
-          class:text-gray-500={domainSortMode !== 'recency'}
-          title="Sort by most recent bookmark"
-        >
-          Recent
-        </button>
-        <button
-          on:click={() => domainSortMode = 'count'}
-          class="text-xs px-2 py-1 rounded"
-          class:bg-blue-100={domainSortMode === 'count'}
-          class:text-blue-700={domainSortMode === 'count'}
-          class:text-gray-500={domainSortMode !== 'count'}
-          title="Sort by bookmark count"
-        >
-          Count
-        </button>
-      </div>
+      {#if !isSearchActive}
+        <div class="flex space-x-1">
+          <button
+            on:click={() => domainSortMode = 'recency'}
+            class="text-xs px-2 py-1 rounded"
+            class:bg-blue-100={domainSortMode === 'recency'}
+            class:text-blue-700={domainSortMode === 'recency'}
+            class:text-gray-500={domainSortMode !== 'recency'}
+            title="Sort by most recent bookmark"
+          >
+            Recent
+          </button>
+          <button
+            on:click={() => domainSortMode = 'count'}
+            class="text-xs px-2 py-1 rounded"
+            class:bg-blue-100={domainSortMode === 'count'}
+            class:text-blue-700={domainSortMode === 'count'}
+            class:text-gray-500={domainSortMode !== 'count'}
+            title="Sort by bookmark count"
+          >
+            Count
+          </button>
+        </div>
+      {/if}
     </div>
     <div class="space-y-1 max-h-64 overflow-y-auto">
-      {#each currentDomains.slice(0, 30) as domainData}
+      {#each displayDomains.slice(0, 30) as domainData}
         <button
           on:click={() => toggleDomainFilter(domainData.domain)}
           class="w-full text-left px-2 py-2 text-sm hover:bg-gray-100 rounded border"
@@ -239,15 +257,20 @@
           <div class="truncate font-medium">{domainData.domain}</div>
           <div class="flex justify-between items-center text-xs text-gray-500 mt-1">
             <span>{domainData.count} bookmark{domainData.count !== 1 ? 's' : ''}</span>
-            {#if domainSortMode === 'recency'}
+            {#if !isSearchActive && domainSortMode === 'recency' && (domainData.dateAdded || domainData.latestDate)}
               <span>{formatTimeAgo(domainData.dateAdded || domainData.latestDate)}</span>
             {/if}
           </div>
         </button>
       {/each}
-      {#if currentDomains.length > 30}
+      {#if displayDomains.length > 30}
         <div class="text-xs text-gray-400 px-2 py-1">
-          ... and {currentDomains.length - 30} more
+          ... and {displayDomains.length - 30} more
+        </div>
+      {/if}
+      {#if displayDomains.length === 0}
+        <div class="text-xs text-gray-400 px-2 py-2 italic">
+          No domains found
         </div>
       {/if}
     </div>
@@ -256,10 +279,14 @@
   <!-- Folder Filters -->
   <div class="mb-6">
     <h4 class="text-xs font-medium text-gray-700 uppercase tracking-wide mb-2">
-      Folders ({folders.length})
+      {#if isSearchActive}
+        <span class="text-blue-600">Matching Folders ({displayFolders.length})</span>
+      {:else}
+        Folders ({displayFolders.length})
+      {/if}
     </h4>
     <div class="space-y-1 max-h-48 overflow-y-auto">
-      {#each folders.slice(0, 15) as folder}
+      {#each displayFolders.slice(0, 15) as folder}
         <button
           on:click={() => toggleFolderFilter(folder)}
           class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded border"
@@ -270,12 +297,17 @@
           class:border-transparent={!selectedFilters.folders.includes(folder)}
           title={folder}
         >
-          <span class="truncate">📁 {folder}</span>
+          <span class="truncate block">📁 {folder}</span>
         </button>
       {/each}
-      {#if folders.length > 15}
+      {#if displayFolders.length > 15}
         <div class="text-xs text-gray-400 px-2 py-1">
-          ... and {folders.length - 15} more
+          ... and {displayFolders.length - 15} more
+        </div>
+      {/if}
+      {#if displayFolders.length === 0}
+        <div class="text-xs text-gray-400 px-2 py-2 italic">
+          No folders found
         </div>
       {/if}
     </div>

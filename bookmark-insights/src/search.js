@@ -8,6 +8,151 @@ import { db, getAllBookmarks, setCache, getCache } from './db.js';
 let searchIndex = null;
 let indexInitialized = false;
 
+/**
+ * Parse advanced search query with +/- modifiers and quoted phrases
+ * @param {string} query - The raw search query
+ * @returns {Object} Parsed query components
+ */
+export function parseAdvancedQuery(query) {
+  if (!query || !query.trim()) {
+    return { positive: [], negative: [], phrases: [], regular: [], hasModifiers: false };
+  }
+  
+  const positive = [];  // Must include (+term)
+  const negative = [];  // Must exclude (-term)
+  const phrases = [];   // Exact phrases ("exact match")
+  const regular = [];   // Regular search terms
+  
+  // Extract quoted phrases first (including their modifiers)
+  const phraseRegex = /([+-]?)"([^"]+)"/g;
+  let match;
+  while ((match = phraseRegex.exec(query)) !== null) {
+    const modifier = match[1];
+    const phrase = match[2].toLowerCase();
+    if (modifier === '+') {
+      positive.push(phrase);
+    } else if (modifier === '-') {
+      negative.push(phrase);
+    } else {
+      phrases.push(phrase);
+    }
+  }
+  
+  // Remove quoted phrases for further parsing
+  let remaining = query.replace(/[+-]?"[^"]+"/g, '').trim();
+  
+  // Split into terms and categorize
+  const terms = remaining.split(/\s+/).filter(t => t.length > 0);
+  
+  for (const term of terms) {
+    const lowerTerm = term.toLowerCase();
+    if (term.startsWith('+') && term.length > 1) {
+      positive.push(lowerTerm.slice(1));
+    } else if (term.startsWith('-') && term.length > 1) {
+      negative.push(lowerTerm.slice(1));
+    } else {
+      regular.push(lowerTerm);
+    }
+  }
+  
+  return {
+    positive,
+    negative,
+    phrases,
+    regular,
+    hasModifiers: positive.length > 0 || negative.length > 0 || phrases.length > 0
+  };
+}
+
+/**
+ * Check if a bookmark matches the parsed query
+ * @param {Object} bookmark - The bookmark to check
+ * @param {Object} parsedQuery - Parsed query from parseAdvancedQuery
+ * @returns {boolean} Whether the bookmark matches
+ */
+function matchesAdvancedQuery(bookmark, parsedQuery) {
+  const { positive, negative, phrases, regular } = parsedQuery;
+  
+  // Build searchable text from bookmark (cached for performance)
+  const searchableText = [
+    bookmark.title || '',
+    bookmark.url || '',
+    bookmark.description || '',
+    bookmark.domain || '',
+    bookmark.category || '',
+    Array.isArray(bookmark.keywords) ? bookmark.keywords.join(' ') : ''
+  ].join(' ').toLowerCase();
+  
+  // All positive terms must be present
+  for (const term of positive) {
+    if (!searchableText.includes(term)) {
+      return false;
+    }
+  }
+  
+  // All negative terms must be absent
+  for (const term of negative) {
+    if (searchableText.includes(term)) {
+      return false;
+    }
+  }
+  
+  // All exact phrases must be present
+  for (const phrase of phrases) {
+    if (!searchableText.includes(phrase)) {
+      return false;
+    }
+  }
+  
+  // If there are regular terms, at least one must match
+  if (regular.length > 0) {
+    const hasRegularMatch = regular.some(term => searchableText.includes(term));
+    if (!hasRegularMatch) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/**
+ * Calculate relevance score for a bookmark
+ * @param {Object} bookmark - The bookmark
+ * @param {Object} parsedQuery - Parsed query
+ * @returns {number} Relevance score
+ */
+function calculateRelevanceScore(bookmark, parsedQuery) {
+  const { positive, phrases, regular } = parsedQuery;
+  let score = 0;
+  
+  const title = (bookmark.title || '').toLowerCase();
+  const url = (bookmark.url || '').toLowerCase();
+  const domain = (bookmark.domain || '').toLowerCase();
+  const description = (bookmark.description || '').toLowerCase();
+  const category = (bookmark.category || '').toLowerCase();
+  
+  const allTerms = [...positive, ...phrases, ...regular];
+  
+  for (const term of allTerms) {
+    // Title matches are most valuable
+    if (title.includes(term)) {
+      score += 10;
+      // Bonus for title starting with term
+      if (title.startsWith(term)) score += 5;
+    }
+    // Domain matches
+    if (domain.includes(term)) score += 5;
+    // Category matches
+    if (category.includes(term)) score += 4;
+    // Description matches
+    if (description.includes(term)) score += 2;
+    // URL matches
+    if (url.includes(term)) score += 1;
+  }
+  
+  return score;
+}
+
 // Initialize FlexSearch index with optimized configuration
 export async function initializeSearchIndex() {
   if (indexInitialized) {
@@ -129,125 +274,102 @@ export async function updateInIndex(bookmark) {
   await addToIndex(bookmark);
 }
 
-// Search bookmarks with FlexSearch
+// Search bookmarks with advanced query support
 export async function searchBookmarks(query, options = {}) {
+  const {
+    limit = 50,
+    offset = 0
+  } = options;
+
   if (!query || !query.trim()) {
     // Return all bookmarks sorted by date if no query
     const bookmarks = await getAllBookmarks();
-    return bookmarks
-      .sort((a, b) => b.dateAdded - a.dateAdded)
-      .slice(0, options.limit || 100);
+    return {
+      results: bookmarks
+        .sort((a, b) => b.dateAdded - a.dateAdded)
+        .slice(offset, offset + limit),
+      total: bookmarks.length,
+      hasMore: offset + limit < bookmarks.length,
+      parsedQuery: null
+    };
   }
 
-  if (!searchIndex) {
-    await initializeSearchIndex();
-  }
-
-  const {
-    limit = 50,
-    offset = 0,
-    fields = ['title', 'url', 'description', 'keywords', 'category'],
-    boost = {
-      title: 3,
-      category: 2,
-      keywords: 2,
-      description: 1,
-      url: 1,
-      domain: 1
-    }
-  } = options;
-
-  try {
-    // Perform search across specified fields
-    const results = await searchIndex.search(query, {
-      index: fields,
-      limit: limit + offset,
-      offset: 0,
-      enrich: true,
-      boost: boost
-    });
-
-    // Flatten and deduplicate results
-    const resultMap = new Map();
-    
-    for (const fieldResult of results) {
-      if (fieldResult && fieldResult.result) {
-        for (const item of fieldResult.result) {
-          const id = item.id;
-          if (!resultMap.has(id)) {
-            resultMap.set(id, {
-              id: item.id,
-              doc: item.doc,
-              score: 1,
-              matchedFields: [fieldResult.field]
-            });
-          } else {
-            const existing = resultMap.get(id);
-            existing.score += 1;
-            existing.matchedFields.push(fieldResult.field);
-          }
-        }
-      }
-    }
-
-    // Convert to array and sort by score
-    let finalResults = Array.from(resultMap.values())
-      .sort((a, b) => b.score - a.score);
-
-    // Apply offset and limit
-    if (offset > 0) {
-      finalResults = finalResults.slice(offset);
-    }
-    if (limit > 0) {
-      finalResults = finalResults.slice(0, limit);
-    }
-
-    // Get full bookmark data from IndexedDB
-    const bookmarkIds = finalResults.map(r => r.id);
-    const bookmarks = await Promise.all(
-      bookmarkIds.map(id => db.bookmarks.get(id))
-    );
-
-    // Merge with search metadata
-    return bookmarks
-      .filter(b => b !== undefined)
-      .map((bookmark, index) => ({
-        ...bookmark,
-        _searchScore: finalResults[index].score,
-        _matchedFields: finalResults[index].matchedFields
-      }));
-  } catch (error) {
-    console.error('Search error:', error);
-    // Fallback to basic search
-    return fallbackSearch(query, limit);
-  }
+  // Parse the advanced query
+  const parsedQuery = parseAdvancedQuery(query);
+  
+  // Get all bookmarks and filter
+  const allBookmarks = await getAllBookmarks();
+  
+  // Filter bookmarks based on parsed query
+  let filteredBookmarks = allBookmarks.filter(bookmark => 
+    matchesAdvancedQuery(bookmark, parsedQuery)
+  );
+  
+  // Calculate relevance scores and sort
+  filteredBookmarks = filteredBookmarks.map(bookmark => ({
+    ...bookmark,
+    _searchScore: calculateRelevanceScore(bookmark, parsedQuery)
+  }));
+  
+  // Sort by relevance score (highest first)
+  filteredBookmarks.sort((a, b) => b._searchScore - a._searchScore);
+  
+  const total = filteredBookmarks.length;
+  
+  return {
+    results: filteredBookmarks.slice(offset, offset + limit),
+    total,
+    hasMore: offset + limit < total,
+    parsedQuery
+  };
 }
 
-// Fallback search using simple string matching (if FlexSearch fails)
-async function fallbackSearch(query, limit = 50) {
-  console.log('Using fallback search');
-  const bookmarks = await getAllBookmarks();
-  const lowerQuery = query.toLowerCase();
-
-  return bookmarks
-    .filter(bookmark => 
-      (bookmark.title && bookmark.title.toLowerCase().includes(lowerQuery)) ||
-      (bookmark.url && bookmark.url.toLowerCase().includes(lowerQuery)) ||
-      (bookmark.description && bookmark.description.toLowerCase().includes(lowerQuery)) ||
-      (bookmark.domain && bookmark.domain.toLowerCase().includes(lowerQuery)) ||
-      (bookmark.category && bookmark.category.toLowerCase().includes(lowerQuery)) ||
-      (bookmark.keywords && bookmark.keywords.some(k => k.toLowerCase().includes(lowerQuery)))
-    )
-    .sort((a, b) => b.dateAdded - a.dateAdded)
-    .slice(0, limit);
+/**
+ * Compute stats from search results for sidebar updates
+ * @param {Array} bookmarks - Array of bookmark results
+ * @returns {Object} Stats for sidebar (domains, folders)
+ */
+export function computeSearchResultStats(bookmarks) {
+  const domainCounts = new Map();
+  const folderCounts = new Map();
+  
+  for (const bookmark of bookmarks) {
+    // Count domains
+    if (bookmark.domain) {
+      const current = domainCounts.get(bookmark.domain) || { count: 0, latestDate: 0 };
+      current.count++;
+      if (bookmark.dateAdded > current.latestDate) {
+        current.latestDate = bookmark.dateAdded;
+      }
+      domainCounts.set(bookmark.domain, current);
+    }
+    
+    // Count folders
+    if (bookmark.folderPath) {
+      const current = folderCounts.get(bookmark.folderPath) || 0;
+      folderCounts.set(bookmark.folderPath, current + 1);
+    }
+  }
+  
+  // Convert to sorted arrays
+  const domains = Array.from(domainCounts.entries())
+    .map(([domain, data]) => ({ domain, count: data.count, latestDate: data.latestDate }))
+    .sort((a, b) => b.count - a.count);
+  
+  const folders = Array.from(folderCounts.entries())
+    .map(([folder, count]) => ({ folder, count }))
+    .sort((a, b) => b.count - a.count);
+  
+  return { domains, folders };
 }
 
 // Advanced search with filters
 export async function advancedSearch(query, filters = {}) {
-  let results = await searchBookmarks(query, {
-    limit: 1000, // Get more results for filtering
-    fields: filters.fields || ['title', 'url', 'description', 'keywords', 'category']
+  const searchResult = await searchBookmarks(query, {
+    limit: 1000 // Get more results for filtering
   });
+
+  let results = searchResult.results || [];
 
   // Apply filters
   if (filters.category) {
@@ -318,55 +440,6 @@ export async function advancedSearch(query, filters = {}) {
     total: results.length,
     hasMore: offset + limit < results.length
   };
-}
-
-// Get search suggestions (autocomplete)
-export async function getSearchSuggestions(query, limit = 10) {
-  if (!query || query.length < 2) {
-    return [];
-  }
-
-  if (!searchIndex) {
-    await initializeSearchIndex();
-  }
-
-  try {
-    // Search with prefix matching
-    const results = await searchIndex.search(query, {
-      index: ['title', 'category', 'domain'],
-      limit: limit * 2,
-      suggest: true,
-      enrich: true
-    });
-
-    const suggestions = new Set();
-    
-    for (const fieldResult of results) {
-      if (fieldResult && fieldResult.result) {
-        for (const item of fieldResult.result) {
-          if (item.doc) {
-            // Add title
-            if (item.doc.title) {
-              suggestions.add(item.doc.title);
-            }
-            // Add domain
-            if (item.doc.domain && !item.doc.domain.includes('unknown')) {
-              suggestions.add(item.doc.domain);
-            }
-            // Add category
-            if (item.doc.category) {
-              suggestions.add(item.doc.category);
-            }
-          }
-        }
-      }
-    }
-
-    return Array.from(suggestions).slice(0, limit);
-  } catch (error) {
-    console.error('Error getting suggestions:', error);
-    return [];
-  }
 }
 
 // Clear the search index

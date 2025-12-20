@@ -2,9 +2,27 @@
 
 A powerful, privacy-first bookmark intelligence system with smart search, enrichment, insights, and maintenance tools.
 
-## 🚀 What's New in v2.1
+## 🚀 What's New in v2.2
 
-Version 2.1 brings major architectural improvements and performance enhancements:
+Version 2.2 brings a completely revamped search experience:
+
+- **Advanced Search Syntax** - Support for `+term` (must include), `-term` (exclude), and `"exact phrases"`
+- **Dynamic Sidebar** - Domains and folders update based on search results
+- **Relevance Ranking** - Smart scoring prioritizing title > domain > category > description
+- **Visual Query Feedback** - Color-coded tags show active search modifiers
+- **Simplified UI** - Removed autocomplete for cleaner, faster search
+- **Optimized Performance** - Single-pass filtering with pre-computed relevance scores
+
+### Search Syntax Examples
+```
+javascript tutorial       # Find bookmarks with "javascript" OR "tutorial"
++javascript +tutorial     # MUST contain both terms
+javascript -video         # Find "javascript" but exclude "video"
+"react hooks"             # Find exact phrase "react hooks"
++react "best practices" -beginner  # Complex query combining all
+```
+
+### Previous in v2.1
 
 - **Consolidated Database Layer** - Single `db.js` module with all database operations
 - **Smart Bookmark Merging** - Preserves enrichment data during Chrome sync (fixes data loss bug)
@@ -26,17 +44,18 @@ Version 2.1 brings major architectural improvements and performance enhancements
 - **Auto-Categorization** - Smart categorization based on domain, URL, and content
 - **TF-IDF Similarity** - Advanced semantic matching for duplicate and related bookmarks
 - **Domain Visualization** - Hierarchical treemap view of your bookmark domains
-- **Data Insights Dashboard** - Stale bookmarks, reading lists, expertise areas
 - **Behavioral Analytics** - Track bookmark usage patterns (opt-in only)
 
 ## Features
 
-### 🔍 Smart Search (FlexSearch-Powered)
-- **Fuzzy matching** with intelligent ranking
-- **Multi-field search** across title, URL, description, keywords, category
-- **Real-time suggestions** with autocomplete dropdown
-- **Keyboard navigation** (up/down arrows, enter, escape)
-- **Weighted boosting** - title matches rank higher
+### 🔍 Advanced Search
+- **Boolean operators**: `+term` (must include), `-term` (must exclude)
+- **Exact phrases**: `"quoted phrases"` for precise matching
+- **Multi-field search** across title, URL, description, keywords, category, domain
+- **Smart relevance ranking** - title matches rank highest
+- **Visual query feedback** - colored tags show positive/negative/phrase terms
+- **Dynamic filtering** - sidebar updates to show matching domains and folders
+- **Keyboard shortcuts** - Enter for instant search, Escape to clear
 
 ### 📊 Visual Analytics & Insights
 - **Domain Analysis**: Most bookmarked domains with distribution charts
@@ -59,19 +78,14 @@ Version 2.1 brings major architectural improvements and performance enhancements
 - **Respectful Rate Limiting**: 100ms delay between requests with batch processing
 
 ### 🏥 Health & Maintenance
-- **Dead Link Checker**: HEAD/GET requests to verify bookmark health
+- **Dead Links List**: View bookmarks detected as unreachable during enrichment
 - **Duplicate Detection**: Exact and normalized URL matching
-- **Similar Bookmarks**: TF-IDF similarity with cosine scoring
-- **Uncategorized Finder**: Locate bookmarks without organization
+- **Similar Bookmarks**: TF-IDF similarity with cosine scoring (instant deletion, no recomputation)
 - **Malformed URL Detection**: Find invalid bookmark URLs
 
 ### 📈 Behavioral Analytics (Opt-In)
 - **Disabled by default** - Your browsing is NOT tracked unless you enable it
 - **Access Tracking**: Know which bookmarks you actually visit (if enabled)
-- **Stale Detection**: Find bookmarks 90+ days old, never accessed
-- **"Bookmark and Forget"**: Identify 6+ months old unused bookmarks
-- **Reading List**: Recently added bookmarks you haven't visited yet
-- **Most Accessed**: Your top bookmarks by usage
 - **Event Logging**: Track create, delete, update events (access events only if enabled)
 
 ### 💾 Data Management
@@ -115,15 +129,16 @@ The extension will be available on the Chrome Web Store once published.
 - **Bookmarks Tab**: Browse and search all bookmarks with advanced filters
 - **Insights Tab**: View statistics and charts about your bookmarking habits
 - **Health Tab**: Find and fix issues with your bookmark collection
-  - **Enrichment**: Real-time progress tracking with live updates 🆕
-  - **Dead Link Checker**: Verify bookmark health
+  - **Enrichment**: Real-time progress tracking with live updates
+  - **Dead Links**: View bookmarks detected as unreachable
   - **Duplicates & Similar**: Find and manage duplicate bookmarks
-  - **Maintenance**: Clean up malformed URLs and orphaned bookmarks
+  - **Maintenance**: Clean up malformed URLs
 
 ### Filters
 - **Date Filters**: This Week, This Month, This Year
-- **Domain Filters**: Click any domain to see all bookmarks from that site
-- **Folder Filters**: Browse bookmarks by folder structure
+- **Domain Filters**: Click any domain to filter; shows matching domains when searching
+- **Folder Filters**: Browse bookmarks by folder; updates based on search results
+- **Combined Filtering**: Chain search with domain/folder/date filters
 
 ## Technical Details
 
