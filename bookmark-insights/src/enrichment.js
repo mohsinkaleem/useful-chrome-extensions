@@ -65,7 +65,12 @@ const CONTENT_KEYWORDS = {
 };
 
 // Enrich a single bookmark by fetching its metadata
-export async function enrichBookmark(bookmarkId) {
+// @param {string} bookmarkId - The bookmark ID to enrich
+// @param {Object} options - Options for enrichment
+// @param {boolean} options.force - Force re-enrichment even if recently enriched
+export async function enrichBookmark(bookmarkId, options = {}) {
+  const { force = false } = options;
+  
   try {
     const bookmark = await getBookmark(bookmarkId);
     if (!bookmark) {
@@ -79,14 +84,18 @@ export async function enrichBookmark(bookmarkId) {
       return { success: false, error: 'Not an HTTP URL', skipped: true };
     }
 
-    // Skip if recently enriched (based on freshness settings)
-    const settings = await getSettings();
-    const freshnessDays = settings.enrichmentFreshnessDays || 30;
-    const freshnessThreshold = Date.now() - (freshnessDays * 24 * 60 * 60 * 1000);
-    
-    if (bookmark.lastChecked && bookmark.lastChecked > freshnessThreshold) {
-      console.log(`Skipping recently enriched bookmark: ${bookmark.title} (last checked: ${new Date(bookmark.lastChecked).toLocaleDateString()})`);
-      return { success: true, skipped: true, alreadyEnriched: true };
+    // Skip if recently enriched (based on freshness settings) - unless force is true
+    if (!force) {
+      const settings = await getSettings();
+      const freshnessDays = settings.enrichmentFreshnessDays || 30;
+      const freshnessThreshold = Date.now() - (freshnessDays * 24 * 60 * 60 * 1000);
+      
+      if (bookmark.lastChecked && bookmark.lastChecked > freshnessThreshold) {
+        console.log(`Skipping recently enriched bookmark: ${bookmark.title} (last checked: ${new Date(bookmark.lastChecked).toLocaleDateString()})`);
+        return { success: true, skipped: true, alreadyEnriched: true };
+      }
+    } else {
+      console.log(`Force re-enriching bookmark: ${bookmark.title}`);
     }
 
     console.log(`Enriching bookmark: ${bookmark.title} (${bookmark.url})`);
@@ -385,7 +394,14 @@ export function categorizeBookmark(bookmark, metadata = {}) {
 }
 
 // Process a batch of bookmarks from the enrichment queue with parallel processing
-export async function processEnrichmentBatch(batchSize = 10, progressCallback = null, concurrency = 3) {
+// @param {number} batchSize - Number of bookmarks to process
+// @param {Function} progressCallback - Callback for progress updates
+// @param {number} concurrency - Number of parallel requests
+// @param {Object} options - Additional options
+// @param {boolean} options.force - Force re-enrichment even for recently enriched bookmarks
+export async function processEnrichmentBatch(batchSize = 10, progressCallback = null, concurrency = 3, options = {}) {
+  const { force = false } = options;
+  
   try {
     const settings = await getSettings();
     if (!settings.enrichmentEnabled) {
@@ -395,7 +411,7 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
 
     // Use settings concurrency if not explicitly provided
     const maxConcurrency = concurrency || settings.enrichmentConcurrency || 3;
-    console.log(`Using concurrency: ${maxConcurrency} parallel requests`);
+    console.log(`Using concurrency: ${maxConcurrency} parallel requests${force ? ' (FORCE mode)' : ''}`);
 
     const batch = await getNextEnrichmentBatch(batchSize);
     if (batch.length === 0) {
@@ -428,7 +444,7 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
           });
         }
 
-        const result = await enrichBookmark(queueItem.bookmarkId);
+        const result = await enrichBookmark(queueItem.bookmarkId, { force });
         
         // Update counters
         if (result.success) {

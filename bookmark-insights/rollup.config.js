@@ -10,7 +10,7 @@ export default [
   {
     input: 'src/popup.js',
     output: {
-      sourcemap: true,
+      sourcemap: !production,
       format: 'es',
       file: 'public/popup.js',
       inlineDynamicImports: true
@@ -37,7 +37,7 @@ export default [
   {
     input: 'src/dashboard.js',
     output: {
-      sourcemap: true,
+      sourcemap: !production,
       format: 'es',
       file: 'public/dashboard.js',
       inlineDynamicImports: true
@@ -64,7 +64,7 @@ export default [
   {
     input: 'background-new.js',
     output: {
-      sourcemap: true,
+      sourcemap: !production,
       format: 'es',
       file: 'background.js',
       inlineDynamicImports: true

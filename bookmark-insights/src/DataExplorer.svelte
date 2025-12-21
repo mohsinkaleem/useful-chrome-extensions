@@ -47,9 +47,8 @@
   let viewingMetricData = null;
   let loadingMetrics = false;
   
-  // Mermaid diagram
-  let mermaidDiagram = '';
-  let mermaidContainer = null;
+  // Flow diagram data (simple HTML rendering, no mermaid)
+  let flowDiagram = null;
   
   // Active section (for collapsible panels)
   let activeSection = 'table'; // 'table', 'fields', 'cache', 'diagram', 'overview'
@@ -59,7 +58,7 @@
       await loadDatabaseOverview();
       await loadTableData();
       await loadCachedMetrics();
-      await loadMermaidDiagram();
+      await loadFlowDiagram();
     } catch (err) {
       error = err.message;
     } finally {
@@ -69,6 +68,10 @@
   
   async function loadDatabaseOverview() {
     dbOverview = await getDatabaseOverview();
+  }
+  
+  async function loadFlowDiagram() {
+    flowDiagram = await getMetricsFlowDiagram();
   }
   
   async function loadTableData() {
@@ -115,35 +118,15 @@
     }
   }
   
-  async function loadMermaidDiagram() {
-    mermaidDiagram = await getMetricsFlowDiagram();
-    renderMermaid();
-  }
-  
-  async function renderMermaid() {
-    if (!mermaidContainer || !mermaidDiagram) return;
-    
-    try {
-      // Dynamic import of mermaid
-      const mermaid = (await import('mermaid')).default;
-      mermaid.initialize({ 
-        startOnLoad: false,
-        theme: 'base',
-        themeVariables: {
-          primaryColor: '#3b82f6',
-          primaryTextColor: '#fff',
-          primaryBorderColor: '#2563eb',
-          lineColor: '#94a3b8',
-          secondaryColor: '#f1f5f9',
-          tertiaryColor: '#e2e8f0'
-        }
-      });
-      
-      const { svg } = await mermaid.render('mermaid-diagram', mermaidDiagram);
-      mermaidContainer.innerHTML = svg;
-    } catch (err) {
-      console.error('Mermaid rendering error:', err);
-      mermaidContainer.innerHTML = `<pre class="text-xs text-gray-500">${mermaidDiagram}</pre>`;
+  // Get status color class for flow diagram
+  function getFlowStatusClass(status) {
+    switch(status) {
+      case 'valid': return 'bg-green-500 text-white';
+      case 'expiring': return 'bg-yellow-500 text-white';
+      case 'stale': return 'bg-red-500 text-white';
+      case 'source': return 'bg-blue-500 text-white';
+      case 'storage': return 'bg-purple-500 text-white';
+      default: return 'bg-gray-400 text-white';
     }
   }
   
@@ -258,7 +241,7 @@
     await invalidateMetrics(keys);
     selectedMetrics.clear();
     await loadCachedMetrics();
-    await loadMermaidDiagram();
+    await loadFlowDiagram();
   }
   
   async function viewMetricData(key) {
@@ -277,7 +260,7 @@
       await loadDatabaseOverview();
       await loadTableData();
       await loadCachedMetrics();
-      await loadMermaidDiagram();
+      await loadFlowDiagram();
     } finally {
       loading = false;
     }
@@ -713,14 +696,29 @@
       <span>🔴 Stale/Expired</span>
       <span>⚪ Never Computed</span>
     </div>
-    <div 
-      bind:this={mermaidContainer}
-      class="mermaid-container overflow-auto bg-gray-50 rounded-lg p-4 min-h-[300px]"
-    >
-      <div class="text-center text-gray-500 py-8">
-        <span class="animate-spin inline-block mr-2">⟳</span> Loading diagram...
+    {#if flowDiagram}
+      <div class="bg-gray-50 rounded-lg p-4 space-y-4">
+        {#each flowDiagram.layers as layer}
+          <div class="text-center">
+            <div class="text-xs font-semibold text-gray-500 mb-2">{layer.title}</div>
+            <div class="flex flex-wrap justify-center gap-2">
+              {#each layer.items as item}
+                <span class="px-3 py-1.5 rounded-lg text-xs font-medium {getFlowStatusClass(item.status)}">
+                  {item.label}
+                </span>
+              {/each}
+            </div>
+          </div>
+          {#if layer !== flowDiagram.layers[flowDiagram.layers.length - 1]}
+            <div class="text-center text-gray-300 text-lg">↓</div>
+          {/if}
+        {/each}
       </div>
-    </div>
+    {:else}
+      <div class="text-center text-gray-500 py-8">
+        <span class="animate-spin inline-block mr-2">⟳</span> Loading...
+      </div>
+    {/if}
   </div>
   
   <!-- Metric Data Viewer Modal -->
@@ -761,10 +759,3 @@
     </div>
   {/if}
 </div>
-
-<style>
-  .data-explorer :global(.mermaid-container svg) {
-    max-width: 100%;
-    height: auto;
-  }
-</style>

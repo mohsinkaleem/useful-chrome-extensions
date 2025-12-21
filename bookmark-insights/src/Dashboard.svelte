@@ -120,6 +120,7 @@
   // Enrichment configuration
   let enrichmentBatchSize = 20;
   let enrichmentConcurrency = 3;
+  let forceReenrich = false; // Force re-enrichment even for recently enriched bookmarks
   
   // Advanced insights data
   let domainHierarchy = [];
@@ -144,6 +145,7 @@
   // Enhanced similarity detection
   let enhancedSimilarPairs = [];
   let enhancedSimilarStats = null;
+  let enhancedSimilarCacheInfo = null; // Cache info for similarity detection
   let selectedComparisonPair = null; // For side-by-side comparison modal
   
   // Useless bookmarks detection
@@ -172,6 +174,9 @@
   let selectedBookmarks = new Set();
   let multiSelectMode = false;
   let viewMode = 'list'; // 'list' or 'card'
+  
+  // Reference to Sidebar component for clearing filters
+  let sidebarRef;
   
   onMount(async () => {
     try {
@@ -933,7 +938,8 @@
       const response = await chrome.runtime.sendMessage({ 
         action: 'runEnrichment',
         batchSize: enrichmentBatchSize,
-        concurrency: enrichmentConcurrency
+        concurrency: enrichmentConcurrency,
+        force: forceReenrich
       });
       
       if (response.success) {
@@ -1129,19 +1135,26 @@
   }
   
   // Run smart similar detection on demand
-  async function runSmartSimilarDetection() {
+  async function runSmartSimilarDetection(forceRefresh = false) {
     loadingEnhancedSimilar = true;
     enhancedSimilarPairs = [];
     enhancedSimilarStats = null;
+    enhancedSimilarCacheInfo = null;
     
     try {
       const result = await findSimilarBookmarksEnhancedFuzzy({ 
         minSimilarity: 0.4, 
         maxPairs: 100,
-        prioritizeSameDomain: true
+        prioritizeSameDomain: true,
+        forceRefresh: forceRefresh
       });
       enhancedSimilarPairs = result.pairs;
       enhancedSimilarStats = result.stats;
+      enhancedSimilarCacheInfo = {
+        fromCache: result.fromCache,
+        cachedAt: result.cachedAt,
+        cacheAge: result.cacheAge
+      };
     } catch (err) {
       console.error('Error running smart similar detection:', err);
     } finally {
@@ -1549,7 +1562,7 @@
       
       <div class="flex gap-6 min-h-0">
         <div class="flex-shrink-0">
-          <Sidebar on:filter={handleFilter} {searchResultStats} isSearchActive={!!searchQuery} />
+          <Sidebar bind:this={sidebarRef} on:filter={handleFilter} {searchResultStats} isSearchActive={!!searchQuery} />
         </div>
         
         <div class="flex-1 min-w-0 overflow-hidden">
@@ -1577,14 +1590,29 @@
             </div>
           {:else}
             <div class="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <h2 class="text-lg font-medium text-gray-900">
-                {totalCount} bookmark{totalCount !== 1 ? 's' : ''}
-                {#if currentFilters.domains.length > 0 || currentFilters.folders.length > 0 || currentFilters.dateRange || currentFilters.searchQuery}
-                  <span class="text-sm text-gray-500">
-                    (filtered)
-                  </span>
+              <div class="flex items-center gap-3">
+                <h2 class="text-lg font-medium text-gray-900">
+                  {totalCount} bookmark{totalCount !== 1 ? 's' : ''}
+                  {#if currentFilters.domains.length > 0 || currentFilters.folders.length > 0 || currentFilters.dateRange || currentFilters.searchQuery}
+                    <span class="text-sm text-gray-500">
+                      (filtered)
+                    </span>
+                  {/if}
+                </h2>
+                <!-- Clear Filters Button -->
+                {#if currentFilters.domains.length > 0 || currentFilters.folders.length > 0 || currentFilters.dateRange}
+                  <button
+                    on:click={() => { if (sidebarRef) sidebarRef.clearAllFilters(); }}
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors"
+                    title="Clear all sidebar filters"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                    Clear Filters
+                  </button>
                 {/if}
-              </h2>
+              </div>
               <div class="flex flex-wrap items-center gap-2 sm:gap-4">
                 <div class="text-sm text-gray-500">
                   Showing {bookmarks.length} of {totalCount}
@@ -1601,6 +1629,17 @@
                   {/each}
                 </select>
                 
+                <!-- Multi-Select Toggle -->
+                <button
+                  on:click={toggleMultiSelectMode}
+                  class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+                  class:bg-blue-50={multiSelectMode}
+                  class:border-blue-300={multiSelectMode}
+                  class:text-blue-700={multiSelectMode}
+                >
+                  {multiSelectMode ? 'Cancel' : 'Select'}
+                </button>
+                
                 <!-- View Mode Toggle -->
                 <button
                   on:click={toggleViewMode}
@@ -1616,17 +1655,6 @@
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
                     </svg>
                   {/if}
-                </button>
-                
-                <!-- Multi-Select Toggle -->
-                <button
-                  on:click={toggleMultiSelectMode}
-                  class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-                  class:bg-blue-50={multiSelectMode}
-                  class:border-blue-300={multiSelectMode}
-                  class:text-blue-700={multiSelectMode}
-                >
-                  {multiSelectMode ? 'Cancel' : 'Select'}
                 </button>
               </div>
             </div>
@@ -1804,7 +1832,7 @@
               {/if}
               
               <!-- Enrichment Configuration -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">
                     Batch Size
@@ -1835,6 +1863,22 @@
                   <p class="text-xs text-gray-500 mt-1">
                     Higher = faster, but more resource intensive (recommended: 3-5)
                   </p>
+                </div>
+                <div>
+                  <label class="flex items-start gap-2 cursor-pointer mt-2">
+                    <input 
+                      type="checkbox" 
+                      bind:checked={forceReenrich}
+                      class="mt-0.5 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                      disabled={runningEnrichment}
+                    />
+                    <div>
+                      <span class="text-sm font-medium text-gray-700">Force Re-enrich</span>
+                      <p class="text-xs text-gray-500 mt-0.5">
+                        Re-enrich all bookmarks, even those recently processed. Useful when you want fresh metadata.
+                      </p>
+                    </div>
+                  </label>
                 </div>
               </div>
               
@@ -2197,25 +2241,50 @@
           
           <!-- Smart Similar Detection (On-demand) -->
           <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
               <div>
                 <h3 class="text-lg font-medium text-gray-900">
                   🔍 Smart Similar Detection {#if enhancedSimilarStats}({enhancedSimilarStats.total} pairs){/if}
                 </h3>
                 <p class="text-xs text-gray-500 mt-1">Advanced fuzzy matching using title, description, keywords & domain analysis</p>
               </div>
-              <button
-                on:click={runSmartSimilarDetection}
-                disabled={loadingEnhancedSimilar}
-                class="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-              >
-                {#if loadingEnhancedSimilar}
-                  <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Analyzing...
-                {:else}
-                  🔍 Run Analysis
+              <div class="flex items-center gap-2">
+                {#if enhancedSimilarCacheInfo?.fromCache}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-md" title="Loaded from cache">
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                    </svg>
+                    Cached {Math.round((enhancedSimilarCacheInfo.cacheAge || 0) / 60000)}m ago
+                  </span>
+                  <button
+                    on:click={() => runSmartSimilarDetection(true)}
+                    disabled={loadingEnhancedSimilar}
+                    class="px-2.5 py-1.5 text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md disabled:opacity-50"
+                    title="Force refresh - recompute similarity analysis"
+                  >
+                    🔄 Refresh
+                  </button>
+                {:else if enhancedSimilarStats}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-green-50 text-green-700 border border-green-200 rounded-md">
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    Fresh analysis
+                  </span>
                 {/if}
-              </button>
+                <button
+                  on:click={() => runSmartSimilarDetection(false)}
+                  disabled={loadingEnhancedSimilar}
+                  class="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  {#if loadingEnhancedSimilar}
+                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    Analyzing...
+                  {:else}
+                    🔍 Run Analysis
+                  {/if}
+                </button>
+              </div>
             </div>
             <div class="p-6">
               {#if loadingEnhancedSimilar}

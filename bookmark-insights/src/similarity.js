@@ -723,6 +723,7 @@ function calculateComprehensiveSimilarity(bookmark1, bookmark2) {
 /**
  * Find similar bookmarks using enhanced fuzzy matching on same domain + metadata
  * Returns pairs with detailed comparison data for side-by-side viewing
+ * Supports caching for faster subsequent loads
  */
 export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
   const {
@@ -730,14 +731,32 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
     maxPairs = 100,
     prioritizeSameDomain = true,
     requireHighCoverage = false,
-    minCoveragePercent = 40
+    minCoveragePercent = 40,
+    useCache = true,
+    forceRefresh = false
   } = options;
   
   try {
+    // Check cache first (unless forceRefresh)
+    const cacheKey = `enhanced_similar_${minSimilarity}_${maxPairs}`;
+    if (useCache && !forceRefresh) {
+      const cached = await getCache(cacheKey);
+      if (cached && cached.pairs && Date.now() - cached.timestamp < CACHE_DURATIONS.SIMILARITY) {
+        console.log('Returning cached enhanced similar results');
+        return { 
+          pairs: cached.pairs, 
+          stats: cached.stats,
+          fromCache: true,
+          cachedAt: cached.timestamp,
+          cacheAge: Date.now() - cached.timestamp
+        };
+      }
+    }
+    
     const bookmarks = await getAllBookmarks();
     
     if (bookmarks.length < 2) {
-      return { pairs: [], stats: { total: 0, sameDomain: 0, crossDomain: 0 } };
+      return { pairs: [], stats: { total: 0, sameDomain: 0, crossDomain: 0 }, fromCache: false };
     }
     
     // Pre-filter bookmarks with sufficient metadata if required
@@ -843,10 +862,20 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
         : 0
     };
     
-    return { pairs: sortedPairs, stats };
+    // Cache results for future use
+    if (useCache) {
+      await setCache(cacheKey, {
+        pairs: sortedPairs,
+        stats: stats,
+        timestamp: Date.now()
+      });
+      console.log('Cached enhanced similar results');
+    }
+    
+    return { pairs: sortedPairs, stats, fromCache: false };
   } catch (error) {
     console.error('Error finding similar bookmarks with fuzzy matching:', error);
-    return { pairs: [], stats: { total: 0, sameDomain: 0, crossDomain: 0 } };
+    return { pairs: [], stats: { total: 0, sameDomain: 0, crossDomain: 0 }, fromCache: false };
   }
 }
 

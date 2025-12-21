@@ -20,6 +20,16 @@
   let domainDisplayLimit = 30; // Initial limit for domains
   let folderDisplayLimit = 15; // Initial limit for folders
   
+  // Export hasActiveFilters for external use
+  export function getHasActiveFilters() {
+    return hasActiveFilters();
+  }
+  
+  // Export clearFilters for external use
+  export function clearAllFilters() {
+    clearFilters();
+  }
+  
   onMount(async () => {
     try {
       await loadDomains();

@@ -6,7 +6,9 @@
   "scripts": {
     "build:css": "tailwindcss -i ./src/tailwind.css -o ./public/tailwind.css --minify",
     "build:js": "rollup -c",
-    "build": "npm run build:css && npm run build:js",
+    "build": "npm run build:css && npm run build:js && npm run clean:maps",
+    "clean:maps": "rm -f public/*.map background.js.map",
+    "dist": "npm run build && rm -rf dist && mkdir -p dist && cp -r public icons manifest.json popup.html dashboard.html background.js dist/ && echo 'Dist size:' && du -sh dist",
     "dev:css": "tailwindcss -i ./src/tailwind.css -o ./public/tailwind.css --watch",
     "dev": "npm run build:css && rollup -c -w",
     "start": "sirv public --no-clear"
@@ -26,7 +28,6 @@
   "dependencies": {
     "chart.js": "^4.3.0",
     "dexie": "^4.2.1",
-    "flexsearch": "^0.8.212",
-    "mermaid": "^10.6.0"
+    "flexsearch": "^0.8.212"
   }
 }

@@ -462,7 +462,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     processEnrichmentBatch(
       request.batchSize || 10, 
       progressCallback,
-      request.concurrency || 3
+      request.concurrency || 3,
+      { force: request.force || false }
     ).then((result) => {
       sendResponse({ success: true, result });
     }).catch((error) => {

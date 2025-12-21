@@ -336,72 +336,42 @@ export async function getMetricsFlowDiagram() {
   const cacheStatus = await getCachedMetricsStatus();
   const statusMap = Object.fromEntries(cacheStatus.map(c => [c.key, c.status]));
   
-  const getStyle = (key) => {
-    switch(statusMap[key]) {
-      case 'valid': return 'fill:#10b981,color:#fff'; // green
-      case 'expiring': return 'fill:#f59e0b,color:#fff'; // yellow
-      case 'stale': return 'fill:#ef4444,color:#fff'; // red
-      default: return 'fill:#9ca3af,color:#fff'; // gray
-    }
+  // Return structured data for simple HTML rendering (no mermaid dependency)
+  return {
+    layers: [
+      {
+        title: '📥 Data Sources',
+        items: [
+          { id: 'chromeApi', label: 'Chrome Bookmarks API', status: 'source' },
+          { id: 'activity', label: 'User Activity', status: 'source' }
+        ]
+      },
+      {
+        title: '🗄️ Storage',
+        items: [
+          { id: 'bookmarks', label: 'Bookmarks Table', status: 'storage' },
+          { id: 'events', label: 'Events Table', status: 'storage' }
+        ]
+      },
+      {
+        title: '📊 Computed Metrics',
+        items: [
+          { id: 'domainStats', label: 'Domain Stats', status: statusMap['domainStats'] || 'none' },
+          { id: 'activityTimeline', label: 'Activity Timeline', status: statusMap['activityTimeline'] || 'none' },
+          { id: 'quickStats', label: 'Quick Stats', status: statusMap['quickStats'] || 'none' },
+          { id: 'similarities', label: 'Similarities', status: statusMap['similarities'] || 'none' },
+          { id: 'wordFrequency', label: 'Word Frequency', status: statusMap['wordFrequency'] || 'none' }
+        ]
+      },
+      {
+        title: '🎯 Insights',
+        items: [
+          { id: 'insightsSummary', label: 'Summary', status: statusMap['insightsSummary'] || 'none' },
+          { id: 'expertiseAreas', label: 'Expertise', status: statusMap['expertiseAreas'] || 'none' }
+        ]
+      }
+    ]
   };
-  
-  return `
-graph TD
-    subgraph Sources["📥 Data Sources"]
-        A[Chrome Bookmarks API]
-        B[User Activity]
-    end
-    
-    subgraph Storage["🗄️ Primary Storage"]
-        C[(Bookmarks Table)]
-        D[(Events Table)]
-    end
-    
-    subgraph Enrichment["🔄 Enrichment Engine"]
-        E[Fetch Metadata]
-        F[Auto-Categorize]
-        G[Dead Link Check]
-    end
-    
-    subgraph Metrics["📊 Computed Metrics"]
-        H[domainStats]
-        I[activityTimeline]
-        J[quickStats]
-        K[similarities]
-        L[wordFrequency]
-    end
-    
-    subgraph Insights["🎯 Final Insights"]
-        M[insightsSummary]
-        N[expertiseAreas]
-        O[Stale Detection]
-    end
-    
-    A --> C
-    B --> D
-    C --> E
-    E --> F
-    E --> G
-    C --> H
-    C --> I
-    C --> J
-    C --> L
-    F --> K
-    H --> M
-    I --> M
-    K --> M
-    L --> M
-    M --> N
-    M --> O
-    
-    style H ${getStyle('domainStats')}
-    style I ${getStyle('activityTimeline')}
-    style J ${getStyle('quickStats')}
-    style K ${getStyle('similarities')}
-    style L ${getStyle('wordFrequency')}
-    style M ${getStyle('insightsSummary')}
-    style N ${getStyle('expertiseAreas')}
-  `;
 }
 
 /**

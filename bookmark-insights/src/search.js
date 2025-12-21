@@ -9,24 +9,44 @@ let searchIndex = null;
 let indexInitialized = false;
 
 /**
- * Parse advanced search query with +/- modifiers and quoted phrases
+ * Parse advanced search query with +/- modifiers, quoted phrases, and regex patterns
  * @param {string} query - The raw search query
  * @returns {Object} Parsed query components
  */
 export function parseAdvancedQuery(query) {
   if (!query || !query.trim()) {
-    return { positive: [], negative: [], phrases: [], regular: [], hasModifiers: false };
+    return { positive: [], negative: [], phrases: [], regular: [], regexPatterns: [], hasModifiers: false };
   }
   
   const positive = [];  // Must include (+term)
   const negative = [];  // Must exclude (-term)
   const phrases = [];   // Exact phrases ("exact match")
   const regular = [];   // Regular search terms
+  const regexPatterns = []; // Regex patterns (/pattern/)
   
-  // Extract quoted phrases first (including their modifiers)
-  const phraseRegex = /([+-]?)"([^"]+)"/g;
+  // Extract regex patterns first (format: /pattern/ or /pattern/flags)
+  const regexExtractPattern = /\/([^\/]+)\/([gimsuvy]*)?/g;
   let match;
-  while ((match = phraseRegex.exec(query)) !== null) {
+  let remaining = query;
+  
+  while ((match = regexExtractPattern.exec(query)) !== null) {
+    try {
+      const pattern = match[1];
+      const flags = match[2] || 'i'; // Default to case-insensitive
+      const regex = new RegExp(pattern, flags);
+      regexPatterns.push(regex);
+    } catch (e) {
+      // Invalid regex, treat as regular search term
+      console.warn('Invalid regex pattern:', match[0], e.message);
+    }
+  }
+  
+  // Remove regex patterns from remaining query
+  remaining = remaining.replace(/\/[^\/]+\/[gimsuvy]*/g, '').trim();
+  
+  // Extract quoted phrases (including their modifiers)
+  const phraseRegex = /([+-]?)"([^"]+)"/g;
+  while ((match = phraseRegex.exec(remaining)) !== null) {
     const modifier = match[1];
     const phrase = match[2].toLowerCase();
     if (modifier === '+') {
@@ -39,7 +59,7 @@ export function parseAdvancedQuery(query) {
   }
   
   // Remove quoted phrases for further parsing
-  let remaining = query.replace(/[+-]?"[^"]+"/g, '').trim();
+  remaining = remaining.replace(/[+-]?"[^"]+"/g, '').trim();
   
   // Split into terms and categorize
   const terms = remaining.split(/\s+/).filter(t => t.length > 0);
@@ -60,7 +80,8 @@ export function parseAdvancedQuery(query) {
     negative,
     phrases,
     regular,
-    hasModifiers: positive.length > 0 || negative.length > 0 || phrases.length > 0
+    regexPatterns,
+    hasModifiers: positive.length > 0 || negative.length > 0 || phrases.length > 0 || regexPatterns.length > 0
   };
 }
 
@@ -71,7 +92,7 @@ export function parseAdvancedQuery(query) {
  * @returns {boolean} Whether the bookmark matches
  */
 function matchesAdvancedQuery(bookmark, parsedQuery) {
-  const { positive, negative, phrases, regular } = parsedQuery;
+  const { positive, negative, phrases, regular, regexPatterns = [] } = parsedQuery;
   
   // Build searchable text from bookmark (cached for performance)
   const searchableText = [
@@ -82,6 +103,16 @@ function matchesAdvancedQuery(bookmark, parsedQuery) {
     bookmark.category || '',
     Array.isArray(bookmark.keywords) ? bookmark.keywords.join(' ') : ''
   ].join(' ').toLowerCase();
+  
+  // For regex, we may want to preserve case in some cases
+  const searchableTextOriginal = [
+    bookmark.title || '',
+    bookmark.url || '',
+    bookmark.description || '',
+    bookmark.domain || '',
+    bookmark.category || '',
+    Array.isArray(bookmark.keywords) ? bookmark.keywords.join(' ') : ''
+  ].join(' ');
   
   // All positive terms must be present
   for (const term of positive) {
@@ -104,6 +135,15 @@ function matchesAdvancedQuery(bookmark, parsedQuery) {
     }
   }
   
+  // All regex patterns must match
+  for (const regex of regexPatterns) {
+    // Use original text if regex is case-sensitive, otherwise use lowercase
+    const textToSearch = regex.flags.includes('i') ? searchableText : searchableTextOriginal;
+    if (!regex.test(textToSearch)) {
+      return false;
+    }
+  }
+  
   // If there are regular terms, at least one must match
   if (regular.length > 0) {
     const hasRegularMatch = regular.some(term => searchableText.includes(term));
@@ -122,7 +162,7 @@ function matchesAdvancedQuery(bookmark, parsedQuery) {
  * @returns {number} Relevance score
  */
 function calculateRelevanceScore(bookmark, parsedQuery) {
-  const { positive, phrases, regular } = parsedQuery;
+  const { positive, phrases, regular, regexPatterns = [] } = parsedQuery;
   let score = 0;
   
   const title = (bookmark.title || '').toLowerCase();
@@ -148,6 +188,13 @@ function calculateRelevanceScore(bookmark, parsedQuery) {
     if (description.includes(term)) score += 2;
     // URL matches
     if (url.includes(term)) score += 1;
+  }
+  
+  // Bonus for regex matches in title
+  for (const regex of regexPatterns) {
+    if (regex.test(bookmark.title || '')) score += 8;
+    if (regex.test(bookmark.url || '')) score += 3;
+    if (regex.test(bookmark.description || '')) score += 2;
   }
   
   return score;
