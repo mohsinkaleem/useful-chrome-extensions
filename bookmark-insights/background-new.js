@@ -374,6 +374,79 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
+  if (request.action === 'reEnrichDeadLinks') {
+    // Re-enrich dead links by forcing re-check
+    import('./src/enrichment.js').then(async (enrichment) => {
+      const { getDeadLinks, upsertBookmark, getBookmark } = await import('./src/db.js');
+      
+      const deadLinks = await getDeadLinks();
+      const results = {
+        total: deadLinks.length,
+        success: 0,
+        stillDead: 0,
+        errors: 0
+      };
+      
+      // Create progress callback
+      const progressCallback = (progress) => {
+        chrome.runtime.sendMessage({
+          action: 'reEnrichProgress',
+          progress: progress
+        }).catch(() => {});
+      };
+      
+      // Process each dead link
+      for (let i = 0; i < deadLinks.length; i++) {
+        const bookmark = deadLinks[i];
+        
+        progressCallback({
+          current: i + 1,
+          total: deadLinks.length,
+          title: bookmark.title,
+          url: bookmark.url,
+          status: 'processing'
+        });
+        
+        try {
+          // Force re-check by clearing lastChecked temporarily
+          const currentBookmark = await getBookmark(bookmark.id);
+          if (currentBookmark) {
+            // Clear lastChecked to force re-enrichment
+            currentBookmark.lastChecked = null;
+            await upsertBookmark(currentBookmark);
+            
+            // Now enrich
+            const result = await enrichment.enrichBookmark(bookmark.id);
+            
+            if (result.isAlive === false) {
+              results.stillDead++;
+            } else if (result.success) {
+              results.success++;
+            } else {
+              results.errors++;
+            }
+          }
+        } catch (err) {
+          console.error(`Error re-enriching ${bookmark.id}:`, err);
+          results.errors++;
+        }
+        
+        progressCallback({
+          current: i + 1,
+          total: deadLinks.length,
+          title: bookmark.title,
+          url: bookmark.url,
+          status: 'completed'
+        });
+      }
+      
+      sendResponse({ success: true, results });
+    }).catch((error) => {
+      sendResponse({ success: false, error: error.message });
+    });
+    return true;
+  }
+  
   if (request.action === 'runEnrichment') {
     // Create progress callback to send updates to the requesting tab
     const progressCallback = (progress) => {

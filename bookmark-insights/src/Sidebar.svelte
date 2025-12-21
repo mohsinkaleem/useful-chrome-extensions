@@ -17,6 +17,8 @@
     dateRange: null
   };
   let domainSortMode = 'count'; // 'recency' or 'count'
+  let domainDisplayLimit = 30; // Initial limit for domains
+  let folderDisplayLimit = 15; // Initial limit for folders
   
   onMount(async () => {
     try {
@@ -41,6 +43,14 @@
   $: displayFolders = isSearchActive && searchResultStats?.folders 
     ? searchResultStats.folders.map(f => f.folder)
     : folders;
+  
+  function loadMoreDomains() {
+    domainDisplayLimit += 30;
+  }
+  
+  function loadMoreFolders() {
+    folderDisplayLimit += 15;
+  }
   
   function toggleDomainFilter(domain) {
     if (selectedFilters.domains.includes(domain)) {
@@ -242,8 +252,8 @@
         </div>
       {/if}
     </div>
-    <div class="space-y-1 max-h-64 overflow-y-auto">
-      {#each displayDomains.slice(0, 30) as domainData}
+    <div class="space-y-1 max-h-96 overflow-y-auto">
+      {#each displayDomains.slice(0, domainDisplayLimit) as domainData}
         <button
           on:click={() => toggleDomainFilter(domainData.domain)}
           class="w-full text-left px-2 py-2 text-sm hover:bg-gray-100 rounded border"
@@ -263,10 +273,13 @@
           </div>
         </button>
       {/each}
-      {#if displayDomains.length > 30}
-        <div class="text-xs text-gray-400 px-2 py-1">
-          ... and {displayDomains.length - 30} more
-        </div>
+      {#if displayDomains.length > domainDisplayLimit}
+        <button
+          on:click={loadMoreDomains}
+          class="w-full text-center px-2 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded border border-blue-200 mt-2"
+        >
+          Load More ({domainDisplayLimit} of {displayDomains.length} shown)
+        </button>
       {/if}
       {#if displayDomains.length === 0}
         <div class="text-xs text-gray-400 px-2 py-2 italic">
@@ -285,8 +298,8 @@
         Folders ({displayFolders.length})
       {/if}
     </h4>
-    <div class="space-y-1 max-h-48 overflow-y-auto">
-      {#each displayFolders.slice(0, 15) as folder}
+    <div class="space-y-1 max-h-64 overflow-y-auto">
+      {#each displayFolders.slice(0, folderDisplayLimit) as folder}
         <button
           on:click={() => toggleFolderFilter(folder)}
           class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded border"
@@ -300,10 +313,13 @@
           <span class="truncate block">📁 {folder}</span>
         </button>
       {/each}
-      {#if displayFolders.length > 15}
-        <div class="text-xs text-gray-400 px-2 py-1">
-          ... and {displayFolders.length - 15} more
-        </div>
+      {#if displayFolders.length > folderDisplayLimit}
+        <button
+          on:click={loadMoreFolders}
+          class="w-full text-center px-2 py-2 text-sm text-green-600 hover:bg-green-50 rounded border border-green-200 mt-2"
+        >
+          Load More ({folderDisplayLimit} of {displayFolders.length} shown)
+        </button>
       {/if}
       {#if displayFolders.length === 0}
         <div class="text-xs text-gray-400 px-2 py-2 italic">

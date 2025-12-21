@@ -801,39 +801,19 @@
         loadingMalformed = false;
       });
       
-      // Similar bookmarks load (slowest - O(n²) algorithm)
-      findSimilarBookmarks().then(similar => {
-        similarBookmarks = similar;
-        loadingSimilar = false;
-      }).catch(err => {
-        console.error('Error loading similar bookmarks:', err);
-        loadingSimilar = false;
-      });
+      // Similar bookmarks - skip old algorithm, only use enhanced
+      // Set to not loading since we don't auto-load anymore
+      loadingSimilar = false;
+      similarBookmarks = [];
       
-      // Enhanced similar bookmarks with fuzzy matching
-      loadingEnhancedSimilar = true;
-      findSimilarBookmarksEnhancedFuzzy({ 
-        minSimilarity: 0.4, 
-        maxPairs: 100,
-        prioritizeSameDomain: true
-      }).then(result => {
-        enhancedSimilarPairs = result.pairs;
-        enhancedSimilarStats = result.stats;
-        loadingEnhancedSimilar = false;
-      }).catch(err => {
-        console.error('Error loading enhanced similar bookmarks:', err);
-        loadingEnhancedSimilar = false;
-      });
+      // Enhanced similar bookmarks with fuzzy matching - ON-DEMAND ONLY
+      // Don't auto-load - wait for user to click "Run Analysis" button
+      loadingEnhancedSimilar = false;
+      // Note: enhancedSimilarPairs and enhancedSimilarStats will be loaded on demand
       
-      // Useless bookmarks detection
-      loadingUseless = true;
-      findUselessBookmarks().then(result => {
-        uselessBookmarks = result;
-        loadingUseless = false;
-      }).catch(err => {
-        console.error('Error finding useless bookmarks:', err);
-        loadingUseless = false;
-      });
+      // Useless bookmarks detection - ON-DEMAND ONLY
+      loadingUseless = false;
+      // Note: uselessBookmarks will be loaded on demand
       
     } catch (err) {
       console.error('Error loading health data:', err);
@@ -1067,6 +1047,56 @@
       deletingDeadLinks = false;
     }
   }
+  
+  // Re-enrich dead links state
+  let reEnrichingDeadLinks = false;
+  let reEnrichProgress = null;
+  let reEnrichResult = null;
+  
+  // Re-run enrichment on dead links to check if they're alive again
+  async function reEnrichDeadLinks() {
+    if (deadLinks.length === 0) return;
+    
+    const confirmed = confirm(`Re-check ${deadLinks.length} dead links? This will attempt to fetch each URL again to verify if it's still unreachable.`);
+    if (!confirmed) return;
+    
+    reEnrichingDeadLinks = true;
+    reEnrichProgress = null;
+    reEnrichResult = null;
+    
+    // Listen for progress updates
+    const progressListener = (message) => {
+      if (message.action === 'reEnrichProgress' && message.progress) {
+        reEnrichProgress = message.progress;
+      }
+    };
+    chrome.runtime.onMessage.addListener(progressListener);
+    
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'reEnrichDeadLinks' });
+      
+      if (response.success) {
+        reEnrichResult = response.results;
+        
+        // Reload dead links to show updated list
+        const links = await getDeadLinks();
+        deadLinks = links;
+        
+        // Refresh insights
+        const insights = await getDeadLinkInsights();
+        deadLinkInsights = insights;
+      } else {
+        console.error('Error re-enriching dead links:', response.error);
+        reEnrichResult = { error: response.error };
+      }
+    } catch (err) {
+      console.error('Error re-enriching dead links:', err);
+      reEnrichResult = { error: err.message };
+    } finally {
+      reEnrichingDeadLinks = false;
+      chrome.runtime.onMessage.removeListener(progressListener);
+    }
+  }
 
   async function deleteDuplicate(bookmarkId, groupIndex) {
     try {
@@ -1095,6 +1125,41 @@
         duplicates = dups;
         loadingDuplicates = false;
       });
+    }
+  }
+  
+  // Run smart similar detection on demand
+  async function runSmartSimilarDetection() {
+    loadingEnhancedSimilar = true;
+    enhancedSimilarPairs = [];
+    enhancedSimilarStats = null;
+    
+    try {
+      const result = await findSimilarBookmarksEnhancedFuzzy({ 
+        minSimilarity: 0.4, 
+        maxPairs: 100,
+        prioritizeSameDomain: true
+      });
+      enhancedSimilarPairs = result.pairs;
+      enhancedSimilarStats = result.stats;
+    } catch (err) {
+      console.error('Error running smart similar detection:', err);
+    } finally {
+      loadingEnhancedSimilar = false;
+    }
+  }
+  
+  // Run useless bookmarks detection on demand
+  async function runUselessDetection() {
+    loadingUseless = true;
+    uselessBookmarks = null;
+    
+    try {
+      uselessBookmarks = await findUselessBookmarks();
+    } catch (err) {
+      console.error('Error finding useless bookmarks:', err);
+    } finally {
+      loadingUseless = false;
     }
   }
   
@@ -1860,21 +1925,76 @@
                 <p class="text-xs text-gray-500 mt-1">Bookmarks detected as unreachable during enrichment</p>
               </div>
               {#if deadLinks.length > 0}
-                <button
-                  on:click={deleteAllDeadLinks}
-                  disabled={deletingDeadLinks}
-                  class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                >
-                  {#if deletingDeadLinks}
-                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    Deleting...
-                  {:else}
-                    🗑️ Delete All
-                  {/if}
-                </button>
+                <div class="flex gap-2">
+                  <button
+                    on:click={reEnrichDeadLinks}
+                    disabled={reEnrichingDeadLinks || deletingDeadLinks}
+                    class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    title="Re-check all dead links to see if they're alive again"
+                  >
+                    {#if reEnrichingDeadLinks}
+                      <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Re-checking...
+                    {:else}
+                      🔄 Re-check All
+                    {/if}
+                  </button>
+                  <button
+                    on:click={deleteAllDeadLinks}
+                    disabled={deletingDeadLinks || reEnrichingDeadLinks}
+                    class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  >
+                    {#if deletingDeadLinks}
+                      <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Deleting...
+                    {:else}
+                      🗑️ Delete All
+                    {/if}
+                  </button>
+                </div>
               {/if}
             </div>
             <div class="p-6">
+              {#if reEnrichingDeadLinks && reEnrichProgress}
+                <div class="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-medium text-blue-800">Re-checking dead links...</span>
+                    <span class="text-sm text-blue-600">{reEnrichProgress.current}/{reEnrichProgress.total}</span>
+                  </div>
+                  <div class="w-full bg-blue-200 rounded-full h-2 mb-2">
+                    <div 
+                      class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style="width: {(reEnrichProgress.current / reEnrichProgress.total) * 100}%"
+                    ></div>
+                  </div>
+                  <p class="text-xs text-blue-600 truncate">Checking: {reEnrichProgress.title || reEnrichProgress.url}</p>
+                </div>
+              {/if}
+              
+              {#if reEnrichResult && !reEnrichingDeadLinks}
+                <div class="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                  <h4 class="text-sm font-semibold text-green-800 mb-2">Re-check Complete</h4>
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div class="text-center">
+                      <div class="text-lg font-bold text-green-700">{reEnrichResult.total}</div>
+                      <div class="text-xs text-green-600">Total Checked</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-lg font-bold text-green-700">{reEnrichResult.success}</div>
+                      <div class="text-xs text-green-600">Now Alive</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-lg font-bold text-red-700">{reEnrichResult.stillDead}</div>
+                      <div class="text-xs text-red-600">Still Dead</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-lg font-bold text-yellow-700">{reEnrichResult.errors}</div>
+                      <div class="text-xs text-yellow-600">Errors</div>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+              
               {#if loadingDeadLinks}
                 <div class="flex items-center justify-center py-8">
                   <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
@@ -2075,89 +2195,38 @@
             </div>
           </div>
           
-          <!-- Similar Bookmarks -->
+          <!-- Smart Similar Detection (On-demand) -->
           <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
-                Similar Bookmarks {#if !loadingSimilar}({similarBookmarks.length} pairs){/if}
-              </h3>
-              <p class="text-xs text-gray-500 mt-1">Bookmarks with similar titles but different URLs</p>
-            </div>
-            <div class="p-6">
-              {#if loadingSimilar}
-                <div class="flex items-center justify-center py-8">
-                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-yellow-600"></div>
-                  <span class="ml-3 text-gray-500">Analyzing similarities...</span>
-                </div>
-              {:else if similarBookmarks.length === 0}
-                <p class="text-gray-500">No similar bookmarks found.</p>
-              {:else}
-                <div class="space-y-4 max-h-[32rem] overflow-y-auto">
-                  {#each similarBookmarks.slice(0, similarDisplayLimit) as [bookmark1, bookmark2, similarity], pairIndex}
-                    <div class="border border-yellow-200 bg-yellow-50 rounded-lg p-4">
-                      <div class="flex justify-between items-center mb-2">
-                        <div class="text-xs text-yellow-700">
-                          {Math.round(similarity * 100)}% similar
-                        </div>
-                      </div>
-                      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="p-2 bg-white rounded flex justify-between items-start">
-                          <div class="flex-1 min-w-0">
-                            <div class="text-sm font-medium truncate">{bookmark1.title}</div>
-                            <div class="text-xs text-gray-500 truncate">{bookmark1.url}</div>
-                          </div>
-                          <button
-                            on:click={() => deleteSimilarBookmark(bookmark1.id, pairIndex)}
-                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 flex-shrink-0"
-                            title="Remove this bookmark"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                        <div class="p-2 bg-white rounded flex justify-between items-start">
-                          <div class="flex-1 min-w-0">
-                            <div class="text-sm font-medium truncate">{bookmark2.title}</div>
-                            <div class="text-xs text-gray-500 truncate">{bookmark2.url}</div>
-                          </div>
-                          <button
-                            on:click={() => deleteSimilarBookmark(bookmark2.id, pairIndex)}
-                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 flex-shrink-0"
-                            title="Remove this bookmark"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-                {#if similarBookmarks.length > similarDisplayLimit}
-                  <div class="mt-4 text-center">
-                    <button
-                      on:click={loadMoreSimilar}
-                      class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-                    >
-                      Load More ({similarDisplayLimit} of {similarBookmarks.length} shown)
-                    </button>
-                  </div>
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">
+                  🔍 Smart Similar Detection {#if enhancedSimilarStats}({enhancedSimilarStats.total} pairs){/if}
+                </h3>
+                <p class="text-xs text-gray-500 mt-1">Advanced fuzzy matching using title, description, keywords & domain analysis</p>
+              </div>
+              <button
+                on:click={runSmartSimilarDetection}
+                disabled={loadingEnhancedSimilar}
+                class="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                {#if loadingEnhancedSimilar}
+                  <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Analyzing...
+                {:else}
+                  🔍 Run Analysis
                 {/if}
-              {/if}
-            </div>
-          </div>
-          
-          <!-- Enhanced Similar Bookmarks (Fuzzy Matching) -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
-                🔍 Smart Similar Detection {#if !loadingEnhancedSimilar && enhancedSimilarStats}({enhancedSimilarStats.total} pairs){/if}
-              </h3>
-              <p class="text-xs text-gray-500 mt-1">Advanced fuzzy matching using title, description, keywords & domain analysis</p>
+              </button>
             </div>
             <div class="p-6">
               {#if loadingEnhancedSimilar}
                 <div class="flex items-center justify-center py-8">
                   <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                   <span class="ml-3 text-gray-500">Running smart similarity analysis...</span>
+                </div>
+              {:else if enhancedSimilarPairs.length === 0 && !enhancedSimilarStats}
+                <div class="text-center py-8">
+                  <p class="text-gray-500 mb-4">Click "Run Analysis" to detect similar bookmarks using advanced fuzzy matching.</p>
+                  <p class="text-xs text-gray-400">This analysis uses title, description, keywords, and domain information to find similar content.</p>
                 </div>
               {:else if enhancedSimilarPairs.length === 0}
                 <p class="text-gray-500">No similar bookmarks detected with enhanced matching.</p>
