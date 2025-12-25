@@ -1,6 +1,6 @@
 // Main popup script
 import { TabEventManager, getAllTabs, getTabsByWindow } from '../shared/tab-utils.js';
-import { findDuplicatesByUrl, getDuplicateGroups } from '../shared/url-utils.js';
+import { findDuplicatesByUrl, getDuplicateGroups, normalizeUrl } from '../shared/url-utils.js';
 import { TabList } from './components/TabList.js';
 import { SearchBar } from './components/SearchBar.js';
 import { QuickActions } from './components/QuickActions.js';
@@ -20,6 +20,8 @@ class TabManagerApp {
   private currentView: 'list' | 'compact' | 'grid' = 'list';
   private highlightDuplicates: boolean = false;
   private duplicateUrls: Set<string> = new Set();
+  private currentSearchQuery: string = '';
+  private currentFilters: any = null;
 
   constructor() {
     this.tabEventManager = new TabEventManager();
@@ -42,7 +44,7 @@ class TabManagerApp {
     
     // Listen for tab changes
     this.tabEventManager.onChange(() => {
-      this.loadAndRenderTabs();
+      this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
     });
   }
 
@@ -50,6 +52,8 @@ class TabManagerApp {
     // Search with duplicate highlight support
     this.searchBar.onSearch((query, filters) => {
       this.highlightDuplicates = filters.duplicates;
+      this.currentSearchQuery = query;
+      this.currentFilters = filters;
       this.loadAndRenderTabs(query, filters);
     });
 
@@ -111,7 +115,7 @@ class TabManagerApp {
       );
     }
     
-    // Apply filters (except duplicates - that's now highlight-only)
+    // Apply filters
     if (filters) {
       if (filters.audible) {
         filteredTabs = filteredTabs.filter(tab => tab.audible);
@@ -119,7 +123,14 @@ class TabManagerApp {
       if (filters.pinned) {
         filteredTabs = filteredTabs.filter(tab => tab.pinned);
       }
-      // Note: duplicates filter now just enables highlighting, doesn't filter
+      if (filters.duplicates) {
+        // Only show tabs that are duplicates
+        filteredTabs = filteredTabs.filter(tab => {
+          if (!tab.url) return false;
+          const normalizedUrl = normalizeUrl(tab.url);
+          return this.duplicateUrls.has(normalizedUrl);
+        });
+      }
     }
     
     // Render tabs by window

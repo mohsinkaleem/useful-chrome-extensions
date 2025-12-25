@@ -12,9 +12,25 @@ export interface GroupingRule {
 
 export class AutoGrouper {
   private rules: GroupingRule[] = [];
+  private enabled: boolean = false;
 
   constructor() {
     this.loadRules();
+    this.loadEnabledState();
+  }
+
+  private async loadEnabledState() {
+    const { autoGroupingEnabled = false } = await chrome.storage.sync.get('autoGroupingEnabled');
+    this.enabled = autoGroupingEnabled;
+  }
+
+  async setEnabled(enabled: boolean) {
+    this.enabled = enabled;
+    await chrome.storage.sync.set({ autoGroupingEnabled: enabled });
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
   }
 
   private async loadRules() {
@@ -82,6 +98,9 @@ export class AutoGrouper {
   }
 
   private async applyRules(tab: chrome.tabs.Tab) {
+    // Only apply rules if auto-grouping is enabled
+    if (!this.enabled) return;
+    
     if (!tab.id || !tab.url) return;
     
     // Don't group if already in a group

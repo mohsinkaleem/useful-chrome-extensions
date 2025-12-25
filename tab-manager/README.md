@@ -32,7 +32,8 @@ A powerful Chrome extension for managing tabs, windows, and browser sessions wit
 - Timestamped session snapshots
 
 ### 🎨 Auto-Grouping
-- Automatically group tabs by domain
+- **Disabled by default** (opt-in to avoid interfering with tab placement)
+- Automatically group tabs by domain when enabled
 - Customizable grouping rules
 - Pre-configured rules for YouTube, GitHub, Gmail, Google Docs
 - Manual "Group by Domain" for all tabs

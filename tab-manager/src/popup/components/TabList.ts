@@ -21,6 +21,10 @@ export class TabList {
   render(tabsByWindow: Map<number, chrome.tabs.Tab[]>, viewMode: 'list' | 'compact' | 'grid') {
     if (!this.container) return;
     
+    // Clean up all existing tooltips before re-rendering
+    const existingTooltips = document.querySelectorAll('.tab-tooltip');
+    existingTooltips.forEach(tooltip => tooltip.remove());
+    
     this.container.innerHTML = '';
     
     for (const [windowId, tabs] of tabsByWindow.entries()) {
@@ -190,10 +194,12 @@ export class TabList {
     tooltip.className = 'tab-tooltip hidden';
     const tooltipContent = document.createElement('div');
     tooltipContent.className = 'tooltip-content';
-    tooltipContent.textContent = displayTitle;
+    // Truncate title to max 60 characters
+    tooltipContent.textContent = displayTitle.length > 60 ? displayTitle.substring(0, 60) + '...' : displayTitle;
     const tooltipUrl = document.createElement('div');
     tooltipUrl.className = 'tooltip-url';
-    tooltipUrl.textContent = displayUrl;
+    // Truncate URL to max 80 characters
+    tooltipUrl.textContent = displayUrl.length > 80 ? displayUrl.substring(0, 80) + '...' : displayUrl;
     tooltip.appendChild(tooltipContent);
     tooltip.appendChild(tooltipUrl);
     document.body.appendChild(tooltip);
@@ -227,9 +233,15 @@ export class TabList {
     };
     
     // Clean up tooltip when item is removed
+    const cleanupTooltip = () => {
+      if (tooltip.parentElement) {
+        tooltip.remove();
+      }
+    };
+    
     const observer = new MutationObserver(() => {
       if (!document.body.contains(item)) {
-        tooltip.remove();
+        cleanupTooltip();
         observer.disconnect();
       }
     });
