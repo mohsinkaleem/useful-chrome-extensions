@@ -10,23 +10,45 @@ A powerful, privacy-first bookmark intelligence system with smart search, enrich
 - **Exact phrases**: `"quoted phrases"` for precise matching
 - **Regex patterns**: `/pattern/` or `/pattern/flags` for advanced matching
 - **Special filters**: `category:code`, `domain:github`, `accessed:yes`, `stale:yes`, `dead:yes`, `enriched:yes`, `folder:"path"`
+- **Platform filters**: `platform:youtube`, `channel:@mkbhd`, `repo:facebook/react`, `author:username`, `type:video|issue`
 - **Smart relevance ranking** - title matches rank highest
-- **Dynamic filtering** - sidebar updates to show matching domains and folders
+- **Dynamic filtering** - sidebar updates to show matching domains, folders, and platforms
 - **Visual query feedback** - parsed terms displayed as colored tags
+
+### 📱 Platform Enrichment
+
+Automatically detects and extracts structured data from popular platforms:
+
+- **YouTube** - Video IDs, channel handles, playlists, shorts detection
+- **GitHub** - Repositories, issues, PRs, files, wiki pages, gists
+- **Medium/dev.to/Substack** - Authors, publications, article metadata
+- **Twitter/X** - Users, tweets, threads
+- **Reddit** - Subreddits, posts, comments
+- **Stack Overflow** - Questions, answers
+- **npm** - Packages, versions
 
 ### 📊 Visual Analytics Dashboard
 
-Five interactive tabs with actionable insights:
+Six interactive tabs with actionable insights:
 
 - **❤️ Health** - Collection health score, bookmark ROI, decay rate, dead link ratio
+- **📱 Platforms** - Platform breakdown chart, creator leaderboard, repository map, visual gallery
 - **📚 Content** - Category distribution, topic clusters, content type analysis
 - **⚡ Actions** - Stale queue, cleanup candidates, rediscovery feed
 - **🌐 Domains** - Domain reliability, valuable domains, concentration warnings
 - **⏰ Time** - Hourly/daily patterns, collection age, monthly trends
 
+### 👤 Creator Explorer
+
+- **Creator leaderboard** - Most bookmarked channels and authors
+- **YouTube channels** - Group videos by channel with thumbnails
+- **GitHub repositories** - Issues, PRs, and files per repo
+- **Blog authors** - Articles grouped by author across platforms
+
 ### 🔧 Enrichment Pipeline
 
 - **Manual enrichment** - Click to fetch metadata (never automatic)
+- **Platform detection** - Extracts structured data from URLs without network requests
 - **Force re-enrich** - Option to bypass freshness check for on-demand refresh
 - **Parallel processing** - Configurable concurrency (3-10x faster)
 - **Metadata extraction** - Title, description, Open Graph, keywords, favicons
@@ -81,8 +103,20 @@ enriched:yes              # Has metadata (yes/no)
 dead:yes                  # Dead links only (yes/no)
 folder:"My Folder"        # Filter by folder path
 
+# Platform filters (new in v3.0)
+platform:youtube          # Filter by platform
+platform:github           # GitHub bookmarks only
+channel:@mkbhd            # YouTube channel (with or without @)
+repo:facebook/react       # GitHub repository
+author:username           # Blog/article author
+type:video                # Content type (video, issue, article, repo, etc.)
+type:issue|pr             # Multiple types with pipe separator
+hasimage:yes              # Has thumbnail image
+playlist:PLxxxxxxx        # YouTube playlist
+
 # Combined example
 domain:github.com +tutorial -video enriched:yes
+platform:youtube channel:@fireship type:video
 ```
 
 ## Installation
@@ -147,15 +181,17 @@ npm run build:js   # JavaScript only
 
 ```
 src/
-├── db.js           # IndexedDB operations & caching
-├── enrichment.js   # Metadata fetching pipeline
-├── search.js       # FlexSearch integration
-├── similarity.js   # TF-IDF similarity engine
-├── insights.js     # Analytics generation
-├── stores.js       # Svelte state management
-├── Dashboard.svelte
-├── Sidebar.svelte
-├── VisualInsights.svelte
+├── db.js              # IndexedDB operations & caching (schema v4)
+├── enrichment.js      # Metadata fetching pipeline
+├── url-parsers.js     # Platform-specific URL parsing
+├── search.js          # FlexSearch with platform filters
+├── similarity.js      # TF-IDF similarity engine
+├── insights.js        # Analytics & platform insights
+├── stores.js          # Svelte state management
+├── Dashboard.svelte   # Main dashboard
+├── Sidebar.svelte     # Filters with platforms & creators
+├── VisualInsights.svelte  # 6-tab analytics
+├── CreatorExplorer.svelte # Creator/channel browser
 └── ...
 ```
 

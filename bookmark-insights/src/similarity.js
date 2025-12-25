@@ -741,7 +741,7 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
     const cacheKey = `enhanced_similar_${minSimilarity}_${maxPairs}`;
     if (useCache && !forceRefresh) {
       const cached = await getCache(cacheKey);
-      if (cached && cached.pairs && Date.now() - cached.timestamp < CACHE_DURATIONS.SIMILARITY) {
+      if (cached && cached.pairs && Date.now() - cached.timestamp < (CACHE_DURATIONS.similarities || 24 * 60 * 60 * 1000)) {
         console.log('Returning cached enhanced similar results');
         return { 
           pairs: cached.pairs, 

@@ -39,7 +39,10 @@
     validateBackup,
     createAutoBackup,
     listAutoBackups,
-    restoreFromAutoBackup
+    restoreFromAutoBackup,
+    // Platform backfill
+    backfillPlatformData,
+    getPlatformDataStats
   } from './db.js';
   
   // Import new insights functions
@@ -121,6 +124,11 @@
   let enrichmentBatchSize = 20;
   let enrichmentConcurrency = 3;
   let forceReenrich = false; // Force re-enrichment even for recently enriched bookmarks
+  
+  // Platform backfill state
+  let runningPlatformBackfill = false;
+  let platformBackfillProgress = null;
+  let platformBackfillResult = null;
   
   // Advanced insights data
   let domainHierarchy = [];
@@ -262,7 +270,7 @@
         // Compute stats from ALL search results for sidebar
         searchResultStats = computeSearchResultStats(allResults);
         
-        // Apply additional filters (domains, folders, date range) if any
+        // Apply additional filters (domains, folders, date range, platforms, creators, contentTypes) if any
         let filteredResults = allResults;
         
         if (currentFilters.domains && currentFilters.domains.length > 0) {
@@ -276,6 +284,22 @@
             b.dateAdded >= currentFilters.dateRange.startDate && 
             b.dateAdded <= currentFilters.dateRange.endDate
           );
+        }
+        // Platform filter
+        if (currentFilters.platforms && currentFilters.platforms.length > 0) {
+          filteredResults = filteredResults.filter(b => currentFilters.platforms.includes(b.platform || 'other'));
+        }
+        // Creators filter
+        if (currentFilters.creators && currentFilters.creators.length > 0) {
+          filteredResults = filteredResults.filter(b => {
+            if (!b.creator) return false;
+            const bookmarkCreatorKey = `${b.platform || 'other'}:${b.creator}`;
+            return currentFilters.creators.some(c => c.key === bookmarkCreatorKey);
+          });
+        }
+        // Content types filter
+        if (currentFilters.contentTypes && currentFilters.contentTypes.length > 0) {
+          filteredResults = filteredResults.filter(b => currentFilters.contentTypes.includes(b.contentType));
         }
         
         // Apply sorting
@@ -811,10 +835,30 @@
       loadingSimilar = false;
       similarBookmarks = [];
       
-      // Enhanced similar bookmarks with fuzzy matching - ON-DEMAND ONLY
-      // Don't auto-load - wait for user to click "Run Analysis" button
-      loadingEnhancedSimilar = false;
-      // Note: enhancedSimilarPairs and enhancedSimilarStats will be loaded on demand
+      // Enhanced similar bookmarks with fuzzy matching
+      // Try to load from cache first to show pre-computed results
+      loadingEnhancedSimilar = true;
+      findSimilarBookmarksEnhancedFuzzy({ 
+        minSimilarity: 0.4, 
+        maxPairs: 100,
+        prioritizeSameDomain: true,
+        forceRefresh: false,
+        useCache: true
+      }).then(result => {
+        if (result.fromCache && result.pairs.length > 0) {
+          enhancedSimilarPairs = result.pairs;
+          enhancedSimilarStats = result.stats;
+          enhancedSimilarCacheInfo = {
+            fromCache: result.fromCache,
+            cachedAt: result.cachedAt,
+            cacheAge: result.cacheAge
+          };
+        }
+        loadingEnhancedSimilar = false;
+      }).catch(err => {
+        console.error('Error loading cached similar pairs:', err);
+        loadingEnhancedSimilar = false;
+      });
       
       // Useless bookmarks detection - ON-DEMAND ONLY
       loadingUseless = false;
@@ -957,6 +1001,30 @@
     }
   }
   
+  // Platform data backfill - parses URLs to extract platform/creator info without network requests
+  async function handlePlatformBackfill() {
+    runningPlatformBackfill = true;
+    platformBackfillProgress = null;
+    platformBackfillResult = null;
+    
+    try {
+      const result = await backfillPlatformData((processed, total) => {
+        platformBackfillProgress = { processed, total };
+      });
+      
+      platformBackfillResult = result;
+      
+      // Refresh data after backfill
+      await loadBookmarksPaginated(0, false);
+      
+    } catch (err) {
+      console.error('Error during platform backfill:', err);
+      platformBackfillResult = { error: err.message };
+    } finally {
+      runningPlatformBackfill = false;
+    }
+  }
+  
   async function deleteSimilarBookmark(bookmarkId, pairIndex) {
     try {
       // First check if the bookmark still exists
@@ -1059,11 +1127,19 @@
   let reEnrichProgress = null;
   let reEnrichResult = null;
   
+  // Dead link re-check configuration
+  let deadLinkBatchSize = 50; // How many dead links to process at once
+  let deadLinkConcurrency = 3; // Parallel requests for re-checking
+  
   // Re-run enrichment on dead links to check if they're alive again
   async function reEnrichDeadLinks() {
     if (deadLinks.length === 0) return;
     
-    const confirmed = confirm(`Re-check ${deadLinks.length} dead links? This will attempt to fetch each URL again to verify if it's still unreachable.`);
+    const toProcess = deadLinkBatchSize > 0 && deadLinkBatchSize < deadLinks.length ? deadLinkBatchSize : deadLinks.length;
+    const remaining = deadLinks.length - toProcess;
+    const remainingText = remaining > 0 ? ` (${remaining} will remain for next batch)` : '';
+    
+    const confirmed = confirm(`Re-check ${toProcess} dead links?${remainingText}\n\nThis will attempt to fetch each URL again to verify if it's still unreachable.`);
     if (!confirmed) return;
     
     reEnrichingDeadLinks = true;
@@ -1079,7 +1155,11 @@
     chrome.runtime.onMessage.addListener(progressListener);
     
     try {
-      const response = await chrome.runtime.sendMessage({ action: 'reEnrichDeadLinks' });
+      const response = await chrome.runtime.sendMessage({ 
+        action: 'reEnrichDeadLinks',
+        batchSize: deadLinkBatchSize,
+        concurrency: deadLinkConcurrency
+      });
       
       if (response.success) {
         reEnrichResult = response.results;
@@ -1821,13 +1901,43 @@
             </div>
             <div class="p-6">
               {#if enrichmentStatus}
-                <div class="flex flex-wrap gap-4 text-sm mb-4">
-                  <span class="text-gray-600">
-                    Queue: <strong class="text-purple-600">{enrichmentStatus.queueSize}</strong> bookmarks pending
-                  </span>
-                  <span class="text-gray-600">
-                    Status: <strong class="{enrichmentStatus.enabled ? 'text-green-600' : 'text-gray-500'}">{enrichmentStatus.enabled ? 'Enabled' : 'Disabled'}</strong>
-                  </span>
+                <div class="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div class="text-center">
+                      <div class="text-xl font-bold text-purple-700">{enrichmentStatus.pendingCount || enrichmentStatus.queueSize || 0}</div>
+                      <div class="text-xs text-purple-600">Pending</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-xl font-bold text-green-700">{enrichmentStatus.enrichedCount || 0}</div>
+                      <div class="text-xs text-green-600">Enriched</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-xl font-bold text-blue-700">{enrichmentStatus.totalBookmarks || 0}</div>
+                      <div class="text-xs text-blue-600">Total HTTP</div>
+                    </div>
+                    <div class="text-center">
+                      <div class="text-xl font-bold {enrichmentStatus.enabled ? 'text-green-700' : 'text-gray-500'}">
+                        {enrichmentStatus.enabled ? '✓' : '○'}
+                      </div>
+                      <div class="text-xs {enrichmentStatus.enabled ? 'text-green-600' : 'text-gray-500'}">
+                        {enrichmentStatus.enabled ? 'Enabled' : 'Disabled'}
+                      </div>
+                    </div>
+                  </div>
+                  {#if enrichmentStatus.pendingCount > 0 && enrichmentStatus.totalBookmarks > 0}
+                    <div class="mt-3">
+                      <div class="flex justify-between text-xs text-purple-600 mb-1">
+                        <span>Progress</span>
+                        <span>{((enrichmentStatus.enrichedCount / enrichmentStatus.totalBookmarks) * 100).toFixed(1)}%</span>
+                      </div>
+                      <div class="w-full bg-purple-200 rounded-full h-2">
+                        <div 
+                          class="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                          style="width: {(enrichmentStatus.enrichedCount / enrichmentStatus.totalBookmarks) * 100}%"
+                        ></div>
+                      </div>
+                    </div>
+                  {/if}
                 </div>
               {/if}
               
@@ -1875,8 +1985,13 @@
                     <div>
                       <span class="text-sm font-medium text-gray-700">Force Re-enrich</span>
                       <p class="text-xs text-gray-500 mt-0.5">
-                        Re-enrich all bookmarks, even those recently processed. Useful when you want fresh metadata.
+                        Re-fetch metadata for bookmarks even if already enriched. Bypasses the queue and processes {enrichmentBatchSize} bookmarks directly.
                       </p>
+                      {#if forceReenrich}
+                        <p class="text-xs text-purple-600 mt-1 font-medium">
+                          ⚡ Will process unenriched bookmarks first, then oldest enriched
+                        </p>
+                      {/if}
                     </div>
                   </label>
                 </div>
@@ -1959,9 +2074,110 @@
             </div>
           </div>
           
+          <!-- Platform Data Backfill Panel -->
+          <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">
+                  <span class="inline-block mr-2">📱</span>
+                  Platform Detection
+                </h3>
+                <p class="text-sm text-gray-500 mt-1">
+                  Extract platform, creator, and content type from bookmark URLs (no network requests)
+                </p>
+              </div>
+              <button
+                on:click={handlePlatformBackfill}
+                disabled={runningPlatformBackfill}
+                class="px-4 py-2 bg-pink-600 text-white text-sm rounded-md hover:bg-pink-700 disabled:opacity-50 flex-shrink-0"
+              >
+                {#if runningPlatformBackfill}
+                  <span class="flex items-center">
+                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                  </span>
+                {:else}
+                  Detect Platforms
+                {/if}
+              </button>
+            </div>
+            <div class="p-6">
+              <div class="text-sm text-gray-600 mb-4">
+                <p>Parses URLs to identify:</p>
+                <div class="flex flex-wrap gap-2 mt-2">
+                  <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">📺 YouTube</span>
+                  <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">💻 GitHub</span>
+                  <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">📝 Medium</span>
+                  <span class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">👨‍💻 dev.to</span>
+                  <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">📰 Substack</span>
+                  <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">🐦 Twitter</span>
+                  <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">🔴 Reddit</span>
+                  <span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs">📚 Stack Overflow</span>
+                  <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">📦 npm</span>
+                </div>
+              </div>
+              
+              <!-- Progress -->
+              {#if runningPlatformBackfill && platformBackfillProgress}
+                <div class="mb-4">
+                  <div class="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Processing bookmarks...</span>
+                    <span>{platformBackfillProgress.processed} / {platformBackfillProgress.total}</span>
+                  </div>
+                  <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      class="bg-pink-600 h-2 rounded-full transition-all duration-300"
+                      style="width: {(platformBackfillProgress.processed / platformBackfillProgress.total) * 100}%"
+                    ></div>
+                  </div>
+                </div>
+              {/if}
+              
+              <!-- Results -->
+              {#if platformBackfillResult}
+                <div class="p-4 rounded-lg {platformBackfillResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}">
+                  {#if platformBackfillResult.error}
+                    <div class="text-red-700 text-sm">
+                      <strong>Error:</strong> {platformBackfillResult.error}
+                    </div>
+                  {:else}
+                    <div class="text-green-700 text-sm space-y-2">
+                      <div class="font-medium">✅ Platform Detection Complete!</div>
+                      <div class="flex flex-wrap gap-4 text-xs">
+                        <span>Processed: <strong>{platformBackfillResult.processed}</strong></span>
+                        <span>Updated: <strong>{platformBackfillResult.updated}</strong></span>
+                        {#if platformBackfillResult.errors > 0}
+                          <span class="text-orange-600">Errors: {platformBackfillResult.errors}</span>
+                        {/if}
+                      </div>
+                      {#if platformBackfillResult.platforms && Object.keys(platformBackfillResult.platforms).length > 0}
+                        <div class="mt-2 pt-2 border-t border-green-200">
+                          <div class="text-xs text-green-600 mb-1">Platforms detected:</div>
+                          <div class="flex flex-wrap gap-1">
+                            {#each Object.entries(platformBackfillResult.platforms) as [platform, count]}
+                              <span class="px-2 py-0.5 bg-white rounded text-xs">{platform}: {count}</span>
+                            {/each}
+                          </div>
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
+              {:else if !runningPlatformBackfill}
+                <p class="text-gray-500 text-sm">
+                  Click "Detect Platforms" to parse all bookmark URLs and extract platform-specific data.
+                  This enables filtering by platform, channel, repo, and more.
+                </p>
+              {/if}
+            </div>
+          </div>
+          
           <!-- Dead Links Section -->
           <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
                 <h3 class="text-lg font-medium text-gray-900">
                   Dead Links {#if !loadingDeadLinks}({deadLinks.length}){/if}
@@ -1969,18 +2185,18 @@
                 <p class="text-xs text-gray-500 mt-1">Bookmarks detected as unreachable during enrichment</p>
               </div>
               {#if deadLinks.length > 0}
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-shrink-0">
                   <button
                     on:click={reEnrichDeadLinks}
                     disabled={reEnrichingDeadLinks || deletingDeadLinks}
                     class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                    title="Re-check all dead links to see if they're alive again"
+                    title="Re-check dead links to see if they're alive again"
                   >
                     {#if reEnrichingDeadLinks}
                       <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                       Re-checking...
                     {:else}
-                      🔄 Re-check All
+                      🔄 Re-check
                     {/if}
                   </button>
                   <button
@@ -1999,6 +2215,51 @@
               {/if}
             </div>
             <div class="p-6">
+              <!-- Dead Link Re-check Configuration -->
+              {#if deadLinks.length > 0 && !reEnrichingDeadLinks}
+                <div class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 class="text-sm font-medium text-gray-700 mb-3">Re-check Configuration</h4>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label for="deadLinkBatchSize" class="block text-sm font-medium text-gray-700 mb-1">
+                        Batch Size
+                        <span class="text-xs text-gray-500 font-normal">(0 = all)</span>
+                      </label>
+                      <input 
+                        id="deadLinkBatchSize"
+                        type="number" 
+                        min="0" 
+                        max={deadLinks.length}
+                        bind:value={deadLinkBatchSize}
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        disabled={reEnrichingDeadLinks}
+                      />
+                      <p class="text-xs text-gray-500 mt-1">
+                        Will process {deadLinkBatchSize > 0 && deadLinkBatchSize < deadLinks.length ? deadLinkBatchSize : deadLinks.length} of {deadLinks.length} dead links
+                      </p>
+                    </div>
+                    <div>
+                      <label for="deadLinkConcurrency" class="block text-sm font-medium text-gray-700 mb-1">
+                        Concurrency
+                        <span class="text-xs text-gray-500 font-normal">(parallel requests)</span>
+                      </label>
+                      <input 
+                        id="deadLinkConcurrency"
+                        type="number" 
+                        min="1" 
+                        max="10" 
+                        bind:value={deadLinkConcurrency}
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        disabled={reEnrichingDeadLinks}
+                      />
+                      <p class="text-xs text-gray-500 mt-1">
+                        Higher = faster, but more resource intensive
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+              
               {#if reEnrichingDeadLinks && reEnrichProgress}
                 <div class="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <div class="flex items-center justify-between mb-2">
@@ -2011,17 +2272,25 @@
                       style="width: {(reEnrichProgress.current / reEnrichProgress.total) * 100}%"
                     ></div>
                   </div>
-                  <p class="text-xs text-blue-600 truncate">Checking: {reEnrichProgress.title || reEnrichProgress.url}</p>
+                  <div class="flex items-center justify-between">
+                    <p class="text-xs text-blue-600 truncate flex-1">Checking: {reEnrichProgress.title || reEnrichProgress.url}</p>
+                    {#if reEnrichProgress.results}
+                      <div class="flex gap-2 text-xs text-blue-600 ml-2">
+                        <span class="text-green-600">✓ {reEnrichProgress.results.success}</span>
+                        <span class="text-red-600">✗ {reEnrichProgress.results.stillDead}</span>
+                      </div>
+                    {/if}
+                  </div>
                 </div>
               {/if}
               
               {#if reEnrichResult && !reEnrichingDeadLinks}
                 <div class="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
                   <h4 class="text-sm font-semibold text-green-800 mb-2">Re-check Complete</h4>
-                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                     <div class="text-center">
                       <div class="text-lg font-bold text-green-700">{reEnrichResult.total}</div>
-                      <div class="text-xs text-green-600">Total Checked</div>
+                      <div class="text-xs text-green-600">Checked</div>
                     </div>
                     <div class="text-center">
                       <div class="text-lg font-bold text-green-700">{reEnrichResult.success}</div>
@@ -2035,6 +2304,12 @@
                       <div class="text-lg font-bold text-yellow-700">{reEnrichResult.errors}</div>
                       <div class="text-xs text-yellow-600">Errors</div>
                     </div>
+                    {#if reEnrichResult.pending > 0}
+                      <div class="text-center">
+                        <div class="text-lg font-bold text-blue-700">{reEnrichResult.pending}</div>
+                        <div class="text-xs text-blue-600">Remaining</div>
+                      </div>
+                    {/if}
                   </div>
                 </div>
               {/if}

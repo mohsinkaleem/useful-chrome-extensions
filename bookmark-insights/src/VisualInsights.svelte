@@ -7,8 +7,14 @@
     getContentAnalysis,
     getActionableInsights,
     getDomainIntelligence,
-    getTimeBasedAnalysis
+    getTimeBasedAnalysis,
+    getPlatformDistribution,
+    getCreatorLeaderboard,
+    getRepositoryGroups,
+    getVisualGallery,
+    getPlatformInsightsSummary
   } from './insights.js';
+  import { getPlatformDisplayName, getPlatformIcon, getContentTypeDisplayName } from './url-parsers.js';
   
   Chart.register(...registerables);
   
@@ -24,6 +30,11 @@
   let actionableInsights = null;
   let domainIntelligence = null;
   let timeAnalysis = null;
+  let platformDistribution = null;
+  let creatorLeaderboard = null;
+  let repositoryGroups = null;
+  let visualGallery = null;
+  let platformSummary = null;
   
   // Charts
   let categoryChart = null;
@@ -32,6 +43,7 @@
   let hourlyChart = null;
   let weekdayChart = null;
   let domainReliabilityChart = null;
+  let platformChart = null;
   
   // Action states
   let refreshingRediscovery = false;
@@ -39,6 +51,7 @@
   
   const tabs = [
     { id: 'health', label: 'Health', icon: '❤️' },
+    { id: 'platforms', label: 'Platforms', icon: '📱' },
     { id: 'content', label: 'Content', icon: '📚' },
     { id: 'actions', label: 'Actions', icon: '⚡' },
     { id: 'domains', label: 'Domains', icon: '🌐' },
@@ -52,12 +65,17 @@
   async function loadAllInsights() {
     loading = true;
     try {
-      const [health, content, actions, domains, time] = await Promise.all([
+      const [health, content, actions, domains, time, platforms, creators, repos, gallery, summary] = await Promise.all([
         getCollectionHealthMetrics(),
         getContentAnalysis(),
         getActionableInsights(),
         getDomainIntelligence(),
-        getTimeBasedAnalysis()
+        getTimeBasedAnalysis(),
+        getPlatformDistribution(),
+        getCreatorLeaderboard(15),
+        getRepositoryGroups(),
+        getVisualGallery(24),
+        getPlatformInsightsSummary()
       ]);
       
       healthMetrics = health;
@@ -65,6 +83,11 @@
       actionableInsights = actions;
       domainIntelligence = domains;
       timeAnalysis = time;
+      platformDistribution = platforms;
+      creatorLeaderboard = creators;
+      repositoryGroups = repos;
+      visualGallery = gallery;
+      platformSummary = summary;
       
       // Render charts after data loads
       setTimeout(() => {
@@ -84,6 +107,62 @@
     renderHourlyChart();
     renderWeekdayChart();
     renderDomainReliabilityChart();
+    renderPlatformChart();
+  }
+  
+  function renderPlatformChart() {
+    const ctx = document.getElementById('platformDonutChart');
+    if (!ctx || !platformDistribution?.platforms) return;
+    
+    if (platformChart) platformChart.destroy();
+    
+    const data = platformDistribution.platforms.slice(0, 8);
+    const colors = {
+      'youtube': '#FF0000',
+      'github': '#24292F',
+      'medium': '#00AB6C',
+      'devto': '#0A0A0A',
+      'substack': '#FF6719',
+      'twitter': '#1DA1F2',
+      'reddit': '#FF4500',
+      'stackoverflow': '#F48024',
+      'npm': '#CB3837',
+      'other': '#6B7280'
+    };
+    
+    platformChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: data.map(d => getPlatformDisplayName(d.platform)),
+        datasets: [{
+          data: data.map(d => d.count),
+          backgroundColor: data.map(d => colors[d.platform] || colors.other),
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: { boxWidth: 12, padding: 8, font: { size: 11 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.label}: ${ctx.raw} (${data[ctx.dataIndex].percentage}%)`
+            }
+          }
+        },
+        onClick: (event, elements) => {
+          if (elements.length > 0) {
+            const platform = data[elements[0].index].platform;
+            dispatch('filterByPlatform', { platform });
+          }
+        }
+      }
+    });
   }
   
   function renderCategoryChart() {
@@ -574,6 +653,170 @@
                 <span class="text-green-500">✅</span>
                 <span>Your collection is in good health!</span>
               </div>
+            {/if}
+          </div>
+        </InsightCard>
+      </div>
+    {/if}
+    
+    <!-- PLATFORMS TAB -->
+    {#if activeTab === 'platforms' && platformDistribution}
+      <div class="space-y-6">
+        <!-- Platform Quick Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div class="bg-gradient-to-br from-red-50 to-red-100 border border-red-200 rounded-lg p-4">
+            <div class="text-2xl font-bold text-red-700">{platformSummary?.totalPlatformBookmarks || 0}</div>
+            <div class="text-sm text-red-600">Platform bookmarks</div>
+            <div class="text-xs text-red-500 mt-1">{platformDistribution.platforms?.length || 0} platforms</div>
+          </div>
+          <div class="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
+            <div class="text-2xl font-bold text-blue-700">{platformSummary?.uniqueCreators || 0}</div>
+            <div class="text-sm text-blue-600">Unique creators</div>
+            <div class="text-xs text-blue-500 mt-1">Channels & authors</div>
+          </div>
+          <div class="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-lg p-4">
+            <div class="text-2xl font-bold text-purple-700">{repositoryGroups?.length || 0}</div>
+            <div class="text-sm text-purple-600">GitHub repos</div>
+            <div class="text-xs text-purple-500 mt-1">With issues & PRs</div>
+          </div>
+          <div class="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-4">
+            <div class="text-2xl font-bold text-green-700">{visualGallery?.length || 0}</div>
+            <div class="text-sm text-green-600">Visual bookmarks</div>
+            <div class="text-xs text-green-500 mt-1">With thumbnails</div>
+          </div>
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Platform Distribution Chart -->
+          <InsightCard title="Platform Breakdown" icon="📱" subtitle="Click to filter by platform">
+            <div class="h-64">
+              <canvas id="platformDonutChart"></canvas>
+            </div>
+          </InsightCard>
+          
+          <!-- Top Creators Leaderboard -->
+          <InsightCard title="Creator Leaderboard" icon="🏆" subtitle="Your most bookmarked creators">
+            <div class="space-y-2 insight-scrollable">
+              {#if creatorLeaderboard && creatorLeaderboard.length > 0}
+                {#each creatorLeaderboard.slice(0, 10) as creator, index}
+                  <button
+                    class="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                    on:click={() => dispatch('filterByCreator', { creator: creator.creator })}
+                  >
+                    <div class="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
+                      {index + 1}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-2">
+                        <span class="font-medium text-sm truncate">{creator.creator}</span>
+                        <span class="text-xs px-1.5 py-0.5 bg-gray-100 rounded" title={getPlatformDisplayName(creator.platform)}>
+                          {getPlatformIcon(creator.platform)}
+                        </span>
+                      </div>
+                      <div class="text-xs text-gray-500">{creator.count} bookmarks</div>
+                    </div>
+                    <div class="text-right">
+                      <div class="text-xs font-medium text-green-600">+{creator.recentCount || 0}</div>
+                      <div class="text-xs text-gray-400">last 30d</div>
+                    </div>
+                  </button>
+                {/each}
+              {:else}
+                <p class="text-gray-500 text-sm py-4 text-center">No creators detected yet. Run enrichment to identify channels and authors.</p>
+              {/if}
+            </div>
+          </InsightCard>
+        </div>
+        
+        <!-- Repository Groups -->
+        {#if repositoryGroups && repositoryGroups.length > 0}
+          <InsightCard title="GitHub Repository Map" icon="📦" subtitle="Your bookmarked repos and their content">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 insight-scrollable">
+              {#each repositoryGroups.slice(0, 12) as repo}
+                <button
+                  class="p-3 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 text-left transition-colors"
+                  on:click={() => dispatch('filterByRepo', { repo: repo.fullName })}
+                >
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="text-lg">📦</span>
+                    <span class="font-medium text-sm truncate" title={repo.fullName}>{repo.fullName}</span>
+                  </div>
+                  <div class="flex flex-wrap gap-1 text-xs">
+                    <span class="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">{repo.totalCount} total</span>
+                    {#if repo.issues > 0}
+                      <span class="px-1.5 py-0.5 bg-green-100 text-green-700 rounded">{repo.issues} issues</span>
+                    {/if}
+                    {#if repo.pulls > 0}
+                      <span class="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">{repo.pulls} PRs</span>
+                    {/if}
+                    {#if repo.files > 0}
+                      <span class="px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded">{repo.files} files</span>
+                    {/if}
+                  </div>
+                </button>
+              {/each}
+            </div>
+            {#if repositoryGroups.length > 12}
+              <p class="text-xs text-gray-500 mt-3 text-center">...and {repositoryGroups.length - 12} more repositories</p>
+            {/if}
+          </InsightCard>
+        {/if}
+        
+        <!-- Visual Gallery -->
+        {#if visualGallery && visualGallery.length > 0}
+          <InsightCard title="Visual Gallery" icon="🖼️" subtitle="Bookmarks with thumbnail images">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {#each visualGallery as bookmark}
+                <a
+                  href={bookmark.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group block aspect-video bg-gray-100 rounded-lg overflow-hidden relative hover:ring-2 hover:ring-blue-400 transition-all"
+                  title={bookmark.title}
+                >
+                  <img
+                    src={bookmark.thumbnail}
+                    alt={bookmark.title}
+                    class="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    loading="lazy"
+                    on:error={(e) => e.target.parentElement.style.display = 'none'}
+                  />
+                  <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                    <div class="text-white text-xs line-clamp-2 leading-tight">{bookmark.title}</div>
+                  </div>
+                  {#if bookmark.platform}
+                    <div class="absolute top-1 right-1 bg-white/90 rounded px-1 text-xs">
+                      {getPlatformIcon(bookmark.platform)}
+                    </div>
+                  {/if}
+                </a>
+              {/each}
+            </div>
+          </InsightCard>
+        {/if}
+        
+        <!-- Content Type Distribution -->
+        <InsightCard title="Content Types by Platform" icon="📝" collapsible collapsed={true}>
+          <div class="space-y-4">
+            {#if platformDistribution?.platforms}
+              {#each platformDistribution.platforms.slice(0, 5) as platform}
+                <div class="space-y-1">
+                  <div class="flex items-center gap-2">
+                    <span>{getPlatformIcon(platform.platform)}</span>
+                    <span class="font-medium text-sm">{getPlatformDisplayName(platform.platform)}</span>
+                    <span class="text-xs text-gray-500">({platform.count} bookmarks)</span>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    {#each Object.entries(platform.contentTypes || {}) as [type, count]}
+                      <span class="px-2 py-0.5 bg-gray-100 rounded text-xs">
+                        {getContentTypeDisplayName(type)}: {count}
+                      </span>
+                    {/each}
+                  </div>
+                </div>
+              {/each}
+            {:else}
+              <p class="text-gray-500 text-sm">No platform data available.</p>
             {/if}
           </div>
         </InsightCard>

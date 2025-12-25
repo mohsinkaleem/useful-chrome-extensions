@@ -324,6 +324,7 @@ export async function updateInIndex(bookmark) {
 /**
  * Parse special filter prefixes from search query
  * Supports: category:X, domain:X, accessed:yes/no, stale:yes, enriched:yes/no, dead:yes
+ * Platform filters: platform:X, channel:X, repo:X, author:X, type:X, hasimage:yes/no
  * @param {string} query - Raw search query
  * @returns {Object} { filters, remainingQuery }
  */
@@ -347,6 +348,55 @@ export function parseSpecialFilters(query) {
   if (domainMatch) {
     filters.domain = domainMatch[1].toLowerCase();
     remaining = remaining.replace(domainMatch[0], '').trim();
+  }
+  
+  // Platform filter: platform:youtube, platform:github, etc.
+  const platformMatch = remaining.match(/platform:(\S+)/i);
+  if (platformMatch) {
+    filters.platform = platformMatch[1].toLowerCase();
+    remaining = remaining.replace(platformMatch[0], '').trim();
+  }
+  
+  // Channel/Creator filter: channel:@username or channel:username
+  const channelMatch = remaining.match(/channel:(@?\S+)/i);
+  if (channelMatch) {
+    filters.creator = channelMatch[1];
+    remaining = remaining.replace(channelMatch[0], '').trim();
+  }
+  
+  // Author filter (alias for channel/creator): author:username
+  const authorMatch = remaining.match(/author:(@?\S+)/i);
+  if (authorMatch) {
+    filters.creator = authorMatch[1];
+    remaining = remaining.replace(authorMatch[0], '').trim();
+  }
+  
+  // Repo filter: repo:owner/repo
+  const repoMatch = remaining.match(/repo:(\S+)/i);
+  if (repoMatch) {
+    filters.repo = repoMatch[1].toLowerCase();
+    remaining = remaining.replace(repoMatch[0], '').trim();
+  }
+  
+  // Content type filter: type:video, type:issue, type:article, etc.
+  const typeMatch = remaining.match(/type:(\S+)/i);
+  if (typeMatch) {
+    filters.contentType = typeMatch[1].toLowerCase();
+    remaining = remaining.replace(typeMatch[0], '').trim();
+  }
+  
+  // Has image filter: hasimage:yes/no
+  const hasImageMatch = remaining.match(/hasimage:(yes|no)/i);
+  if (hasImageMatch) {
+    filters.hasImage = hasImageMatch[1].toLowerCase() === 'yes';
+    remaining = remaining.replace(hasImageMatch[0], '').trim();
+  }
+  
+  // Playlist filter: playlist:ID
+  const playlistMatch = remaining.match(/playlist:(\S+)/i);
+  if (playlistMatch) {
+    filters.playlist = playlistMatch[1];
+    remaining = remaining.replace(playlistMatch[0], '').trim();
   }
   
   // Accessed filter: accessed:yes/no
@@ -444,6 +494,56 @@ export function applySpecialFilters(bookmarks, filters) {
     if (filters.folder) {
       const folderPath = (bookmark.folderPath || '').toLowerCase();
       if (!folderPath.includes(filters.folder)) return false;
+    }
+    
+    // Platform filter
+    if (filters.platform) {
+      const bookmarkPlatform = (bookmark.platform || 'other').toLowerCase();
+      if (bookmarkPlatform !== filters.platform) return false;
+    }
+    
+    // Creator/Channel filter
+    if (filters.creator) {
+      const bookmarkCreator = (bookmark.creator || '').toLowerCase();
+      const filterCreator = filters.creator.toLowerCase();
+      // Match with or without @ prefix
+      if (!bookmarkCreator.includes(filterCreator) && 
+          !bookmarkCreator.includes(filterCreator.replace(/^@/, '')) &&
+          !(`@${bookmarkCreator}`).includes(filterCreator)) {
+        return false;
+      }
+    }
+    
+    // Repository filter (owner/repo format)
+    if (filters.repo) {
+      const repoName = bookmark.platformData?.extra?.owner && bookmark.platformData?.extra?.repo
+        ? `${bookmark.platformData.extra.owner}/${bookmark.platformData.extra.repo}`.toLowerCase()
+        : '';
+      if (!repoName.includes(filters.repo)) return false;
+    }
+    
+    // Content type filter
+    if (filters.contentType) {
+      const bookmarkType = (bookmark.contentType || '').toLowerCase();
+      // Support pipe-separated values: type:video|article
+      const allowedTypes = filters.contentType.split('|').map(t => t.trim());
+      if (!allowedTypes.includes(bookmarkType)) return false;
+    }
+    
+    // Has image filter
+    if (filters.hasImage !== undefined) {
+      const hasThumbnail = Boolean(
+        bookmark.platformData?.extra?.thumbnail ||
+        bookmark.rawMetadata?.openGraph?.['og:image'] ||
+        bookmark.rawMetadata?.twitterCard?.['twitter:image']
+      );
+      if (filters.hasImage !== hasThumbnail) return false;
+    }
+    
+    // Playlist filter
+    if (filters.playlist) {
+      const playlistId = bookmark.platformData?.extra?.playlistId || '';
+      if (!playlistId.includes(filters.playlist)) return false;
     }
     
     return true;

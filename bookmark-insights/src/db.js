@@ -40,6 +40,21 @@ db.version(3).stores({
   console.log('Upgrading database to version 3 - adding similarities and computedMetrics tables');
 });
 
+// Schema version 4: Add platformData fields for platform-specific enrichment
+// Adds indexed fields for platform, creator, contentType, repoName for advanced filtering
+db.version(4).stores({
+  bookmarks: 'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId, platform, creator, contentType',
+  enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
+  events: '++eventId, bookmarkId, type, timestamp',
+  cache: 'key',
+  settings: 'key',
+  similarities: '++id, bookmark1Id, bookmark2Id, score, [bookmark1Id+bookmark2Id]',
+  computedMetrics: 'key'
+}).upgrade(tx => {
+  console.log('Upgrading database to version 4 - adding platformData indexes');
+  // platformData will be populated during enrichment
+});
+
 // Define default settings
 const DEFAULT_SETTINGS = {
   enrichmentEnabled: true,
@@ -124,7 +139,12 @@ export async function migrateFromChromeStorage() {
       faviconUrl: null,
       contentSnippet: null,
       lastAccessed: null,
-      accessCount: 0
+      accessCount: 0,
+      // Platform-specific fields
+      platform: null,
+      creator: null,
+      contentType: null,
+      platformData: null
     }));
 
     // Bulk insert into IndexedDB
@@ -228,6 +248,11 @@ export async function smartMergeBookmarks(newBookmarks) {
           rawMetadata: existing.rawMetadata ?? null,
           lastAccessed: existing.lastAccessed ?? null,
           accessCount: existing.accessCount ?? 0,
+          // Platform-specific fields (preserve existing)
+          platform: existing.platform ?? null,
+          creator: existing.creator ?? null,
+          contentType: existing.contentType ?? null,
+          platformData: existing.platformData ?? null,
         };
       }
       
@@ -245,6 +270,11 @@ export async function smartMergeBookmarks(newBookmarks) {
         rawMetadata: null,
         lastAccessed: null,
         accessCount: 0,
+        // Platform-specific fields
+        platform: null,
+        creator: null,
+        contentType: null,
+        platformData: null,
       };
     });
     
@@ -752,6 +782,25 @@ export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {
         (b.domain && b.domain.toLowerCase().includes(lowerQuery)) ||
         (b.description && b.description.toLowerCase().includes(lowerQuery))
       );
+    }
+    
+    // Platform filter
+    if (filters.platforms && filters.platforms.length > 0) {
+      bookmarks = bookmarks.filter(b => filters.platforms.includes(b.platform || 'other'));
+    }
+    
+    // Creators filter (each creator is an object with {key, creator, platform})
+    if (filters.creators && filters.creators.length > 0) {
+      bookmarks = bookmarks.filter(b => {
+        if (!b.creator) return false;
+        const bookmarkCreatorKey = `${b.platform || 'other'}:${b.creator}`;
+        return filters.creators.some(c => c.key === bookmarkCreatorKey);
+      });
+    }
+    
+    // Content types filter
+    if (filters.contentTypes && filters.contentTypes.length > 0) {
+      bookmarks = bookmarks.filter(b => filters.contentTypes.includes(b.contentType));
     }
     
     if (filters.category) {
@@ -1727,4 +1776,127 @@ export async function restoreFromAutoBackup(index = 0) {
   }
 }
 
+// ============================================================================
+// PLATFORM DATA BACKFILL
+// ============================================================================
 
+import { parseBookmarkUrl } from './url-parsers.js';
+
+/**
+ * Backfill platform data for all existing bookmarks
+ * This parses URLs to extract platform, creator, and content type without network requests
+ * @param {Function} progressCallback - Optional callback for progress updates (processed, total)
+ * @returns {Object} - { processed, updated, errors }
+ */
+export async function backfillPlatformData(progressCallback = null) {
+  console.log('Starting platform data backfill...');
+  
+  const stats = { processed: 0, updated: 0, errors: 0, platforms: {} };
+  
+  try {
+    const allBookmarks = await db.bookmarks.toArray();
+    const total = allBookmarks.length;
+    
+    console.log(`Processing ${total} bookmarks for platform data...`);
+    
+    // Process in batches of 100 for efficiency
+    const BATCH_SIZE = 100;
+    
+    for (let i = 0; i < allBookmarks.length; i += BATCH_SIZE) {
+      const batch = allBookmarks.slice(i, i + BATCH_SIZE);
+      const updates = [];
+      
+      for (const bookmark of batch) {
+        stats.processed++;
+        
+        try {
+          // Skip if no URL
+          if (!bookmark.url) continue;
+          
+          // Parse the URL for platform data
+          const platformData = parseBookmarkUrl(bookmark.url);
+          
+          // Skip if no platform detected
+          if (!platformData || !platformData.platform) continue;
+          
+          // Only update if platform data is different or missing
+          if (bookmark.platform !== platformData.platform ||
+              bookmark.creator !== platformData.creator ||
+              bookmark.contentType !== platformData.type) {
+            
+            updates.push({
+              id: bookmark.id,
+              platform: platformData.platform,
+              creator: platformData.creator || null,
+              contentType: platformData.type || null,
+              platformData: platformData
+            });
+            
+            // Track platform stats
+            stats.platforms[platformData.platform] = (stats.platforms[platformData.platform] || 0) + 1;
+          }
+        } catch (err) {
+          stats.errors++;
+          console.warn(`Error processing bookmark ${bookmark.id}:`, err.message);
+        }
+      }
+      
+      // Bulk update this batch
+      if (updates.length > 0) {
+        await db.bookmarks.bulkUpdate(updates.map(u => ({
+          key: u.id,
+          changes: {
+            platform: u.platform,
+            creator: u.creator,
+            contentType: u.contentType,
+            platformData: u.platformData
+          }
+        })));
+        stats.updated += updates.length;
+      }
+      
+      // Report progress
+      if (progressCallback) {
+        progressCallback(stats.processed, total);
+      }
+    }
+    
+    console.log('Platform data backfill complete:', stats);
+    return stats;
+    
+  } catch (error) {
+    console.error('Error during platform data backfill:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get platform data statistics
+ * @returns {Object} - Stats about platform coverage
+ */
+export async function getPlatformDataStats() {
+  try {
+    const total = await db.bookmarks.count();
+    const withPlatform = await db.bookmarks.where('platform').notEqual('').count();
+    const withCreator = await db.bookmarks.where('creator').notEqual('').count();
+    
+    // Count by platform
+    const platforms = {};
+    await db.bookmarks.where('platform').notEqual('').each(b => {
+      if (b.platform) {
+        platforms[b.platform] = (platforms[b.platform] || 0) + 1;
+      }
+    });
+    
+    return {
+      total,
+      withPlatform,
+      withCreator,
+      coverage: total > 0 ? Math.round((withPlatform / total) * 100) : 0,
+      platforms
+    };
+  } catch (error) {
+    console.error('Error getting platform stats:', error);
+    return { total: 0, withPlatform: 0, withCreator: 0, coverage: 0, platforms: {} };
+  }
+}

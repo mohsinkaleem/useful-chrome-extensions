@@ -1,11 +1,13 @@
 # Bookmark Insights - Technical Documentation
 
-**Version:** 2.5  
+**Version:** 3.0  
 **Last Updated:** December 21, 2025
 
 ## Table of Contents
+
 - [Architecture Overview](#architecture-overview)
 - [Database Schema](#database-schema)
+- [Platform Enrichment](#platform-enrichment)
 - [Core Systems](#core-systems)
 - [API Reference](#api-reference)
 - [Performance](#performance)
@@ -16,6 +18,7 @@
 ## Architecture Overview
 
 ### Technology Stack
+
 | Component | Technology |
 |-----------|------------|
 | UI Framework | Svelte 4.0 |
@@ -27,13 +30,14 @@
 | Build | Rollup with ES modules |
 
 ### Component Architecture
+
 ```
 Chrome Extension
 ├── Popup (384x384)
 │   └── Quick search, recent items
 ├── Dashboard (Full Page)
 │   ├── Bookmarks Tab - Browse & filter
-│   ├── Insights Tab - VisualInsights component (5 tabs)
+│   ├── Insights Tab - VisualInsights component (6 tabs)
 │   ├── Health Tab - Enrichment, dead links, similar detection
 │   └── Data Tab - Database explorer
 ├── Background Service Worker
@@ -46,18 +50,21 @@ Chrome Extension
 ```
 
 ### File Structure
+
 ```
 src/
-├── db.js              # IndexedDB layer (schema, CRUD, analytics, caching)
+├── db.js              # IndexedDB layer (schema v4, CRUD, analytics, caching)
 ├── stores.js          # Svelte stores for reactive state
 ├── enrichment.js      # Enrichment pipeline & metadata fetching
-├── search.js          # FlexSearch with special filters
+├── search.js          # FlexSearch with special filters (incl. platform filters)
 ├── similarity.js      # TF-IDF similarity engine (on-demand)
-├── insights.js        # Analytics & insights (5 major functions)
+├── insights.js        # Analytics & insights (platform + 5 legacy functions)
+├── url-parsers.js     # Platform-specific URL parsing (YouTube, GitHub, etc.)
 ├── utils.js           # Shared utilities
 ├── Dashboard.svelte   # Main dashboard component
-├── Sidebar.svelte     # Filter sidebar with load-more pagination
-├── VisualInsights.svelte  # Interactive insights (5 tabs)
+├── Sidebar.svelte     # Filter sidebar with platforms, creators, domains
+├── VisualInsights.svelte  # Interactive insights (6 tabs incl. Platforms)
+├── CreatorExplorer.svelte # Creator/channel browsing component
 └── *.svelte           # Other UI components
 
 background-new.js      # Service worker source
@@ -68,18 +75,22 @@ background-new.js      # Service worker source
 ## Database Schema
 
 ### Version History
+
 - **v1**: Initial schema with basic tables
 - **v2**: Added `rawMetadata` field for comprehensive metadata storage
 - **v3**: Added `similarities` and `computedMetrics` tables for caching
+- **v4**: Added platform enrichment fields (`platform`, `creator`, `contentType`, `platformData`)
 
 ### Tables
 
 #### `bookmarks`
+
 Primary bookmark storage with enrichment data.
 
-**Indexes:** `id` (primary), `url`, `title`, `domain`, `category`, `dateAdded`, `lastAccessed`, `lastChecked`, `isAlive`, `parentId`
+**Indexes:** `id` (primary), `url`, `title`, `domain`, `category`, `dateAdded`, `lastAccessed`, `lastChecked`, `isAlive`, `parentId`, `platform`, `creator`, `contentType`
 
 **Schema:**
+
 ```javascript
 {
   // Core Chrome bookmark fields
@@ -117,16 +128,31 @@ Primary bookmark storage with enrichment data.
       language: String,
       author: String
     }
+  },
+  
+  // Platform enrichment (v4+)
+  platform: String | null,       // 'youtube', 'github', 'medium', etc.
+  creator: String | null,        // Channel name, author, repo owner
+  contentType: String | null,    // 'video', 'repo', 'article', 'issue', etc.
+  platformData: {
+    platform: String,            // Platform identifier
+    type: String,                // Content type
+    creator: String,             // Creator/channel/author
+    identifier: String,          // Video ID, repo name, article slug
+    subtype: String | null,      // 'short', 'pr', 'wiki', etc.
+    extra: Object                // Platform-specific: playlist, branch, path
   }
 }
 ```
 
 #### `enrichmentQueue`
+
 Queue for pending enrichment tasks.
 
 **Indexes:** `queueId` (auto-increment), `bookmarkId`, `priority`
 
 **Schema:**
+
 ```javascript
 {
   queueId: Number,               // Auto-increment
@@ -137,11 +163,13 @@ Queue for pending enrichment tasks.
 ```
 
 #### `events`
+
 Event logging for analytics.
 
 **Indexes:** `eventId` (auto-increment), `bookmarkId`, `type`, `timestamp`
 
 **Schema:**
+
 ```javascript
 {
   eventId: Number,               // Auto-increment
@@ -153,11 +181,13 @@ Event logging for analytics.
 ```
 
 #### `cache`
+
 Performance caching for computed results.
 
 **Indexes:** `key` (primary)
 
 **Schema:**
+
 ```javascript
 {
   key: String,                   // Cache key
@@ -168,11 +198,13 @@ Performance caching for computed results.
 ```
 
 #### `settings`
+
 User preferences and configuration.
 
 **Indexes:** `key` (primary)
 
 **Schema:**
+
 ```javascript
 {
   key: String,                   // Setting key (e.g., 'app')
@@ -196,6 +228,7 @@ User preferences and configuration.
 ```
 
 **Defaults:**
+
 ```javascript
 {
   enrichmentEnabled: true,
@@ -212,11 +245,13 @@ User preferences and configuration.
 ```
 
 #### `similarities` (New in v3)
+
 Cached similarity computations between bookmarks.
 
 **Indexes:** `id` (auto-increment), `[bookmark1Id+bookmark2Id]` (unique compound)
 
 **Schema:**
+
 ```javascript
 {
   id: Number,                    // Auto-increment
@@ -230,11 +265,13 @@ Cached similarity computations between bookmarks.
 ```
 
 #### `computedMetrics` (New in v3)
+
 Cached computed metrics with TTL.
 
 **Indexes:** `key` (primary)
 
 **Schema:**
+
 ```javascript
 {
   key: String,                   // Metric key (e.g., 'quickStats', 'domainStats')
@@ -242,6 +279,114 @@ Cached computed metrics with TTL.
   computedAt: Number,            // Timestamp of computation
   ttl: Number                    // Time-to-live (ms)
 }
+```
+
+---
+
+## Platform Enrichment
+
+### Overview
+
+The platform enrichment system extracts structured data from bookmark URLs without making additional network requests. It identifies platforms (YouTube, GitHub, Medium, etc.) and extracts creator/channel information, content types, and identifiers.
+
+### Supported Platforms
+
+| Platform | Extractable Data | URL Patterns |
+|----------|-----------------|--------------|
+| **YouTube** | Video ID, Channel (@handle or ID), Playlist ID, Shorts detection | `youtube.com/watch`, `youtu.be/`, `/@channel` |
+| **GitHub** | Owner, Repo, Content type (issue/PR/file/wiki), Branch, Path | `github.com/owner/repo` |
+| **Medium** | Author (@username), Publication (subdomain) | `medium.com/@author`, `publication.medium.com` |
+| **dev.to** | Author username, Article slug | `dev.to/author/article` |
+| **Substack** | Publication (subdomain), Author | `publication.substack.com` |
+| **Twitter/X** | Username, Tweet ID | `twitter.com/user`, `x.com/user` |
+| **Reddit** | Subreddit, Post ID, Comment thread | `reddit.com/r/subreddit` |
+| **Stack Overflow** | Question ID, Answer ID | `stackoverflow.com/questions/` |
+| **npm** | Package name, Version | `npmjs.com/package/` |
+
+### URL Parser Module (`url-parsers.js`)
+
+```javascript
+import { parseBookmarkUrl, getPlatformDisplayName, getPlatformIcon } from './url-parsers.js';
+
+// Parse any bookmark URL
+const result = parseBookmarkUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+// Returns:
+{
+  platform: 'youtube',
+  type: 'video',
+  creator: null,              // Would be populated if channel URL
+  identifier: 'dQw4w9WgXcQ',  // Video ID
+  subtype: null,
+  extra: { videoId: 'dQw4w9WgXcQ' }
+}
+
+// GitHub example
+parseBookmarkUrl('https://github.com/facebook/react/issues/123');
+// Returns:
+{
+  platform: 'github',
+  type: 'issue',
+  creator: 'facebook',
+  identifier: 'react',
+  subtype: null,
+  extra: { owner: 'facebook', repo: 'react', issueNumber: '123' }
+}
+```
+
+### Helper Functions
+
+```javascript
+// Get human-readable platform name
+getPlatformDisplayName('github');  // "GitHub"
+getPlatformDisplayName('youtube'); // "YouTube"
+
+// Get platform emoji icon
+getPlatformIcon('github');         // "💻"
+getPlatformIcon('youtube');        // "📺"
+getPlatformIcon('medium');         // "📝"
+
+// Get content type display name
+getContentTypeDisplayName('pr');      // "Pull Request"
+getContentTypeDisplayName('video');   // "Video"
+```
+
+### Enrichment Integration
+
+Platform data is populated during enrichment in `enrichment.js`:
+
+1. **URL Parsing** - `parseBookmarkUrl()` is called at the start of enrichment
+2. **Metadata Merging** - `mergePlatformDataWithMetadata()` combines URL-derived data with:
+   - JSON-LD structured data (YouTube channel names)
+   - Open Graph metadata (article authors)
+   - Meta tags (GitHub topics)
+3. **Storage** - Platform fields are indexed for fast filtering
+
+### Platform-Specific Insights
+
+New functions in `insights.js`:
+
+| Function | Description |
+|----------|-------------|
+| `getPlatformDistribution()` | Breakdown of bookmarks by platform with counts and percentages |
+| `getCreatorLeaderboard(limit)` | Top creators/channels ranked by bookmark count |
+| `getRepositoryGroups()` | GitHub repos with issue/PR/file breakdown |
+| `getVisualGallery(limit)` | Bookmarks with og:image thumbnails |
+| `getPlatformInsightsSummary()` | Summary stats for dashboard cards |
+| `getCreatorStats(limit)` | Detailed creator statistics |
+| `getChannelClusters()` | Group bookmarks by creator across platforms |
+
+### Platform Search Filters
+
+New search filters in `search.js`:
+
+```
+platform:youtube          # Filter by platform
+channel:@mkbhd            # YouTube channel (with or without @)
+repo:facebook/react       # GitHub repository (owner/repo format)
+author:username           # Blog/article author
+type:video|issue|article  # Content type (pipe-separated)
+hasimage:yes              # Has thumbnail/preview image
+playlist:PLxxxxxxx        # YouTube playlist ID
 ```
 
 ---
@@ -273,6 +418,7 @@ Intelligent caching with configurable TTL and smart invalidation.
 6. **Parallel Processing** - Configurable concurrency (1-10 workers)
 
 **Performance:**
+
 - Sequential: ~1 bookmark/second
 - Concurrency 3: ~3 bookmarks/second
 - Concurrency 5: ~5 bookmarks/second
@@ -280,11 +426,13 @@ Intelligent caching with configurable TTL and smart invalidation.
 ### Search System (FlexSearch)
 
 **Field Boosting:**
+
 - `title`: 3x weight
 - `category`, `keywords`: 2x weight
 - Others: 1x weight
 
 **Special Filters:**
+
 ```
 category:code     domain:github      accessed:yes
 stale:yes         dead:yes           enriched:no
@@ -301,6 +449,7 @@ folder:"path"
 ### Dead Link Re-check
 
 Background message handler `reEnrichDeadLinks`:
+
 1. Fetches all dead links
 2. Clears `lastChecked` to force re-check
 3. Runs enrichment on each
@@ -309,6 +458,7 @@ Background message handler `reEnrichDeadLinks`:
 ### Sidebar Pagination
 
 Domain and folder lists now support "Load More" functionality:
+
 - Domains: Initial 30, load 30 more per click
 - Folders: Initial 15, load 15 more per click
 
@@ -407,20 +557,24 @@ getDeadLinkInsights()
 ## Performance
 
 ### Indexing Strategy
+
 - Composite indexes on: `domain`, `category`, `dateAdded`, `lastAccessed`, `isAlive`, `lastChecked`
 - Query optimization via Dexie's indexed queries
 
 ### Caching
+
 - FlexSearch index: 5-minute TTL
 - Analytics: 5 min to 24 hours depending on metric
 - Similarities: 24-hour TTL
 
 ### Memory Management
+
 - Batch processing with configurable size
 - Pagination for large result sets
 - Lazy loading of charts
 
 ### Bundle Sizes
+
 - popup.js: ~150KB (minified)
 - dashboard.js: ~300KB (minified)
 - tailwind.css: ~50KB (purged)
@@ -430,11 +584,13 @@ getDeadLinkInsights()
 ## Privacy & Security
 
 ### Data Storage
+
 - ✅ **100% local** - All data in browser IndexedDB
 - ✅ **No cloud sync** - Never leaves your device
 - ✅ **No external APIs** - Direct page fetches only
 
 ### Permissions
+
 | Permission | Purpose | When Used |
 |------------|---------|-----------|
 | `bookmarks` | Read/write bookmarks | Always |
@@ -443,12 +599,14 @@ getDeadLinkInsights()
 | `tabs` | Track access | Opt-in only |
 
 ### Security
+
 - Content Security Policy enforced
 - 5-second timeout per fetch
 - No JavaScript execution (regex parsing only)
 - User controls all processing
 
 ### GDPR Compliance
+
 - No personal data collection
 - No external data transmission
 - User controls all processing
@@ -461,15 +619,18 @@ getDeadLinkInsights()
 ### Common Issues
 
 **Enrichment not running:**
+
 - Check `enrichmentEnabled: true`
 - Verify queue has bookmarks
 - Check browser console for errors
 
 **Search not working:**
+
 - Rebuild index: `rebuildSearchIndex()`
 - Clear cache
 
 **Performance issues:**
+
 - Reduce batch size (20 → 10)
 - Lower concurrency (3 → 2)
 - Clear cache
@@ -495,6 +656,7 @@ npm run dev    # Watch mode
 ```
 
 Load in Chrome:
+
 1. `chrome://extensions/`
 2. Enable "Developer mode"
 3. "Load unpacked" → select project folder

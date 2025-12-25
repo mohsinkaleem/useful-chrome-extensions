@@ -2,6 +2,7 @@
 // Handles background enrichment, dead-link checking, and auto-categorization
 
 import { getSettings, getNextEnrichmentBatch, removeFromEnrichmentQueue, upsertBookmark, getBookmark, logEvent } from './db.js';
+import { parseBookmarkUrl } from './url-parsers.js';
 
 // Domain-based categorization rules
 const CATEGORY_RULES = {
@@ -100,6 +101,9 @@ export async function enrichBookmark(bookmarkId, options = {}) {
 
     console.log(`Enriching bookmark: ${bookmark.title} (${bookmark.url})`);
 
+    // Parse URL for platform-specific data (fast, no network required)
+    const platformData = parseBookmarkUrl(bookmark.url);
+    
     // Check dead links first (quick HEAD request)
     const isAlive = await checkBookmarkAlive(bookmark.url);
     
@@ -107,6 +111,13 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     if (isAlive === false) {
       bookmark.isAlive = false;
       bookmark.lastChecked = Date.now();
+      // Still populate platform data even for dead links
+      if (platformData) {
+        bookmark.platform = platformData.platform;
+        bookmark.creator = platformData.creator;
+        bookmark.contentType = platformData.type;
+        bookmark.platformData = platformData;
+      }
       await upsertBookmark(bookmark);
       await logEvent(bookmarkId, 'enrichment', { isAlive: false });
       return { success: true, isAlive: false, skipped: true };
@@ -117,6 +128,9 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     
     // Auto-categorize
     const category = categorizeBookmark(bookmark, metadata);
+    
+    // Merge platform data with metadata for enhanced creator detection
+    const enrichedPlatformData = mergePlatformDataWithMetadata(platformData, metadata);
 
     // Update bookmark with enriched data
     bookmark.description = metadata.description || bookmark.description;
@@ -127,11 +141,20 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     bookmark.faviconUrl = metadata.faviconUrl || bookmark.faviconUrl;
     bookmark.contentSnippet = metadata.snippet || bookmark.contentSnippet;
     bookmark.rawMetadata = metadata.rawMetadata || bookmark.rawMetadata; // Store comprehensive metadata
+    
+    // Add platform-specific fields
+    if (enrichedPlatformData) {
+      bookmark.platform = enrichedPlatformData.platform;
+      bookmark.creator = enrichedPlatformData.creator;
+      bookmark.contentType = enrichedPlatformData.type;
+      bookmark.platformData = enrichedPlatformData;
+    }
 
     await upsertBookmark(bookmark);
     await logEvent(bookmarkId, 'enrichment', { 
       success: true, 
-      category, 
+      category,
+      platform: enrichedPlatformData?.platform,
       hasDescription: !!metadata.description 
     });
 
@@ -139,6 +162,7 @@ export async function enrichBookmark(bookmarkId, options = {}) {
       success: true, 
       category, 
       description: metadata.description,
+      platform: enrichedPlatformData?.platform,
       isAlive 
     };
   } catch (error) {
@@ -393,6 +417,151 @@ export function categorizeBookmark(bookmark, metadata = {}) {
   }
 }
 
+/**
+ * Merge URL-parsed platform data with fetched page metadata for enhanced creator detection
+ * @param {Object} platformData - Data from URL parser
+ * @param {Object} metadata - Data from page fetch (includes rawMetadata)
+ * @returns {Object} Enhanced platform data
+ */
+function mergePlatformDataWithMetadata(platformData, metadata) {
+  if (!platformData) return null;
+  
+  const rawMeta = metadata?.rawMetadata || {};
+  const enhanced = { ...platformData };
+  
+  // YouTube: Extract channel name from JSON-LD or meta tags
+  if (platformData.platform === 'youtube') {
+    // Try JSON-LD for authoritative channel info
+    if (rawMeta.jsonLd && Array.isArray(rawMeta.jsonLd)) {
+      for (const ld of rawMeta.jsonLd) {
+        // VideoObject has channel info
+        if (ld['@type'] === 'VideoObject' && ld.author) {
+          const author = Array.isArray(ld.author) ? ld.author[0] : ld.author;
+          if (author.name) {
+            enhanced.extra = enhanced.extra || {};
+            enhanced.extra.channelName = author.name;
+            // Use JSON-LD channel name as creator if we only have handle
+            if (enhanced.creator && enhanced.creator.startsWith('@')) {
+              enhanced.extra.channelHandle = enhanced.creator;
+            }
+            enhanced.creator = author.name;
+          }
+          if (author.url) {
+            enhanced.extra.channelUrl = author.url;
+          }
+        }
+        // BreadcrumbList can have channel info
+        if (ld['@type'] === 'BreadcrumbList' && ld.itemListElement) {
+          const channelItem = ld.itemListElement.find(item => 
+            item.item && item.item['@id'] && item.item['@id'].includes('/channel/')
+          );
+          if (channelItem?.item?.name) {
+            enhanced.extra = enhanced.extra || {};
+            if (!enhanced.extra.channelName) {
+              enhanced.extra.channelName = channelItem.item.name;
+            }
+          }
+        }
+      }
+    }
+    
+    // Fallback to Open Graph
+    if (!enhanced.creator && rawMeta.openGraph) {
+      const ogSiteName = rawMeta.openGraph['og:site_name'];
+      if (ogSiteName && ogSiteName !== 'YouTube') {
+        enhanced.creator = ogSiteName;
+      }
+    }
+  }
+  
+  // GitHub: Extract topics and additional repo info from meta
+  if (platformData.platform === 'github') {
+    // GitHub includes topics in meta description sometimes
+    if (rawMeta.meta?.description) {
+      const desc = rawMeta.meta.description;
+      // GitHub topics format: "topic1, topic2, topic3 - Description"
+      const topicsMatch = desc.match(/^([^-]+)\s*-/);
+      if (topicsMatch) {
+        const potentialTopics = topicsMatch[1].split(',').map(t => t.trim()).filter(t => t.length > 0 && t.length < 30);
+        if (potentialTopics.length > 0) {
+          enhanced.extra = enhanced.extra || {};
+          enhanced.extra.topics = potentialTopics;
+        }
+      }
+    }
+    
+    // Try to get language from og:image URL (GitHub includes it in some social cards)
+    if (rawMeta.openGraph?.['og:image']) {
+      const imgUrl = rawMeta.openGraph['og:image'];
+      // GitHub opengraph images sometimes include language in the URL
+      const langMatch = imgUrl.match(/language[=:]([^&]+)/i);
+      if (langMatch) {
+        enhanced.extra = enhanced.extra || {};
+        enhanced.extra.language = decodeURIComponent(langMatch[1]);
+      }
+    }
+  }
+  
+  // Medium/Blog: Extract author from article metadata
+  if (platformData.platform === 'medium' || platformData.platform === 'devto' || platformData.platform === 'substack') {
+    // Try og:article:author
+    if (!enhanced.creator && rawMeta.openGraph?.['og:article:author']) {
+      enhanced.creator = rawMeta.openGraph['og:article:author'];
+    }
+    
+    // Try meta author
+    if (!enhanced.creator && rawMeta.other?.author) {
+      enhanced.creator = rawMeta.other.author;
+    }
+    
+    // Try JSON-LD Person/Organization author
+    if (!enhanced.creator && rawMeta.jsonLd && Array.isArray(rawMeta.jsonLd)) {
+      for (const ld of rawMeta.jsonLd) {
+        if (ld.author) {
+          const author = Array.isArray(ld.author) ? ld.author[0] : ld.author;
+          if (typeof author === 'string') {
+            enhanced.creator = author;
+            break;
+          } else if (author.name) {
+            enhanced.creator = author.name;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Extract published date
+    if (rawMeta.openGraph?.['og:article:published_time']) {
+      enhanced.extra = enhanced.extra || {};
+      enhanced.extra.publishedAt = rawMeta.openGraph['og:article:published_time'];
+    }
+  }
+  
+  // Twitter: Get display name from meta
+  if (platformData.platform === 'twitter') {
+    if (rawMeta.twitterCard?.['twitter:creator']) {
+      const twitterCreator = rawMeta.twitterCard['twitter:creator'];
+      if (!enhanced.creator || enhanced.creator === '@') {
+        enhanced.creator = twitterCreator;
+      }
+    }
+  }
+  
+  // Generic: Extract og:image for thumbnails
+  if (rawMeta.openGraph?.['og:image']) {
+    enhanced.extra = enhanced.extra || {};
+    enhanced.extra.thumbnail = rawMeta.openGraph['og:image'];
+  }
+  
+  // Extract content type from og:type
+  if (rawMeta.openGraph?.['og:type']) {
+    enhanced.extra = enhanced.extra || {};
+    enhanced.extra.ogType = rawMeta.openGraph['og:type'];
+  }
+  
+  return enhanced;
+}
+
 // Process a batch of bookmarks from the enrichment queue with parallel processing
 // @param {number} batchSize - Number of bookmarks to process
 // @param {Function} progressCallback - Callback for progress updates
@@ -413,13 +582,77 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
     const maxConcurrency = concurrency || settings.enrichmentConcurrency || 3;
     console.log(`Using concurrency: ${maxConcurrency} parallel requests${force ? ' (FORCE mode)' : ''}`);
 
-    const batch = await getNextEnrichmentBatch(batchSize);
-    if (batch.length === 0) {
-      console.log('No bookmarks in enrichment queue');
+    let bookmarksToProcess = [];
+    let usingQueue = true;
+    
+    // In FORCE mode, directly get bookmarks instead of using the queue
+    if (force) {
+      const { getAllBookmarks } = await import('./db.js');
+      const allBookmarks = await getAllBookmarks();
+      
+      // Get all HTTP/HTTPS bookmarks
+      const httpBookmarks = allBookmarks.filter(b => 
+        b.url && (b.url.startsWith('http://') || b.url.startsWith('https://'))
+      );
+      
+      // Take batchSize number of bookmarks (prioritize unenriched, then oldest enriched)
+      const unenriched = httpBookmarks.filter(b => !b.lastChecked);
+      const enriched = httpBookmarks.filter(b => b.lastChecked)
+        .sort((a, b) => a.lastChecked - b.lastChecked); // Oldest first
+      
+      // Combine: unenriched first, then oldest enriched
+      const prioritized = [...unenriched, ...enriched].slice(0, batchSize);
+      
+      bookmarksToProcess = prioritized.map(b => ({
+        bookmarkId: b.id,
+        queueId: null, // Not from queue
+        directProcess: true
+      }));
+      usingQueue = false;
+      
+      console.log(`FORCE mode: Selected ${bookmarksToProcess.length} bookmarks directly (${unenriched.length} unenriched, ${Math.max(0, bookmarksToProcess.length - unenriched.length)} for re-enrichment)`);
+    } else {
+      // Normal mode: use the enrichment queue
+      const batch = await getNextEnrichmentBatch(batchSize);
+      
+      if (batch.length === 0) {
+        // Queue empty - try to get unenriched bookmarks directly
+        const { getAllBookmarks } = await import('./db.js');
+        const allBookmarks = await getAllBookmarks();
+        
+        const unenrichedBookmarks = allBookmarks.filter(b => 
+          b.url && 
+          (b.url.startsWith('http://') || b.url.startsWith('https://')) &&
+          !b.lastChecked
+        ).slice(0, batchSize);
+        
+        if (unenrichedBookmarks.length === 0) {
+          console.log('No bookmarks in enrichment queue and no unenriched bookmarks found');
+          return { processed: 0, success: 0, failed: 0, skipped: 0 };
+        }
+        
+        bookmarksToProcess = unenrichedBookmarks.map(b => ({
+          bookmarkId: b.id,
+          queueId: null,
+          directProcess: true
+        }));
+        usingQueue = false;
+        console.log(`Queue empty, found ${bookmarksToProcess.length} unenriched bookmarks to process`);
+      } else {
+        bookmarksToProcess = batch.map(item => ({
+          bookmarkId: item.bookmarkId,
+          queueId: item.id,
+          directProcess: false
+        }));
+      }
+    }
+    
+    if (bookmarksToProcess.length === 0) {
+      console.log('No bookmarks to process');
       return { processed: 0, success: 0, failed: 0, skipped: 0 };
     }
 
-    console.log(`Processing ${batch.length} bookmarks from enrichment queue with ${maxConcurrency} concurrent workers`);
+    console.log(`Processing ${bookmarksToProcess.length} bookmarks with ${maxConcurrency} concurrent workers`);
 
     let success = 0;
     let failed = 0;
@@ -427,24 +660,24 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
     let completed = 0;
 
     // Process bookmarks with concurrency control
-    const processBookmark = async (queueItem, index) => {
+    const processBookmark = async (item, index) => {
       try {
-        const bookmark = await import('./db.js').then(m => m.getBookmark(queueItem.bookmarkId));
+        const bookmark = await import('./db.js').then(m => m.getBookmark(item.bookmarkId));
         
         // Send progress update
         if (progressCallback && bookmark) {
           progressCallback({
             current: index + 1,
-            total: batch.length,
+            total: bookmarksToProcess.length,
             completed: completed,
-            bookmarkId: queueItem.bookmarkId,
+            bookmarkId: item.bookmarkId,
             url: bookmark.url,
             title: bookmark.title,
             status: 'processing'
           });
         }
 
-        const result = await enrichBookmark(queueItem.bookmarkId, { force });
+        const result = await enrichBookmark(item.bookmarkId, { force });
         
         // Update counters
         if (result.success) {
@@ -467,9 +700,9 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
         if (progressCallback && bookmark) {
           progressCallback({
             current: index + 1,
-            total: batch.length,
+            total: bookmarksToProcess.length,
             completed: completed,
-            bookmarkId: queueItem.bookmarkId,
+            bookmarkId: item.bookmarkId,
             url: bookmark.url,
             title: bookmark.title,
             status: result.success ? 'completed' : 'failed',
@@ -477,23 +710,27 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
           });
         }
 
-        // Remove from queue regardless of success/failure
-        await removeFromEnrichmentQueue(queueItem.queueId);
+        // Remove from queue if it was from the queue
+        if (item.queueId && usingQueue) {
+          await removeFromEnrichmentQueue(item.queueId);
+        }
         
         return { success: true, result };
       } catch (error) {
-        console.error(`Error processing bookmark ${queueItem.bookmarkId}:`, error);
+        console.error(`Error processing bookmark ${item.bookmarkId}:`, error);
         failed++;
         completed++;
         
-        await removeFromEnrichmentQueue(queueItem.queueId);
+        if (item.queueId && usingQueue) {
+          await removeFromEnrichmentQueue(item.queueId);
+        }
         
         if (progressCallback) {
           progressCallback({
             current: index + 1,
-            total: batch.length,
+            total: bookmarksToProcess.length,
             completed: completed,
-            bookmarkId: queueItem.bookmarkId,
+            bookmarkId: item.bookmarkId,
             status: 'error',
             error: error.message
           });
@@ -508,28 +745,28 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
     let currentIndex = 0;
 
     const runWorker = async () => {
-      while (currentIndex < batch.length) {
+      while (currentIndex < bookmarksToProcess.length) {
         const index = currentIndex++;
-        const queueItem = batch[index];
-        await processBookmark(queueItem, index);
+        const item = bookmarksToProcess[index];
+        await processBookmark(item, index);
         
         // Small delay between requests to be respectful
-        if (currentIndex < batch.length) {
+        if (currentIndex < bookmarksToProcess.length) {
           await sleep(100); // 100ms delay between starting new requests
         }
       }
     };
 
     // Start concurrent workers
-    for (let i = 0; i < Math.min(maxConcurrency, batch.length); i++) {
+    for (let i = 0; i < Math.min(maxConcurrency, bookmarksToProcess.length); i++) {
       workers.push(runWorker());
     }
 
     // Wait for all workers to complete
     await Promise.all(workers);
 
-    console.log(`Processed ${batch.length} bookmarks: ${success} success, ${failed} failed, ${skipped} skipped`);
-    return { processed: batch.length, success, failed, skipped };
+    console.log(`Processed ${bookmarksToProcess.length} bookmarks: ${success} success, ${failed} failed, ${skipped} skipped`);
+    return { processed: bookmarksToProcess.length, success, failed, skipped };
   } catch (error) {
     console.error('Error processing enrichment batch:', error);
     return { processed: 0, success: 0, failed: 0, skipped: 0, error: error.message };

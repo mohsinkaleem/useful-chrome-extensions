@@ -1320,3 +1320,612 @@ export async function getTimeBasedAnalysis() {
     };
   }
 }
+
+// ============================================================================
+// PLATFORM & CREATOR ANALYTICS
+// ============================================================================
+
+/**
+ * Get platform distribution - breakdown of bookmarks by platform
+ * @returns {Object} Platform stats with counts and percentages
+ */
+export async function getPlatformDistribution() {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    const total = bookmarks.length;
+    
+    if (total === 0) {
+      return { platforms: [], total: 0 };
+    }
+    
+    // Count by platform
+    const platformCounts = {};
+    bookmarks.forEach(b => {
+      const platform = b.platform || 'other';
+      platformCounts[platform] = (platformCounts[platform] || 0) + 1;
+    });
+    
+    // Calculate percentages and sort
+    const platforms = Object.entries(platformCounts)
+      .map(([platform, count]) => ({
+        platform,
+        count,
+        percentage: Math.round((count / total) * 100)
+      }))
+      .sort((a, b) => b.count - a.count);
+    
+    return { platforms, total };
+  } catch (error) {
+    console.error('Error getting platform distribution:', error);
+    return { platforms: [], total: 0 };
+  }
+}
+
+/**
+ * Get creator statistics - top channels, authors, repo owners
+ * @param {number} limit - Max number of creators to return
+ * @returns {Object} Creator stats grouped by platform
+ */
+export async function getCreatorStats(limit = 20) {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    
+    // Group by creator and platform
+    const creatorMap = {};
+    
+    bookmarks.forEach(b => {
+      if (!b.creator) return;
+      
+      const platform = b.platform || 'other';
+      const key = `${platform}:${b.creator}`;
+      
+      if (!creatorMap[key]) {
+        creatorMap[key] = {
+          creator: b.creator,
+          platform,
+          count: 0,
+          bookmarks: [],
+          contentTypes: new Set(),
+          latestDate: 0,
+          thumbnail: null
+        };
+      }
+      
+      creatorMap[key].count++;
+      creatorMap[key].bookmarks.push({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        contentType: b.contentType,
+        dateAdded: b.dateAdded
+      });
+      
+      if (b.contentType) {
+        creatorMap[key].contentTypes.add(b.contentType);
+      }
+      
+      if (b.dateAdded > creatorMap[key].latestDate) {
+        creatorMap[key].latestDate = b.dateAdded;
+      }
+      
+      // Get thumbnail from platformData if available
+      if (!creatorMap[key].thumbnail && b.platformData?.extra?.thumbnail) {
+        creatorMap[key].thumbnail = b.platformData.extra.thumbnail;
+      }
+    });
+    
+    // Convert to array and sort
+    const allCreators = Object.values(creatorMap)
+      .map(c => ({
+        ...c,
+        contentTypes: Array.from(c.contentTypes)
+      }))
+      .sort((a, b) => b.count - a.count);
+    
+    // Group by platform for organized display
+    const byPlatform = {};
+    allCreators.forEach(c => {
+      if (!byPlatform[c.platform]) {
+        byPlatform[c.platform] = [];
+      }
+      if (byPlatform[c.platform].length < limit) {
+        byPlatform[c.platform].push(c);
+      }
+    });
+    
+    return {
+      all: allCreators.slice(0, limit),
+      byPlatform,
+      totalCreators: allCreators.length
+    };
+  } catch (error) {
+    console.error('Error getting creator stats:', error);
+    return { all: [], byPlatform: {}, totalCreators: 0 };
+  }
+}
+
+/**
+ * Get channel clusters - group bookmarks by YouTube channel, GitHub owner, etc.
+ * @returns {Object} Clustered bookmarks by creator
+ */
+export async function getChannelClusters() {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    
+    const clusters = {
+      youtube: {},
+      github: {},
+      medium: {},
+      devto: {},
+      substack: {},
+      twitter: {},
+      reddit: {},
+      other: {}
+    };
+    
+    bookmarks.forEach(b => {
+      if (!b.creator) return;
+      
+      const platform = b.platform || 'other';
+      const clusterKey = clusters[platform] ? platform : 'other';
+      
+      if (!clusters[clusterKey][b.creator]) {
+        clusters[clusterKey][b.creator] = {
+          creator: b.creator,
+          platform: platform,
+          bookmarks: [],
+          contentTypes: {},
+          totalCount: 0
+        };
+      }
+      
+      clusters[clusterKey][b.creator].bookmarks.push({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        contentType: b.contentType,
+        dateAdded: b.dateAdded,
+        thumbnail: b.platformData?.extra?.thumbnail
+      });
+      
+      clusters[clusterKey][b.creator].totalCount++;
+      
+      if (b.contentType) {
+        clusters[clusterKey][b.creator].contentTypes[b.contentType] = 
+          (clusters[clusterKey][b.creator].contentTypes[b.contentType] || 0) + 1;
+      }
+    });
+    
+    // Convert to sorted arrays
+    const result = {};
+    Object.entries(clusters).forEach(([platform, creators]) => {
+      result[platform] = Object.values(creators)
+        .sort((a, b) => b.totalCount - a.totalCount);
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting channel clusters:', error);
+    return {};
+  }
+}
+
+/**
+ * Get repository groups for GitHub bookmarks
+ * Groups issues, PRs, files by repository
+ * @returns {Array} Repositories with their bookmark breakdown
+ */
+export async function getRepositoryGroups() {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    const githubBookmarks = bookmarks.filter(b => b.platform === 'github');
+    
+    const repoMap = {};
+    
+    githubBookmarks.forEach(b => {
+      const owner = b.platformData?.extra?.owner;
+      const repo = b.platformData?.extra?.repo;
+      
+      if (!owner || !repo) return;
+      
+      const repoKey = `${owner}/${repo}`;
+      
+      if (!repoMap[repoKey]) {
+        repoMap[repoKey] = {
+          repoName: repoKey,
+          owner,
+          repo,
+          totalCount: 0,
+          breakdown: {
+            repo: 0,
+            issue: 0,
+            issues: 0,
+            pr: 0,
+            pulls: 0,
+            file: 0,
+            wiki: 0,
+            discussions: 0,
+            releases: 0,
+            actions: 0,
+            commits: 0,
+            other: 0
+          },
+          bookmarks: []
+        };
+      }
+      
+      repoMap[repoKey].totalCount++;
+      
+      const contentType = b.contentType || 'other';
+      if (repoMap[repoKey].breakdown.hasOwnProperty(contentType)) {
+        repoMap[repoKey].breakdown[contentType]++;
+      } else {
+        repoMap[repoKey].breakdown.other++;
+      }
+      
+      repoMap[repoKey].bookmarks.push({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        contentType: b.contentType,
+        extra: b.platformData?.extra
+      });
+    });
+    
+    // Convert to sorted array
+    return Object.values(repoMap)
+      .sort((a, b) => b.totalCount - a.totalCount);
+  } catch (error) {
+    console.error('Error getting repository groups:', error);
+    return [];
+  }
+}
+
+/**
+ * Get content type distribution by platform
+ * @returns {Object} Content types broken down by platform
+ */
+export async function getContentTypeDistribution() {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    
+    const distribution = {};
+    
+    bookmarks.forEach(b => {
+      const platform = b.platform || 'other';
+      const contentType = b.contentType || 'unknown';
+      
+      if (!distribution[platform]) {
+        distribution[platform] = {};
+      }
+      
+      distribution[platform][contentType] = (distribution[platform][contentType] || 0) + 1;
+    });
+    
+    // Convert to structured format
+    const result = Object.entries(distribution).map(([platform, types]) => ({
+      platform,
+      contentTypes: Object.entries(types)
+        .map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count),
+      total: Object.values(types).reduce((sum, c) => sum + c, 0)
+    }));
+    
+    return result.sort((a, b) => b.total - a.total);
+  } catch (error) {
+    console.error('Error getting content type distribution:', error);
+    return [];
+  }
+}
+
+/**
+ * Get top creators leaderboard with velocity metrics
+ * @param {number} limit - Number of top creators to return
+ * @returns {Array} Leaderboard with bookmark counts and velocity
+ */
+export async function getCreatorLeaderboard(limit = 10) {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    const now = Date.now();
+    const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+    
+    const creatorMap = {};
+    
+    bookmarks.forEach(b => {
+      if (!b.creator) return;
+      
+      const key = `${b.platform}:${b.creator}`;
+      
+      if (!creatorMap[key]) {
+        creatorMap[key] = {
+          creator: b.creator,
+          platform: b.platform || 'other',
+          totalCount: 0,
+          recentCount: 0,
+          contentTypes: new Set(),
+          thumbnail: null,
+          firstSaved: Infinity,
+          lastSaved: 0
+        };
+      }
+      
+      creatorMap[key].totalCount++;
+      
+      if (b.dateAdded > thirtyDaysAgo) {
+        creatorMap[key].recentCount++;
+      }
+      
+      if (b.contentType) {
+        creatorMap[key].contentTypes.add(b.contentType);
+      }
+      
+      if (b.dateAdded < creatorMap[key].firstSaved) {
+        creatorMap[key].firstSaved = b.dateAdded;
+      }
+      
+      if (b.dateAdded > creatorMap[key].lastSaved) {
+        creatorMap[key].lastSaved = b.dateAdded;
+      }
+      
+      if (!creatorMap[key].thumbnail && b.platformData?.extra?.thumbnail) {
+        creatorMap[key].thumbnail = b.platformData.extra.thumbnail;
+      }
+    });
+    
+    const leaderboard = Object.values(creatorMap)
+      .map(c => ({
+        ...c,
+        contentTypes: Array.from(c.contentTypes),
+        // Velocity: bookmarks per month based on time span
+        velocity: c.firstSaved !== Infinity 
+          ? (c.totalCount / Math.max(1, (now - c.firstSaved) / (30 * 24 * 60 * 60 * 1000))).toFixed(1)
+          : 0
+      }))
+      .sort((a, b) => b.totalCount - a.totalCount)
+      .slice(0, limit);
+    
+    return leaderboard;
+  } catch (error) {
+    console.error('Error getting creator leaderboard:', error);
+    return [];
+  }
+}
+
+/**
+ * Get visual gallery data - bookmarks with thumbnails
+ * @param {number} limit - Max items to return
+ * @returns {Array} Bookmarks with thumbnail images
+ */
+export async function getVisualGallery(limit = 50) {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    
+    // Filter bookmarks with thumbnails
+    const withThumbnails = bookmarks
+      .filter(b => {
+        const thumbnail = b.platformData?.extra?.thumbnail ||
+                         b.rawMetadata?.openGraph?.['og:image'] ||
+                         b.rawMetadata?.twitterCard?.['twitter:image'];
+        return thumbnail;
+      })
+      .map(b => ({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        platform: b.platform,
+        creator: b.creator,
+        contentType: b.contentType,
+        thumbnail: b.platformData?.extra?.thumbnail ||
+                   b.rawMetadata?.openGraph?.['og:image'] ||
+                   b.rawMetadata?.twitterCard?.['twitter:image'],
+        dateAdded: b.dateAdded
+      }))
+      .sort((a, b) => b.dateAdded - a.dateAdded)
+      .slice(0, limit);
+    
+    return withThumbnails;
+  } catch (error) {
+    console.error('Error getting visual gallery:', error);
+    return [];
+  }
+}
+
+/**
+ * Get topic clusters based on keywords and URL tokens
+ * @returns {Object} Topic clusters with related bookmarks
+ */
+export async function getTopicClusters() {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    
+    const topicMap = {};
+    
+    bookmarks.forEach(b => {
+      // Extract topics from keywords
+      if (b.keywords && Array.isArray(b.keywords)) {
+        b.keywords.forEach(keyword => {
+          const topic = keyword.toLowerCase().trim();
+          if (topic.length < 2 || topic.length > 50) return;
+          
+          if (!topicMap[topic]) {
+            topicMap[topic] = {
+              topic,
+              count: 0,
+              bookmarkIds: [],
+              platforms: new Set(),
+              creators: new Set()
+            };
+          }
+          
+          topicMap[topic].count++;
+          topicMap[topic].bookmarkIds.push(b.id);
+          if (b.platform) topicMap[topic].platforms.add(b.platform);
+          if (b.creator) topicMap[topic].creators.add(b.creator);
+        });
+      }
+      
+      // Extract topics from platformData (e.g., GitHub topics)
+      if (b.platformData?.extra?.topics && Array.isArray(b.platformData.extra.topics)) {
+        b.platformData.extra.topics.forEach(topic => {
+          const normalizedTopic = topic.toLowerCase().trim();
+          if (normalizedTopic.length < 2) return;
+          
+          if (!topicMap[normalizedTopic]) {
+            topicMap[normalizedTopic] = {
+              topic: normalizedTopic,
+              count: 0,
+              bookmarkIds: [],
+              platforms: new Set(),
+              creators: new Set()
+            };
+          }
+          
+          topicMap[normalizedTopic].count++;
+          topicMap[normalizedTopic].bookmarkIds.push(b.id);
+          if (b.platform) topicMap[normalizedTopic].platforms.add(b.platform);
+          if (b.creator) topicMap[normalizedTopic].creators.add(b.creator);
+        });
+      }
+    });
+    
+    // Convert to array, limit bookmarkIds, and sort
+    const clusters = Object.values(topicMap)
+      .filter(t => t.count >= 2) // Only topics with 2+ bookmarks
+      .map(t => ({
+        topic: t.topic,
+        count: t.count,
+        bookmarkIds: t.bookmarkIds.slice(0, 20),
+        platforms: Array.from(t.platforms),
+        creators: Array.from(t.creators).slice(0, 10)
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 50);
+    
+    return clusters;
+  } catch (error) {
+    console.error('Error getting topic clusters:', error);
+    return [];
+  }
+}
+
+/**
+ * Get platform-specific insights summary for dashboard cards
+ * @returns {Object} Summary data for each major platform
+ */
+export async function getPlatformInsightsSummary() {
+  try {
+    const bookmarks = await db.bookmarks.toArray();
+    
+    const summary = {
+      youtube: {
+        total: 0,
+        channels: new Set(),
+        videos: 0,
+        shorts: 0,
+        playlists: 0
+      },
+      github: {
+        total: 0,
+        repos: new Set(),
+        owners: new Set(),
+        issues: 0,
+        prs: 0,
+        files: 0
+      },
+      blogs: {
+        total: 0,
+        authors: new Set(),
+        platforms: { medium: 0, devto: 0, substack: 0 }
+      },
+      social: {
+        total: 0,
+        twitter: 0,
+        reddit: 0
+      }
+    };
+    
+    bookmarks.forEach(b => {
+      switch (b.platform) {
+        case 'youtube':
+          summary.youtube.total++;
+          if (b.creator) summary.youtube.channels.add(b.creator);
+          if (b.contentType === 'video') {
+            if (b.platformData?.subtype === 'short') {
+              summary.youtube.shorts++;
+            } else {
+              summary.youtube.videos++;
+            }
+          }
+          if (b.contentType === 'playlist') summary.youtube.playlists++;
+          break;
+          
+        case 'github':
+          summary.github.total++;
+          if (b.platformData?.extra?.repo) {
+            summary.github.repos.add(`${b.platformData.extra.owner}/${b.platformData.extra.repo}`);
+          }
+          if (b.platformData?.extra?.owner) {
+            summary.github.owners.add(b.platformData.extra.owner);
+          }
+          if (b.contentType === 'issue' || b.contentType === 'issues') summary.github.issues++;
+          if (b.contentType === 'pr' || b.contentType === 'pulls') summary.github.prs++;
+          if (b.contentType === 'file') summary.github.files++;
+          break;
+          
+        case 'medium':
+          summary.blogs.total++;
+          summary.blogs.platforms.medium++;
+          if (b.creator) summary.blogs.authors.add(b.creator);
+          break;
+          
+        case 'devto':
+          summary.blogs.total++;
+          summary.blogs.platforms.devto++;
+          if (b.creator) summary.blogs.authors.add(b.creator);
+          break;
+          
+        case 'substack':
+          summary.blogs.total++;
+          summary.blogs.platforms.substack++;
+          if (b.creator) summary.blogs.authors.add(b.creator);
+          break;
+          
+        case 'twitter':
+          summary.social.total++;
+          summary.social.twitter++;
+          break;
+          
+        case 'reddit':
+          summary.social.total++;
+          summary.social.reddit++;
+          break;
+      }
+    });
+    
+    // Convert Sets to counts
+    return {
+      youtube: {
+        ...summary.youtube,
+        channels: summary.youtube.channels.size
+      },
+      github: {
+        ...summary.github,
+        repos: summary.github.repos.size,
+        owners: summary.github.owners.size
+      },
+      blogs: {
+        ...summary.blogs,
+        authors: summary.blogs.authors.size
+      },
+      social: summary.social
+    };
+  } catch (error) {
+    console.error('Error getting platform insights summary:', error);
+    return {
+      youtube: { total: 0, channels: 0, videos: 0, shorts: 0, playlists: 0 },
+      github: { total: 0, repos: 0, owners: 0, issues: 0, prs: 0, files: 0 },
+      blogs: { total: 0, authors: 0, platforms: { medium: 0, devto: 0, substack: 0 } },
+      social: { total: 0, twitter: 0, reddit: 0 }
+    };
+  }
+}

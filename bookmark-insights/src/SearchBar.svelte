@@ -229,12 +229,53 @@
         </div>
       </div>
       
+      <!-- Platform Filters Section -->
+      <div class="mt-4 pt-3 border-t border-gray-100">
+        <h5 class="font-medium text-gray-800 mb-2 flex items-center gap-2 text-sm">
+          <span class="text-lg">📱</span>
+          Platform Filters
+        </h5>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-start gap-3">
+            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">platform:youtube</code>
+            <span class="text-gray-600">📺 Filter by platform (youtube, github, medium, etc.)</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">channel:@mkbhd</code>
+            <span class="text-gray-600">📺 YouTube channel (with or without @)</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">repo:facebook/react</code>
+            <span class="text-gray-600">💻 GitHub repository (owner/repo)</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">author:username</code>
+            <span class="text-gray-600">✍️ Blog/article author</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">type:video</code>
+            <span class="text-gray-600">📝 Content type (video, issue, article, repo, pr)</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">hasimage:yes</code>
+            <span class="text-gray-600">🖼️ Has thumbnail image (yes/no)</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">playlist:PLxxx</code>
+            <span class="text-gray-600">🎵 YouTube playlist ID</span>
+          </div>
+        </div>
+      </div>
+      
       <div class="mt-4 pt-3 border-t border-gray-100">
         <p class="text-xs text-gray-500">
           <strong>Example:</strong> <code class="bg-gray-100 px-1 rounded">javascript +tutorial -video "best practices"</code>
         </p>
         <p class="text-xs text-gray-500 mt-1">
           <strong>With filters:</strong> <code class="bg-gray-100 px-1 rounded">domain:github.com category:development enriched:yes</code>
+        </p>
+        <p class="text-xs text-gray-500 mt-1">
+          <strong>Platform:</strong> <code class="bg-gray-100 px-1 rounded">platform:youtube channel:@fireship type:video</code>
         </p>
         <p class="text-xs text-gray-500 mt-1">
           <strong>Regex:</strong> <code class="bg-gray-100 px-1 rounded">/react.*hooks?/</code>

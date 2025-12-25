@@ -375,13 +375,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.action === 'reEnrichDeadLinks') {
-    // Re-enrich dead links by forcing re-check
+    // Re-enrich dead links by forcing re-check with batch size and concurrency
     import('./src/enrichment.js').then(async (enrichment) => {
       const { getDeadLinks, upsertBookmark, getBookmark } = await import('./src/db.js');
       
-      const deadLinks = await getDeadLinks();
+      const allDeadLinks = await getDeadLinks();
+      const batchSize = request.batchSize || allDeadLinks.length; // Default to all
+      const concurrency = request.concurrency || 3;
+      
+      // Limit to batch size
+      const deadLinks = allDeadLinks.slice(0, batchSize);
+      
       const results = {
         total: deadLinks.length,
+        pending: allDeadLinks.length - deadLinks.length,
         success: 0,
         stillDead: 0,
         errors: 0
@@ -395,12 +402,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }).catch(() => {});
       };
       
-      // Process each dead link
-      for (let i = 0; i < deadLinks.length; i++) {
-        const bookmark = deadLinks[i];
-        
+      // Process dead links with concurrency
+      const processBookmark = async (bookmark, index) => {
         progressCallback({
-          current: i + 1,
+          current: index + 1,
           total: deadLinks.length,
           title: bookmark.title,
           url: bookmark.url,
@@ -432,12 +437,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         
         progressCallback({
-          current: i + 1,
+          current: index + 1,
           total: deadLinks.length,
           title: bookmark.title,
           url: bookmark.url,
-          status: 'completed'
+          status: 'completed',
+          results: { ...results }
         });
+      };
+      
+      // Process with concurrency
+      const chunks = [];
+      for (let i = 0; i < deadLinks.length; i += concurrency) {
+        chunks.push(deadLinks.slice(i, i + concurrency).map((bookmark, j) => ({
+          bookmark,
+          index: i + j
+        })));
+      }
+      
+      for (const chunk of chunks) {
+        await Promise.all(chunk.map(({ bookmark, index }) => processBookmark(bookmark, index)));
       }
       
       sendResponse({ success: true, results });
