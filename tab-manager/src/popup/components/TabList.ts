@@ -137,12 +137,12 @@ export class TabList {
     const url = document.createElement('div');
     url.className = 'tab-url';
     const displayUrl = tab.url || tab.pendingUrl || '';
-    // Extract hostname from URL for grid view, show full URL otherwise
+    // Extract hostname from URL and remove www. prefix
     let urlText = displayUrl;
     try {
       if (displayUrl) {
         const urlObj = new URL(displayUrl);
-        urlText = urlObj.hostname;
+        urlText = urlObj.hostname.replace(/^www\./, '');
       }
     } catch (e) {
       // If URL parsing fails, use the original
