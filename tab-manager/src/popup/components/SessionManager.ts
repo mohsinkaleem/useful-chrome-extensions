@@ -160,11 +160,28 @@ export class SessionManager {
   }
 
   private async restoreSession(session: Session) {
-    // Create windows with tabs
+    // Create windows with tabs and restore pinned state
     for (const windowData of session.windows) {
-      const urls = windowData.tabs.map(tab => tab.url).filter(Boolean);
-      if (urls.length > 0) {
-        await chrome.windows.create({ url: urls });
+      const validTabs = windowData.tabs.filter(tab => tab.url);
+      if (validTabs.length === 0) continue;
+      
+      // Create window with first tab
+      const newWindow = await chrome.windows.create({ url: validTabs[0].url });
+      if (!newWindow.id) continue;
+      
+      // Pin first tab if it was pinned
+      if (validTabs[0].pinned && newWindow.tabs?.[0]?.id) {
+        await chrome.tabs.update(newWindow.tabs[0].id, { pinned: true });
+      }
+      
+      // Create remaining tabs
+      for (let i = 1; i < validTabs.length; i++) {
+        const tabData = validTabs[i];
+        const newTab = await chrome.tabs.create({
+          windowId: newWindow.id,
+          url: tabData.url,
+          pinned: tabData.pinned
+        });
       }
     }
     

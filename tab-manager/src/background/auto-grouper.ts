@@ -13,10 +13,17 @@ export interface GroupingRule {
 export class AutoGrouper {
   private rules: GroupingRule[] = [];
   private enabled: boolean = false;
+  private initialized: Promise<void>;
 
   constructor() {
-    this.loadRules();
-    this.loadEnabledState();
+    this.initialized = this.init();
+  }
+
+  private async init() {
+    await Promise.all([
+      this.loadRules(),
+      this.loadEnabledState()
+    ]);
   }
 
   private async loadEnabledState() {
@@ -90,10 +97,12 @@ export class AutoGrouper {
   }
 
   async onTabCreated(tab: chrome.tabs.Tab) {
+    await this.initialized; // Wait for rules to be loaded
     await this.applyRules(tab);
   }
 
   async onTabUpdated(tab: chrome.tabs.Tab) {
+    await this.initialized; // Wait for rules to be loaded
     await this.applyRules(tab);
   }
 

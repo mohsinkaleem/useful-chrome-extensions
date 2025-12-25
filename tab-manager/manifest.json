@@ -31,7 +31,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.spotify.com/*",
+        "*://*.twitch.tv/*",
+        "*://*.soundcloud.com/*",
+        "*://*.vimeo.com/*",
+        "*://*.netflix.com/*",
+        "*://*.music.youtube.com/*"
+      ],
       "js": ["dist/content/content-script.js"],
       "run_at": "document_idle"
     }

@@ -6,13 +6,33 @@ export interface BookmarkFolder {
   parentId?: string;
 }
 
+// Get the Bookmarks Bar folder ID dynamically
+async function getBookmarksBarId(): Promise<string> {
+  try {
+    const tree = await chrome.bookmarks.getTree();
+    // The bookmarks bar is typically the first child of the root
+    const root = tree[0];
+    if (root.children && root.children.length > 0) {
+      // Find "Bookmarks Bar" or "Bookmarks bar" or first folder
+      const bookmarksBar = root.children.find(c => 
+        c.title.toLowerCase().includes('bookmark') && !c.url
+      ) || root.children[0];
+      return bookmarksBar.id;
+    }
+  } catch (e) {
+    console.error('Failed to get bookmarks bar ID:', e);
+  }
+  return '1'; // Fallback to default
+}
+
 // Create a bookmark from a tab
 export async function createBookmark(
   tab: chrome.tabs.Tab,
   parentId?: string
 ): Promise<chrome.bookmarks.BookmarkTreeNode> {
+  const defaultParentId = parentId || await getBookmarksBarId();
   return await chrome.bookmarks.create({
-    parentId: parentId || '1', // '1' is typically the Bookmarks Bar
+    parentId: defaultParentId,
     title: tab.title || 'Untitled',
     url: tab.url
   });
@@ -23,12 +43,13 @@ export async function bulkBookmarkTabs(
   tabs: chrome.tabs.Tab[],
   folderName?: string
 ): Promise<chrome.bookmarks.BookmarkTreeNode[]> {
-  let folderId = '1'; // Default to Bookmarks Bar
+  const bookmarksBarId = await getBookmarksBarId();
+  let folderId = bookmarksBarId;
   
   // Create folder if name provided
   if (folderName) {
     const folder = await chrome.bookmarks.create({
-      parentId: '1',
+      parentId: bookmarksBarId,
       title: folderName
     });
     folderId = folder.id;

@@ -5,7 +5,8 @@
   "scripts": {
     "build": "esbuild src/background/service-worker.ts src/popup/popup.ts src/popup/resource-monitor-page.ts src/content/content-script.ts --bundle --outdir=dist --target=chrome114 --format=esm --splitting",
     "watch": "npm run build -- --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist extension",
+    "package": "npm run build && rm -rf extension && mkdir -p extension && cp manifest.json popup.html resource-monitor.html styles.css extension/ && cp -r icons dist extension/ && echo 'Extension packaged to ./extension folder (ready to load in Chrome)'"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.268",

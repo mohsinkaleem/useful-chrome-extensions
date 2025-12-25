@@ -385,11 +385,7 @@ export class ResourceMonitor {
       }
     }
 
-    // Add some randomness for realism (±10%)
-    const variance = memoryMB * 0.1 * (Math.random() * 2 - 1);
-    memoryMB += variance;
-
-    // Convert MB to bytes
+    // Convert MB to bytes (removed random variance for consistent UI)
     return Math.round(memoryMB * 1024 * 1024);
   }
 

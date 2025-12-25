@@ -2,14 +2,9 @@
 
 export interface TabInfo extends chrome.tabs.Tab {
   windowTitle?: string;
-  isActive?: boolean;
-  isDuplicate?: boolean;
-  duplicateCount?: number;
 }
 
-export interface WindowInfo extends chrome.windows.Window {
-  tabCount?: number;
-}
+export interface WindowInfo extends chrome.windows.Window {}
 
 export interface TabGroup {
   id: number;
@@ -47,27 +42,46 @@ export async function getActiveTab(): Promise<TabInfo | null> {
   return tab || null;
 }
 
-// Tab event listeners
+// Tab event listeners with debouncing
 export class TabEventManager {
   private listeners: Set<() => void> = new Set();
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private debounceDelay: number = 150; // ms
 
   constructor() {
     this.setupListeners();
   }
 
   private setupListeners() {
-    chrome.tabs.onCreated.addListener(() => this.notifyListeners());
-    chrome.tabs.onUpdated.addListener(() => this.notifyListeners());
-    chrome.tabs.onRemoved.addListener(() => this.notifyListeners());
-    chrome.tabs.onMoved.addListener(() => this.notifyListeners());
-    chrome.tabs.onAttached.addListener(() => this.notifyListeners());
-    chrome.tabs.onDetached.addListener(() => this.notifyListeners());
-    chrome.tabs.onActivated.addListener(() => this.notifyListeners());
+    // Debounced handlers for high-frequency events
+    chrome.tabs.onCreated.addListener(() => this.debouncedNotify());
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+      // Only notify on meaningful changes (not every favicon/loading state update)
+      if (changeInfo.status === 'complete' || changeInfo.title || changeInfo.url || 
+          changeInfo.audible !== undefined || changeInfo.pinned !== undefined ||
+          changeInfo.discarded !== undefined) {
+        this.debouncedNotify();
+      }
+    });
+    chrome.tabs.onRemoved.addListener(() => this.debouncedNotify());
+    chrome.tabs.onMoved.addListener(() => this.debouncedNotify());
+    chrome.tabs.onAttached.addListener(() => this.debouncedNotify());
+    chrome.tabs.onDetached.addListener(() => this.debouncedNotify());
+    chrome.tabs.onActivated.addListener(() => this.debouncedNotify());
   }
 
   onChange(callback: () => void) {
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
+  }
+
+  private debouncedNotify() {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+    this.debounceTimer = setTimeout(() => {
+      this.notifyListeners();
+    }, this.debounceDelay);
   }
 
   private notifyListeners() {
@@ -100,4 +114,53 @@ export function isTabDiscarded(tab: TabInfo): boolean {
 
 export function isTabAudible(tab: TabInfo): boolean {
   return tab.audible || false;
+}
+
+// Centralized memory estimation - use this instead of duplicating logic
+export function estimateTabMemory(tab: chrome.tabs.Tab): number {
+  // Base memory estimate in bytes
+  let memoryBytes = 30 * 1024 * 1024; // 30MB base
+
+  // Discarded tabs use minimal memory
+  if (tab.discarded) {
+    return 5 * 1024 * 1024; // 5MB
+  }
+
+  const url = tab.url || '';
+  const domain = getTabDomain(tab as TabInfo) || '';
+
+  // Heavy websites
+  if (domain.includes('youtube.com') || domain.includes('twitch.tv')) {
+    memoryBytes += 150 * 1024 * 1024; // +150MB for video sites
+  } else if (domain.includes('meet.google.com') || domain.includes('zoom.us')) {
+    memoryBytes += 200 * 1024 * 1024; // +200MB for video conferencing
+  } else if (domain.includes('gmail.com') || domain.includes('outlook.com')) {
+    memoryBytes += 80 * 1024 * 1024; // +80MB for webmail
+  } else if (domain.includes('docs.google.com') || domain.includes('sheets.google.com')) {
+    memoryBytes += 60 * 1024 * 1024; // +60MB for Google Docs
+  } else if (domain.includes('figma.com') || domain.includes('miro.com')) {
+    memoryBytes += 120 * 1024 * 1024; // +120MB for design tools
+  } else if (domain.includes('slack.com') || domain.includes('notion.so')) {
+    memoryBytes += 85 * 1024 * 1024; // +85MB for productivity apps
+  }
+
+  // Active tab penalty (usually loaded with more resources)
+  if (tab.active) {
+    memoryBytes += 20 * 1024 * 1024; // +20MB
+  }
+
+  // Audible tabs (video/audio playing)
+  if (tab.audible) {
+    memoryBytes += 50 * 1024 * 1024; // +50MB
+  }
+
+  // Age penalty (older tabs accumulate memory)
+  if (tab.lastAccessed) {
+    const ageHours = (Date.now() - tab.lastAccessed) / (1000 * 60 * 60);
+    if (ageHours > 24) {
+      memoryBytes += 30 * 1024 * 1024; // +30MB for old tabs
+    }
+  }
+
+  return memoryBytes;
 }

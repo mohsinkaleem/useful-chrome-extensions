@@ -1,5 +1,5 @@
 // Main popup script
-import { TabEventManager, getAllTabs, getTabsByWindow } from '../shared/tab-utils.js';
+import { TabEventManager, getAllTabs, getTabsByWindow, estimateTabMemory } from '../shared/tab-utils.js';
 import { findDuplicatesByUrl, getDuplicateGroups, normalizeUrl } from '../shared/url-utils.js';
 import { TabList } from './components/TabList.js';
 import { SearchBar } from './components/SearchBar.js';
@@ -179,7 +179,7 @@ class TabManagerApp {
     let heavyTabsCount = 0;
     
     for (const tab of tabs) {
-      const estimate = this.estimateTabMemory(tab);
+      const estimate = estimateTabMemory(tab);
       totalMemory += estimate;
       
       // Consider a tab "heavy" if it uses more than 200MB
@@ -200,44 +200,6 @@ class TabManagerApp {
     
     if (heavyTabsEl) {
       heavyTabsEl.textContent = heavyTabsCount.toString();
-    }
-  }
-
-  private estimateTabMemory(tab: chrome.tabs.Tab): number {
-    let memoryBytes = 30 * 1024 * 1024; // 30MB base
-    if (tab.discarded) return 5 * 1024 * 1024; // 5MB
-
-    const url = tab.url || '';
-    const domain = this.getDomain(url);
-
-    if (domain.includes('youtube.com') || domain.includes('twitch.tv')) {
-      memoryBytes += 150 * 1024 * 1024;
-    } else if (domain.includes('meet.google.com') || domain.includes('zoom.us')) {
-      memoryBytes += 200 * 1024 * 1024;
-    } else if (domain.includes('gmail.com') || domain.includes('outlook.com')) {
-      memoryBytes += 80 * 1024 * 1024;
-    } else if (domain.includes('docs.google.com') || domain.includes('sheets.google.com')) {
-      memoryBytes += 60 * 1024 * 1024;
-    } else if (domain.includes('figma.com') || domain.includes('miro.com')) {
-      memoryBytes += 120 * 1024 * 1024;
-    }
-
-    if (tab.active) memoryBytes += 20 * 1024 * 1024;
-    if (tab.audible) memoryBytes += 50 * 1024 * 1024;
-
-    if (tab.lastAccessed) {
-      const ageHours = (Date.now() - tab.lastAccessed) / (1000 * 60 * 60);
-      if (ageHours > 24) memoryBytes += 30 * 1024 * 1024;
-    }
-
-    return memoryBytes;
-  }
-
-  private getDomain(url: string): string {
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return '';
     }
   }
 

@@ -1,6 +1,8 @@
 /// <reference types="chrome"/>
 // Compact Resource Overview Component - Single row with key metrics and link to full page
 
+import { estimateTabMemory } from '../../shared/tab-utils.js';
+
 interface ResourceStats {
   totalMemory: number;
   totalTabs: number;
@@ -41,7 +43,7 @@ export class ResourceOverview {
     let heavyTabs = 0;
 
     for (const tab of tabs) {
-      const estimate = this.estimateTabMemory(tab);
+      const estimate = estimateTabMemory(tab);
       totalMemory += estimate;
       
       // Consider a tab "heavy" if it uses more than 200MB
@@ -56,61 +58,6 @@ export class ResourceOverview {
       heavyTabs,
       estimatedGB: totalMemory / (1024 * 1024 * 1024)
     };
-  }
-
-  private estimateTabMemory(tab: chrome.tabs.Tab): number {
-    // Base memory estimate
-    let memoryBytes = 30 * 1024 * 1024; // 30MB base
-
-    // Discarded tabs use minimal memory
-    if (tab.discarded) {
-      return 5 * 1024 * 1024; // 5MB
-    }
-
-    // URL-based heuristics
-    const url = tab.url || '';
-    const domain = this.getDomain(url);
-
-    // Heavy websites
-    if (domain.includes('youtube.com') || domain.includes('twitch.tv')) {
-      memoryBytes += 150 * 1024 * 1024; // +150MB for video sites
-    } else if (domain.includes('meet.google.com') || domain.includes('zoom.us')) {
-      memoryBytes += 200 * 1024 * 1024; // +200MB for video conferencing
-    } else if (domain.includes('gmail.com') || domain.includes('outlook.com')) {
-      memoryBytes += 80 * 1024 * 1024; // +80MB for webmail
-    } else if (domain.includes('docs.google.com') || domain.includes('sheets.google.com')) {
-      memoryBytes += 60 * 1024 * 1024; // +60MB for Google Docs
-    } else if (domain.includes('figma.com') || domain.includes('miro.com')) {
-      memoryBytes += 120 * 1024 * 1024; // +120MB for design tools
-    }
-
-    // Active tab penalty (usually loaded with more resources)
-    if (tab.active) {
-      memoryBytes += 20 * 1024 * 1024; // +20MB
-    }
-
-    // Audible tabs (video/audio playing)
-    if (tab.audible) {
-      memoryBytes += 50 * 1024 * 1024; // +50MB
-    }
-
-    // Age penalty (older tabs accumulate memory)
-    if (tab.lastAccessed) {
-      const ageHours = (Date.now() - tab.lastAccessed) / (1000 * 60 * 60);
-      if (ageHours > 24) {
-        memoryBytes += 30 * 1024 * 1024; // +30MB for old tabs
-      }
-    }
-
-    return memoryBytes;
-  }
-
-  private getDomain(url: string): string {
-    try {
-      return new URL(url).hostname;
-    } catch {
-      return '';
-    }
   }
 
   private render(stats: ResourceStats) {

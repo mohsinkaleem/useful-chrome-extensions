@@ -270,22 +270,8 @@ export class TabList {
       tooltip.classList.add('hidden');
     };
     
-    // Clean up tooltip when item is removed
-    const cleanupTooltip = () => {
-      if (tooltip.parentElement) {
-        tooltip.remove();
-      }
-    };
-    
-    const observer = new MutationObserver(() => {
-      if (!document.body.contains(item)) {
-        cleanupTooltip();
-        observer.disconnect();
-      }
-    });
-    if (item.parentElement) {
-      observer.observe(item.parentElement, { childList: true });
-    }
+    // Store tooltip reference on item for cleanup
+    (item as any)._tooltip = tooltip;
     
     // Click to switch
     item.onclick = (e) => {
