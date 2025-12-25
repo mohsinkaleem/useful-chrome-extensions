@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tab Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <h1 class="title">Tab Manager</h1>
+      <div class="header-stats">
+        <span id="tab-count">0 tabs</span>
+        <span class="stat-sep">•</span>
+        <span id="window-count">0 windows</span>
+        <span class="stat-sep">•</span>
+        <span id="memory-usage" title="Estimated memory">--</span>
+      </div>
+    </header>
+
+    <!-- Collapsible Panels Section -->
+    <div class="panels-container">
+      <!-- Resource & System Panel -->
+      <details class="panel" id="resource-panel">
+        <summary class="panel-header">
+          <span class="panel-icon">⚡</span>
+          <span>Resource Management</span>
+          <span class="panel-badge" id="resource-badge">--</span>
+        </summary>
+        <div class="panel-content">
+          <div class="resource-grid">
+            <div class="resource-card">
+              <div class="resource-value" id="active-count">0</div>
+              <div class="resource-label">Active</div>
+            </div>
+            <div class="resource-card">
+              <div class="resource-value" id="discarded-count">0</div>
+              <div class="resource-label">Hibernated</div>
+            </div>
+            <div class="resource-card">
+              <div class="resource-value" id="pinned-count">0</div>
+              <div class="resource-label">Pinned</div>
+            </div>
+            <div class="resource-card">
+              <div class="resource-value" id="duplicate-count">0</div>
+              <div class="resource-label">Duplicates</div>
+            </div>
+          </div>
+          <div class="resource-actions">
+            <button id="action-hibernate-inactive" class="action-btn compact">💤 Hibernate Inactive</button>
+            <button id="action-close-duplicates" class="action-btn compact">🗑️ Close Duplicates</button>
+          </div>
+        </div>
+      </details>
+
+      <!-- Media Controls (only shown when media tabs exist) -->
+      <details class="panel" id="media-section">
+        <summary class="panel-header">
+          <span class="panel-icon">🔊</span>
+          <span>Media Tabs</span>
+          <span class="panel-badge" id="media-badge">0</span>
+        </summary>
+        <div class="panel-content">
+          <div id="media-tabs" class="media-tabs-list"></div>
+        </div>
+      </details>
+
+      <!-- Quick Actions Panel -->
+      <details class="panel">
+        <summary class="panel-header">
+          <span class="panel-icon">⚙️</span>
+          <span>Quick Actions</span>
+        </summary>
+        <div class="panel-content">
+          <div class="quick-actions">
+            <button id="action-close-selected" class="action-btn compact" disabled>✕ Close</button>
+            <button id="action-bookmark-selected" class="action-btn compact" disabled>★ Bookmark</button>
+            <button id="action-group-selected" class="action-btn compact" disabled>▤ Group</button>
+            <button id="action-save-session" class="action-btn compact">💾 Save Session</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Main Tabs Container (scrollable area) -->
+    <div id="tabs-container" class="tabs-container">
+      <!-- Windows and tabs will be dynamically inserted here -->
+    </div>
+
+    <!-- Fixed Footer: Search & Filters -->
+    <footer class="search-footer">
+      <div class="search-row">
+        <input 
+          type="text" 
+          id="search-input" 
+          class="search-input" 
+          placeholder="Search tabs..."
+        />
+        <div class="view-controls">
+          <button id="view-list" class="view-btn active" title="List view">☰</button>
+          <button id="view-compact" class="view-btn" title="Compact view">≡</button>
+          <button id="view-grid" class="view-btn" title="Grid view">▦</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <label class="filter-chip">
+          <input type="checkbox" id="filter-audible" />
+          <span>🔊 Audible</span>
+        </label>
+        <label class="filter-chip">
+          <input type="checkbox" id="filter-pinned" />
+          <span>📌 Pinned</span>
+        </label>
+        <label class="filter-chip highlight-toggle">
+          <input type="checkbox" id="filter-duplicates" />
+          <span>⚠️ Highlight Duplicates</span>
+        </label>
+      </div>
+    </footer>
+
+    <!-- Session Manager (Modal) -->
+    <div id="session-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Session Manager</h2>
+        <div id="sessions-list"></div>
+        <div class="modal-actions">
+          <input type="text" id="session-name" placeholder="Session name..." />
+          <button id="save-session-btn">Save Current Session</button>
+          <button id="close-modal-btn">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="dist/popup/popup.js"></script>
+</body>
+</html>

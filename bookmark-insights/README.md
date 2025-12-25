@@ -100,16 +100,6 @@ Then load in Chrome:
 2. Enable "Developer mode"
 3. Click "Load unpacked" and select this folder
 
-### Production Build
-
-For a lightweight distribution (~1MB vs 100MB+ with node_modules):
-
-```bash
-npm run dist
-```
-
-This creates a `dist/` folder with only the required files. Load this folder in Chrome for a minimal footprint.
-
 ## Usage
 
 **Popup** - Click extension icon for quick search and recent bookmarks
@@ -139,11 +129,10 @@ Default settings:
 ## Development
 
 ```bash
-npm run dev        # Watch mode with sourcemaps
-npm run build      # Production build (minified, no sourcemaps)
+npm run dev        # Watch mode
+npm run build      # Production build
 npm run build:css  # Tailwind only
 npm run build:js   # JavaScript only
-npm run dist       # Create lightweight dist/ folder (~1MB)
 ```
 
 ## Tech Stack
@@ -152,8 +141,7 @@ npm run dist       # Create lightweight dist/ folder (~1MB)
 - **Database**: IndexedDB via Dexie.js
 - **Search**: FlexSearch.js
 - **Charts**: Chart.js 4
-- **Build**: Rollup (with terser minification)
-- **Production size**: ~1MB
+- **Build**: Rollup
 
 ## File Structure
 

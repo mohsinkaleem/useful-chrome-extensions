@@ -1,0 +1,232 @@
+// Main popup script
+import { TabEventManager, getAllTabs, getTabsByWindow } from '../shared/tab-utils.js';
+import { findDuplicatesByUrl, getDuplicateGroups } from '../shared/url-utils.js';
+import { TabList } from './components/TabList.js';
+import { SearchBar } from './components/SearchBar.js';
+import { QuickActions } from './components/QuickActions.js';
+import { ResourcePanel } from './components/ResourcePanel.js';
+import { MediaControls } from './components/MediaControls.js';
+import { SessionManager } from './components/SessionManager.js';
+
+class TabManagerApp {
+  private tabEventManager: TabEventManager;
+  private tabList: TabList;
+  private searchBar: SearchBar;
+  private quickActions: QuickActions;
+  private resourcePanel: ResourcePanel;
+  private mediaControls: MediaControls;
+  private sessionManager: SessionManager;
+  private selectedTabs: Set<number> = new Set();
+  private currentView: 'list' | 'compact' | 'grid' = 'list';
+  private highlightDuplicates: boolean = false;
+  private duplicateUrls: Set<string> = new Set();
+
+  constructor() {
+    this.tabEventManager = new TabEventManager();
+    this.tabList = new TabList();
+    this.searchBar = new SearchBar();
+    this.quickActions = new QuickActions();
+    this.resourcePanel = new ResourcePanel();
+    this.mediaControls = new MediaControls();
+    this.sessionManager = new SessionManager();
+    
+    this.init();
+  }
+
+  private async init() {
+    // Setup event listeners
+    this.setupEventListeners();
+    
+    // Initial load
+    await this.loadAndRenderTabs();
+    
+    // Listen for tab changes
+    this.tabEventManager.onChange(() => {
+      this.loadAndRenderTabs();
+    });
+  }
+
+  private setupEventListeners() {
+    // Search with duplicate highlight support
+    this.searchBar.onSearch((query, filters) => {
+      this.highlightDuplicates = filters.duplicates;
+      this.loadAndRenderTabs(query, filters);
+    });
+
+    // View mode buttons
+    document.getElementById('view-list')?.addEventListener('click', () => {
+      this.setViewMode('list');
+    });
+    document.getElementById('view-compact')?.addEventListener('click', () => {
+      this.setViewMode('compact');
+    });
+    document.getElementById('view-grid')?.addEventListener('click', () => {
+      this.setViewMode('grid');
+    });
+
+    // Quick actions
+    this.quickActions.onAction((action, tabs) => {
+      this.handleQuickAction(action, tabs);
+    });
+
+    // Tab selection
+    this.tabList.onSelectionChange((selectedIds) => {
+      this.selectedTabs = new Set(selectedIds);
+      this.quickActions.updateSelectedTabs(Array.from(this.selectedTabs));
+    });
+
+    // Tab click
+    this.tabList.onTabClick((tabId) => {
+      chrome.tabs.update(tabId, { active: true });
+    });
+
+    // Session manager
+    document.getElementById('action-save-session')?.addEventListener('click', () => {
+      this.sessionManager.showModal();
+    });
+
+    // Close all duplicates button
+    document.getElementById('action-close-duplicates')?.addEventListener('click', async () => {
+      await this.closeAllDuplicates();
+    });
+  }
+
+  private async loadAndRenderTabs(searchQuery?: string, filters?: any) {
+    const tabs = await getAllTabs();
+    const tabsByWindow = await getTabsByWindow();
+    
+    // Calculate duplicate URLs for highlighting
+    const duplicates = findDuplicatesByUrl(tabs);
+    this.duplicateUrls = new Set(duplicates.keys());
+    
+    // Update stats
+    this.updateStats(tabs, tabsByWindow.size);
+    
+    // Filter tabs if search query
+    let filteredTabs = tabs;
+    if (searchQuery) {
+      filteredTabs = tabs.filter(tab => 
+        tab.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tab.url?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    
+    // Apply filters (except duplicates - that's now highlight-only)
+    if (filters) {
+      if (filters.audible) {
+        filteredTabs = filteredTabs.filter(tab => tab.audible);
+      }
+      if (filters.pinned) {
+        filteredTabs = filteredTabs.filter(tab => tab.pinned);
+      }
+      // Note: duplicates filter now just enables highlighting, doesn't filter
+    }
+    
+    // Render tabs by window
+    const filteredByWindow = new Map<number, chrome.tabs.Tab[]>();
+    for (const tab of filteredTabs) {
+      if (tab.windowId) {
+        if (!filteredByWindow.has(tab.windowId)) {
+          filteredByWindow.set(tab.windowId, []);
+        }
+        filteredByWindow.get(tab.windowId)!.push(tab);
+      }
+    }
+    
+    // Pass highlight info to TabList
+    this.tabList.setDuplicateHighlight(this.highlightDuplicates, this.duplicateUrls);
+    this.tabList.render(filteredByWindow, this.currentView);
+    
+    // Update resource panel with more stats
+    this.resourcePanel.update(tabs, this.duplicateUrls.size);
+    
+    // Update media controls
+    this.mediaControls.update(tabs);
+  }
+
+  private updateStats(tabs: chrome.tabs.Tab[], windowCount: number) {
+    const tabCountEl = document.getElementById('tab-count');
+    const windowCountEl = document.getElementById('window-count');
+    const memoryEl = document.getElementById('memory-usage');
+    
+    if (tabCountEl) {
+      tabCountEl.textContent = `${tabs.length} tabs`;
+    }
+    if (windowCountEl) {
+      windowCountEl.textContent = `${windowCount} windows`;
+    }
+    if (memoryEl) {
+      // Estimate memory (rough: ~50MB per active tab, ~5MB per discarded)
+      const activeTabs = tabs.filter(t => !t.discarded).length;
+      const discardedTabs = tabs.filter(t => t.discarded).length;
+      const estimatedMB = (activeTabs * 50) + (discardedTabs * 5);
+      if (estimatedMB > 1000) {
+        memoryEl.textContent = `~${(estimatedMB / 1000).toFixed(1)} GB`;
+      } else {
+        memoryEl.textContent = `~${estimatedMB} MB`;
+      }
+    }
+  }
+
+  private setViewMode(mode: 'list' | 'compact' | 'grid') {
+    this.currentView = mode;
+    
+    // Update button states
+    document.querySelectorAll('.view-btn').forEach(btn => {
+      btn.classList.remove('active');
+    });
+    document.getElementById(`view-${mode}`)?.classList.add('active');
+    
+    // Re-render
+    this.loadAndRenderTabs();
+  }
+
+  private async handleQuickAction(action: string, tabs: number[]) {
+    switch (action) {
+      case 'close':
+        await chrome.tabs.remove(tabs);
+        this.selectedTabs.clear();
+        break;
+      case 'bookmark':
+        const tabsToBookmark = await chrome.tabs.query({ 
+          windowId: chrome.windows.WINDOW_ID_CURRENT 
+        });
+        const selectedTabObjs = tabsToBookmark.filter(t => t.id && tabs.includes(t.id));
+        // Import and use bookmark utility
+        const { bulkBookmarkTabs } = await import('../shared/bookmark-utils.js');
+        await bulkBookmarkTabs(selectedTabObjs, `Bookmarks ${new Date().toLocaleDateString()}`);
+        break;
+      case 'group':
+        if (tabs.length > 0) {
+          const groupId = await chrome.tabs.group({ tabIds: tabs });
+          await chrome.tabGroups.update(groupId, { 
+            title: `Group ${new Date().toLocaleTimeString()}`,
+            collapsed: false
+          });
+        }
+        break;
+    }
+  }
+
+  private async closeAllDuplicates() {
+    const tabs = await getAllTabs();
+    const duplicateGroups = getDuplicateGroups(tabs);
+    const toClose: number[] = [];
+
+    for (const group of duplicateGroups) {
+      // Keep the most recently accessed, close the rest
+      const sorted = group.tabs.sort((a, b) => 
+        (b.lastAccessed || 0) - (a.lastAccessed || 0)
+      );
+      const duplicateIds = sorted.slice(1).map(t => t.id).filter(Boolean) as number[];
+      toClose.push(...duplicateIds);
+    }
+
+    if (toClose.length > 0) {
+      await chrome.tabs.remove(toClose);
+    }
+  }
+}
+
+// Initialize app
+new TabManagerApp();
