@@ -1,6 +1,6 @@
 # 🎬 TubeFilter - YouTube Video Filter Extension
 
-A simple and fast Chrome extension to filter YouTube videos by view count, duration, and title keywords.
+A simple and fast Chrome extension to filter YouTube videos by view count, duration, upload time, and title keywords.
 
 ## 🚀 Features
 
@@ -9,10 +9,14 @@ A simple and fast Chrome extension to filter YouTube videos by view count, durat
   - Less than X views  
   - Between X and Y views
 - **Duration Filter**: Filter by video length
-  - Short videos (< 4 minutes)
-  - Medium videos (4-20 minutes)
-  - Long videos (> 20 minutes)
+  - Less than X minutes
+  - Greater than X minutes
   - Custom duration range
+- **Upload Time Filter**: Filter videos by when they were posted
+  - Less than X time ago (e.g., less than 7 days ago)
+  - Greater than X time ago (e.g., greater than 30 days ago)
+  - Between two time periods (e.g., between 7 days and 30 days ago)
+  - Supports multiple time units: hours, days, weeks, months, years
 - **Title Keyword Filter**: Show only videos containing specific keywords OR exclude videos containing specific keywords
   - **Multiple Keywords**: Enter multiple keywords separated by commas
   - **AND/OR Logic**: Choose whether videos must contain ALL keywords (AND) or ANY keywords (OR)
@@ -58,14 +62,22 @@ The extension includes placeholder PNG files. For better appearance:
 2. **Click the TubeFilter extension icon** in the toolbar
 3. **Set your filters:**
    - Choose view count range options
-   - Select duration preferences  
+   - Select duration preferences
+   - Set upload time filters (e.g., show only videos from the last 7 days)
    - Enter multiple keywords separated by commas (e.g., "tutorial, beginner, coding")
    - Choose AND/OR logic for keyword matching
    - Choose whether to include or exclude videos with those keywords
 4. **Click "Apply Filters"** to activate filtering
 5. **Use "Clear All"** to remove all filters and show all videos
+Filter Examples
 
-### 🎯 Multiple Keywords Examples
+**Upload Time Filter Examples:**
+
+- **Less than 24 hours ago** → Show only videos posted today
+- **Greater than 30 days ago** → Show only older videos
+- **Between 7 days and 30 days ago** → Show videos from the last week to month
+
+**Multiple Keywords Examples:**
 
 **AND Logic Examples:**
 
@@ -80,6 +92,13 @@ The extension includes placeholder PNG files. For better appearance:
 **Include vs Exclude:**
 
 - **Include + AND**: `"python, programming"` → Show only Python programming videos
+- **Exclude + OR**: `"clickbait, reaction"` → Hide videos that are clickbait OR reactions
+Extracts upload time (e.g., "2 hours ago", "3 days ago")
+  - 
+**Combined Filters:**
+
+- **Duration < 10 minutes + Less than 7 days ago** → Show recent short videos
+- **Views > 100K + Keywords: "tutorial"** → Show popular tutorial video
 - **Exclude + OR**: `"clickbait, reaction"` → Hide videos that are clickbait OR reactions
 
 ## 🛠️ How It Works
@@ -142,13 +161,14 @@ tubefilter/
 
 ## 🚀 Future Enhancements
 
-- Channel name filtering
-- Upload date filtering  
 - Like/dislike ratio filtering (if available)
 - Export/import filter presets
 - Keyboard shortcuts
 - Statistics dashboard
 - Regex support for advanced keyword matching
+- Keyword highlighting in video titles
+- Filter history
+- Quick filter presetmatching
 - Keyword highlighting in video titles
 
 ## 📝 License

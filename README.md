@@ -53,6 +53,39 @@ A simple and fast YouTube video filter extension to filter videos by various cri
 
 ---
 
+### ⚡ [Video Speed Controller](./speed-controller/README.md)
+
+A Chrome extension that allows you to control video playback speed using keyboard shortcuts on YouTube and Netflix.
+
+**Features:**
+
+- Keyboard shortcuts for speed control
+- Multi-platform support (YouTube, Netflix)
+- Fast & responsive with visual feedback
+- Customizable speed steps and limits
+- Persistent settings across sessions
+
+**Status:** ✅ Complete
+
+---
+
+### 📑 [Advanced Tab Manager](./tab-manager/README.md)
+
+A powerful, lightweight Chrome extension for managing tabs, windows, and browser sessions.
+
+**Features:**
+
+- Real-time search and filter tabs
+- Multiple view modes (List, Compact, Grid)
+- Quick actions (close, bookmark, group tabs)
+- Automatic duplicate detection
+- Session management and recovery
+- Resource monitoring
+
+**Status:** ✅ Complete
+
+---
+
 ### 🤖 [Google AI Studio Enhancer](./google-aistudio/README.md)
 
 Enhances the Google AI Studio interface with additional features and improvements.
@@ -97,6 +130,8 @@ extensions/
 ├── bookmark-insights/           # Bookmark manager with insights
 ├── quick-links/                 # Quick links manager
 ├── tubefilter/                  # YouTube video filter
+├── speed-controller/            # Video speed controller
+├── tab-manager/                 # Advanced tab manager
 └── google-aistudio/             # Google AI Studio enhancer
 ```
 
@@ -117,6 +152,8 @@ All extensions in this collection:
 | Bookmark Insights | ✅ Complete | 1.0.0 | 2025 |
 | Quick Links Manager | ✅ Complete | 1.0.0 | 2025 |
 | TubeFilter | ✅ Complete | 1.0.0 | 2025 |
+| Video Speed Controller | ✅ Complete | 1.0.0 | 2025 |
+| Advanced Tab Manager | ✅ Complete | 1.0.0 | 2025 |
 | Google AI Studio | 🔄 Development | 0.1.0 | 2025 |
 
 ## 🚀 Future Plans
