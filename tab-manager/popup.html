@@ -17,6 +17,8 @@
         <span id="window-count">0 windows</span>
         <span class="stat-sep">•</span>
         <span id="memory-usage" title="Estimated memory">--</span>
+        <span class="stat-sep">•</span>
+        <span title="Heavy tabs (>200MB)">⚠️ <strong id="header-heavy-tabs">0</strong></span>
       </div>
     </header>
 
@@ -51,28 +53,6 @@
 
     <!-- Collapsible Panels Section -->
     <div class="panels-container">
-      <!-- Combined Overview & Actions (Ultra Compact) -->
-      <div class="combined-overview" id="resource-overview">
-        <div class="stats-row">
-          <div class="stat-group">
-            <span class="stat-mini" title="Memory usage">💾 <strong id="overview-memory">--</strong></span>
-            <span class="stat-mini" title="Heavy tabs">⚠️ <strong id="overview-heavy-tabs">--</strong></span>
-            <button id="view-resource-details" class="link-btn" title="View detailed resource monitor">Details →</button>
-          </div>
-          <div class="stat-divider"></div>
-          <div class="stat-group">
-            <span class="stat-mini" title="Active tabs">▶ <strong id="active-count">0</strong></span>
-            <span class="stat-mini" title="Hibernated tabs">💤 <strong id="discarded-count">0</strong></span>
-            <span class="stat-mini" title="Pinned tabs">📌 <strong id="pinned-count">0</strong></span>
-            <span class="stat-mini" title="Duplicate tabs">📑 <strong id="duplicate-count">0</strong></span>
-          </div>
-          <div class="action-buttons-mini">
-            <button id="action-hibernate-inactive" class="btn-icon" title="Hibernate inactive tabs">💤</button>
-            <button id="action-close-duplicates" class="btn-icon" title="Close duplicate tabs">🗑️</button>
-          </div>
-        </div>
-      </div>
-
       <!-- Media Controls (only shown when media tabs exist) -->
       <details class="panel" id="media-section">
         <summary class="panel-header">
@@ -85,12 +65,20 @@
         </div>
       </details>
 
-      <!-- Quick Actions Panel -->
-      <div class="quick-actions-bar">
-        <button id="action-close-selected" class="action-btn compact" disabled>✕ Close</button>
-        <button id="action-bookmark-selected" class="action-btn compact" disabled>★ Bookmark</button>
-        <button id="action-group-selected" class="action-btn compact" disabled>▤ Group</button>
-        <button id="action-save-session" class="action-btn compact">💾 Save Session</button>
+      <!-- Unified Actions Bar -->
+      <div class="unified-actions-bar" id="resource-overview">
+        <button id="action-hibernate-inactive" class="action-btn-inline" title="Hibernate inactive tabs">
+          💤 (<strong id="discarded-count">0</strong>)
+        </button>
+        <button id="action-close-duplicates" class="action-btn-inline" title="Close duplicate tabs">
+          🗑️ (<strong id="duplicate-count">0</strong>)
+        </button>
+        <div class="action-divider"></div>
+        <button id="action-close-selected" class="action-btn-inline" disabled title="Close selected tabs">✕ Close</button>
+        <button id="action-bookmark-selected" class="action-btn-inline" disabled title="Bookmark selected tabs">★ Bookmark</button>
+        <button id="action-group-selected" class="action-btn-inline" disabled title="Group selected tabs">▤ Group</button>
+        <button id="action-save-session" class="action-btn-inline" title="Save session">💾 Save</button>
+        <button id="view-resource-details" class="action-btn-inline" title="View detailed resource monitor">📊 Details</button>
       </div>
     </div>
 

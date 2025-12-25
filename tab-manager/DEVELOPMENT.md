@@ -33,6 +33,8 @@ Each UI component is self-contained:
 - **SearchBar**: Search input with filters, debounced updates
 - **QuickActions**: Batch operations on selected tabs
 - **ResourcePanel**: Memory/resource statistics and hibernation
+- **ResourceMonitor**: Full resource monitor with lazy loading (10 tabs at a time), jump-to-tab functionality, and rank indicators
+- **ResourceOverview**: Compact overview component for main popup
 - **MediaControls**: Media tab detection and playback control
 - **SessionManager**: Session save/restore with modal UI
 
@@ -185,6 +187,9 @@ Uses esbuild for:
 - Bulk operations UI improvements
 - Settings page
 - Onboarding tutorial
+- [x] Lazy loading for large lists (completed)
+- [x] Jump-to-tab quick actions (completed)
+- [x] Compact, consistent styling across pages (completed)
 
 ## Resources
 

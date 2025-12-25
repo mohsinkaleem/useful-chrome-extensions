@@ -165,6 +165,7 @@ class TabManagerApp {
     const tabCountEl = document.getElementById('tab-count');
     const windowCountEl = document.getElementById('window-count');
     const memoryEl = document.getElementById('memory-usage');
+    const heavyTabsEl = document.getElementById('header-heavy-tabs');
     
     if (tabCountEl) {
       tabCountEl.textContent = `${tabs.length} tabs`;
@@ -172,18 +173,33 @@ class TabManagerApp {
     if (windowCountEl) {
       windowCountEl.textContent = `${windowCount} windows`;
     }
+    
+    // Calculate memory and heavy tabs
+    let totalMemory = 0;
+    let heavyTabsCount = 0;
+    
+    for (const tab of tabs) {
+      const estimate = this.estimateTabMemory(tab);
+      totalMemory += estimate;
+      
+      // Consider a tab "heavy" if it uses more than 200MB
+      if (estimate > 200 * 1024 * 1024) {
+        heavyTabsCount++;
+      }
+    }
+    
     if (memoryEl) {
       // Use same estimation logic as ResourceOverview
-      let totalMemory = 0;
-      for (const tab of tabs) {
-        totalMemory += this.estimateTabMemory(tab);
-      }
       const estimatedGB = totalMemory / (1024 * 1024 * 1024);
       if (estimatedGB >= 1) {
         memoryEl.textContent = `~${estimatedGB.toFixed(1)} GB`;
       } else {
         memoryEl.textContent = `~${(totalMemory / (1024 * 1024)).toFixed(0)} MB`;
       }
+    }
+    
+    if (heavyTabsEl) {
+      heavyTabsEl.textContent = heavyTabsCount.toString();
     }
   }
 

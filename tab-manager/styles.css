@@ -166,7 +166,62 @@ body {
   background: #fff;
 }
 
-/* Combined Overview & Actions - Ultra Compact Single Row */
+/* Unified Actions Bar - Single row with counts in buttons */
+.unified-actions-bar {
+  background: #f8f9fa;
+  border-top: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.action-divider {
+  width: 1px;
+  height: 20px;
+  background: #d0d0d0;
+  flex-shrink: 0;
+  margin: 0 4px;
+}
+
+.action-btn-inline {
+  padding: 4px 8px;
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 500;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.action-btn-inline strong {
+  font-weight: 700;
+  color: #fff;
+}
+
+.action-btn-inline:hover:not(:disabled) {
+  background: #1557b0;
+  transform: translateY(-1px);
+}
+
+.action-btn-inline:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.action-btn-inline:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Legacy combined overview styles (keep for compatibility) */
 .combined-overview {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 0;
@@ -1175,6 +1230,26 @@ body {
   background: #9c27b0;
   color: white;
   border-color: #9c27b0;
+}
+
+/* Load More Button */
+.load-more-btn {
+  width: 100%;
+  padding: 6px 10px;
+  margin-top: 6px;
+  background: #fff;
+  border: 1px dashed #1a73e8;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  color: #1a73e8;
+  transition: all 0.2s;
+}
+
+.load-more-btn:hover {
+  background: #e8f0fe;
+  border-style: solid;
 }
 
 /* All Tabs Resource List */

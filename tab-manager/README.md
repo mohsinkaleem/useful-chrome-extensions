@@ -52,13 +52,15 @@ A powerful Chrome extension for managing tabs, windows, and browser sessions wit
 
 ### 📊 Resource Monitor
 - **Compact overview** in main popup showing total memory and heavy tab count
-- **Dedicated resource page** for detailed monitoring
+- **Dedicated resource page** with compact styling matching main popup
+- **Lazy loading**: Shows top 10 tabs initially with "Load More" button
+- **Jump-to-tab**: Quick navigation to any resource-heavy tab with → button
 - **Intelligent memory estimation** per tab based on characteristics
 - **Smart heuristics** for different websites (YouTube, Gmail, Google Meet, etc.)
-- **Color-coded memory bars** (green/yellow/orange/red)
-- **Top 5 resource consumers** with visual indicators
+- **Color-coded severity indicators** (green/yellow/orange/red)
+- **Top resource consumers** with rank badges (🥇🥈🥉) and visual indicators
 - **Live updates** every 5 seconds
-- **Quick actions**: Hibernate heavy tabs, reload consuming tabs
+- **Quick actions**: Hibernate heavy tabs, reload consuming tabs, jump to tab
 - **Memory indicators** shown directly in tab list
 - Identify and manage memory-hungry tabs instantly
 - **Note**: Uses intelligent estimation based on tab properties (URL, media playback, age) since Chrome removed the Processes API
@@ -167,7 +169,9 @@ The extension requires the following permissions:
 5. **Auto-Group**: New tabs matching configured rules will be automatically grouped
 6. **Hibernate**: Click "Hibernate Inactive Tabs" to free up memory
 7. **Media**: Playing tabs appear in the Media section with quick controls
-8. **Resource Monitor**: Click "View Details →" on the resource overview to open the detailed monitoring page with top consumers and actions
+8. **Resource Monitor**: Click "📊 Details" to open the compact resource monitoring page
+9. **Load More**: Click "Load More" in resource monitor to reveal additional tabs (loads 10 at a time)
+10. **Jump to Tab**: Use the → button next to any tab in the resource list to switch to it instantly
 
 ## Customization
 
@@ -192,7 +196,10 @@ Switch between List, Grid, and Compact views using the view toggle buttons.
 - [ ] Dark mode
 - [ ] Sync settings across devices
 - [ ] Advanced filtering (by time, size, etc.)
-- [ ] Tab suspensions scheduling
+- [ ] Tab suspension scheduling
+- [x] Lazy loading for resource monitor (completed)
+- [x] Jump-to-tab functionality in resource monitor (completed)
+- [x] Compact styling matching main popup (completed)
 
 ## License
 

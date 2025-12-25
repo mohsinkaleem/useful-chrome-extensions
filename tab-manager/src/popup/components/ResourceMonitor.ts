@@ -61,6 +61,7 @@ export class ResourceMonitor {
   private updateInterval: number = 5000; // 5 seconds
   private intervalId: number | null = null;
   private tabResourceMap: Map<number, TabResourceInfo> = new Map();
+  private displayedTopConsumersCount: number = 10; // Start with 10
 
   constructor() {
     this.container = document.getElementById('resource-monitor-panel');
@@ -140,10 +141,12 @@ export class ResourceMonitor {
   private updateTopConsumers() {
     if (!this.topConsumersEl) return;
 
-    // Get top 5 by memory
-    const sortedByMemory = Array.from(this.tabResourceMap.values())
-      .sort((a, b) => b.memory - a.memory)
-      .slice(0, 5);
+    // Get all tabs sorted by memory
+    const allSortedByMemory = Array.from(this.tabResourceMap.values())
+      .sort((a, b) => b.memory - a.memory);
+    
+    // Display only the first N tabs (lazy loading)
+    const sortedByMemory = allSortedByMemory.slice(0, this.displayedTopConsumersCount);
 
     if (sortedByMemory.length === 0) {
       this.topConsumersEl.innerHTML = '<div class="empty-state">No resource data available</div>';
@@ -154,10 +157,11 @@ export class ResourceMonitor {
     const totalMemory = Array.from(this.tabResourceMap.values())
       .reduce((sum, tab) => sum + tab.memory, 0);
 
-    this.topConsumersEl.innerHTML = sortedByMemory.map((tab, index) => {
+    const tabsHtml = sortedByMemory.map((tab, index) => {
       const memoryMB = tab.memory / (1024 * 1024);
       const percentage = totalMemory > 0 ? (tab.memory / totalMemory * 100) : 0;
-      const emoji = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'][index];
+      const rankEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+      const emoji = index < rankEmojis.length ? rankEmojis[index] : `${index + 1}`;
       const severity = this.getMemorySeverity(memoryMB);
 
       return `
@@ -172,10 +176,18 @@ export class ResourceMonitor {
               ${tab.cpu > 0 ? `<span class="cpu-stat">CPU: ${tab.cpu.toFixed(1)}%</span>` : ''}
             </div>
           </div>
+          <button class="goto-tab-btn" data-tab-id="${tab.tabId}" title="Go to tab">→</button>
           <button class="hibernate-tab-btn" data-tab-id="${tab.tabId}" title="Hibernate this tab">💤</button>
         </div>
       `;
     }).join('');
+    
+    // Add "Load More" button if there are more tabs to show
+    const loadMoreHtml = allSortedByMemory.length > this.displayedTopConsumersCount
+      ? `<button class="load-more-btn" id="load-more-consumers">Load More (${allSortedByMemory.length - this.displayedTopConsumersCount} more)</button>`
+      : '';
+    
+    this.topConsumersEl.innerHTML = tabsHtml + loadMoreHtml;
 
     // Add event listeners to hibernate buttons
     this.topConsumersEl.querySelectorAll('.hibernate-tab-btn').forEach(btn => {
@@ -187,6 +199,26 @@ export class ResourceMonitor {
         }
       });
     });
+    
+    // Add event listeners to goto buttons
+    this.topConsumersEl.querySelectorAll('.goto-tab-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const tabId = parseInt((e.target as HTMLElement).getAttribute('data-tab-id') || '0');
+        if (tabId) {
+          await this.goToTab(tabId);
+        }
+      });
+    });
+    
+    // Add event listener to "Load More" button
+    const loadMoreBtn = document.getElementById('load-more-consumers');
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener('click', () => {
+        this.displayedTopConsumersCount += 10; // Load 10 more at a time
+        this.updateTopConsumers();
+      });
+    }
   }
 
   private updateAllTabsResourceList() {
