@@ -20,6 +20,37 @@
       </div>
     </header>
 
+    <!-- Search & Filters Section -->
+    <div class="search-section">
+      <div class="search-row">
+        <input 
+          type="text" 
+          id="search-input" 
+          class="search-input" 
+          placeholder="Search tabs..."
+        />
+        <div class="view-controls">
+          <button id="view-list" class="view-btn active" title="List view">☰</button>
+          <button id="view-compact" class="view-btn" title="Compact view">≡</button>
+          <button id="view-grid" class="view-btn" title="Grid view">▦</button>
+        </div>
+      </div>
+      <div class="filter-row">
+        <label class="filter-chip">
+          <input type="checkbox" id="filter-audible" />
+          <span>🔊 Audible</span>
+        </label>
+        <label class="filter-chip">
+          <input type="checkbox" id="filter-pinned" />
+          <span>📌 Pinned</span>
+        </label>
+        <label class="filter-chip highlight-toggle">
+          <input type="checkbox" id="filter-duplicates" />
+          <span>⚠️ Highlight Duplicates</span>
+        </label>
+      </div>
+    </div>
+
     <!-- Collapsible Panels Section -->
     <div class="panels-container">
       <!-- Resource & System Panel -->
@@ -88,37 +119,6 @@
     <div id="tabs-container" class="tabs-container">
       <!-- Windows and tabs will be dynamically inserted here -->
     </div>
-
-    <!-- Fixed Footer: Search & Filters -->
-    <footer class="search-footer">
-      <div class="search-row">
-        <input 
-          type="text" 
-          id="search-input" 
-          class="search-input" 
-          placeholder="Search tabs..."
-        />
-        <div class="view-controls">
-          <button id="view-list" class="view-btn active" title="List view">☰</button>
-          <button id="view-compact" class="view-btn" title="Compact view">≡</button>
-          <button id="view-grid" class="view-btn" title="Grid view">▦</button>
-        </div>
-      </div>
-      <div class="filter-row">
-        <label class="filter-chip">
-          <input type="checkbox" id="filter-audible" />
-          <span>🔊 Audible</span>
-        </label>
-        <label class="filter-chip">
-          <input type="checkbox" id="filter-pinned" />
-          <span>📌 Pinned</span>
-        </label>
-        <label class="filter-chip highlight-toggle">
-          <input type="checkbox" id="filter-duplicates" />
-          <span>⚠️ Highlight Duplicates</span>
-        </label>
-      </div>
-    </footer>
 
     <!-- Session Manager (Modal) -->
     <div id="session-modal" class="modal hidden">

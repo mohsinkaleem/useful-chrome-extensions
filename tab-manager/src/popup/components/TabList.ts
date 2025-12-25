@@ -129,13 +129,22 @@ export class TabList {
     // Use pendingUrl as fallback, or show tab id if no title
     const displayTitle = tab.title || tab.pendingUrl || `Tab ${tab.id}`;
     title.textContent = displayTitle;
-    title.title = displayTitle; // tooltip for long titles
     
     const url = document.createElement('div');
     url.className = 'tab-url';
     const displayUrl = tab.url || tab.pendingUrl || '';
-    url.textContent = displayUrl;
-    url.title = displayUrl; // tooltip for long URLs
+    // Extract hostname from URL for grid view, show full URL otherwise
+    let urlText = displayUrl;
+    try {
+      if (displayUrl) {
+        const urlObj = new URL(displayUrl);
+        urlText = urlObj.hostname;
+      }
+    } catch (e) {
+      // If URL parsing fails, use the original
+      urlText = displayUrl;
+    }
+    url.textContent = urlText;
     
     info.appendChild(title);
     if (viewMode !== 'compact') {
@@ -175,6 +184,58 @@ export class TabList {
     item.appendChild(info);
     item.appendChild(badges);
     item.appendChild(actions);
+    
+    // Create hover tooltip
+    const tooltip = document.createElement('div');
+    tooltip.className = 'tab-tooltip hidden';
+    const tooltipContent = document.createElement('div');
+    tooltipContent.className = 'tooltip-content';
+    tooltipContent.textContent = displayTitle;
+    const tooltipUrl = document.createElement('div');
+    tooltipUrl.className = 'tooltip-url';
+    tooltipUrl.textContent = displayUrl;
+    tooltip.appendChild(tooltipContent);
+    tooltip.appendChild(tooltipUrl);
+    document.body.appendChild(tooltip);
+    
+    // Show tooltip on hover
+    item.onmouseenter = (e) => {
+      const rect = item.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const tooltipHeight = 50; // estimated
+      const spaceAbove = rect.top;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      
+      let top: number;
+      // Position tooltip based on available space
+      if (spaceAbove > tooltipHeight || spaceAbove > spaceBelow) {
+        // Show above
+        top = rect.top - tooltipHeight - 4;
+      } else {
+        // Show below
+        top = rect.bottom + 4;
+      }
+      
+      tooltip.style.position = 'fixed';
+      tooltip.style.top = top + 'px';
+      tooltip.style.left = (rect.left + rect.width / 2) + 'px';
+      tooltip.style.transform = 'translateX(-50%)';
+      tooltip.classList.remove('hidden');
+    };
+    item.onmouseleave = () => {
+      tooltip.classList.add('hidden');
+    };
+    
+    // Clean up tooltip when item is removed
+    const observer = new MutationObserver(() => {
+      if (!document.body.contains(item)) {
+        tooltip.remove();
+        observer.disconnect();
+      }
+    });
+    if (item.parentElement) {
+      observer.observe(item.parentElement, { childList: true });
+    }
     
     // Click to switch
     item.onclick = (e) => {
