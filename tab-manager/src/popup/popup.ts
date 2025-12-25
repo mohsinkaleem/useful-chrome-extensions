@@ -5,6 +5,7 @@ import { TabList } from './components/TabList.js';
 import { SearchBar } from './components/SearchBar.js';
 import { QuickActions } from './components/QuickActions.js';
 import { ResourcePanel } from './components/ResourcePanel.js';
+import { ResourceOverview } from './components/ResourceOverview.js';
 import { MediaControls } from './components/MediaControls.js';
 import { SessionManager } from './components/SessionManager.js';
 
@@ -14,6 +15,7 @@ class TabManagerApp {
   private searchBar: SearchBar;
   private quickActions: QuickActions;
   private resourcePanel: ResourcePanel;
+  private resourceOverview: ResourceOverview;
   private mediaControls: MediaControls;
   private sessionManager: SessionManager;
   private selectedTabs: Set<number> = new Set();
@@ -29,6 +31,7 @@ class TabManagerApp {
     this.searchBar = new SearchBar();
     this.quickActions = new QuickActions();
     this.resourcePanel = new ResourcePanel();
+    this.resourceOverview = new ResourceOverview();
     this.mediaControls = new MediaControls();
     this.sessionManager = new SessionManager();
     
@@ -151,6 +154,9 @@ class TabManagerApp {
     // Update resource panel with more stats
     this.resourcePanel.update(tabs, this.duplicateUrls.size);
     
+    // Update resource overview
+    this.resourceOverview.update(tabs);
+    
     // Update media controls
     this.mediaControls.update(tabs);
   }
@@ -167,15 +173,55 @@ class TabManagerApp {
       windowCountEl.textContent = `${windowCount} windows`;
     }
     if (memoryEl) {
-      // Estimate memory (rough: ~50MB per active tab, ~5MB per discarded)
-      const activeTabs = tabs.filter(t => !t.discarded).length;
-      const discardedTabs = tabs.filter(t => t.discarded).length;
-      const estimatedMB = (activeTabs * 50) + (discardedTabs * 5);
-      if (estimatedMB > 1000) {
-        memoryEl.textContent = `~${(estimatedMB / 1000).toFixed(1)} GB`;
-      } else {
-        memoryEl.textContent = `~${estimatedMB} MB`;
+      // Use same estimation logic as ResourceOverview
+      let totalMemory = 0;
+      for (const tab of tabs) {
+        totalMemory += this.estimateTabMemory(tab);
       }
+      const estimatedGB = totalMemory / (1024 * 1024 * 1024);
+      if (estimatedGB >= 1) {
+        memoryEl.textContent = `~${estimatedGB.toFixed(1)} GB`;
+      } else {
+        memoryEl.textContent = `~${(totalMemory / (1024 * 1024)).toFixed(0)} MB`;
+      }
+    }
+  }
+
+  private estimateTabMemory(tab: chrome.tabs.Tab): number {
+    let memoryBytes = 30 * 1024 * 1024; // 30MB base
+    if (tab.discarded) return 5 * 1024 * 1024; // 5MB
+
+    const url = tab.url || '';
+    const domain = this.getDomain(url);
+
+    if (domain.includes('youtube.com') || domain.includes('twitch.tv')) {
+      memoryBytes += 150 * 1024 * 1024;
+    } else if (domain.includes('meet.google.com') || domain.includes('zoom.us')) {
+      memoryBytes += 200 * 1024 * 1024;
+    } else if (domain.includes('gmail.com') || domain.includes('outlook.com')) {
+      memoryBytes += 80 * 1024 * 1024;
+    } else if (domain.includes('docs.google.com') || domain.includes('sheets.google.com')) {
+      memoryBytes += 60 * 1024 * 1024;
+    } else if (domain.includes('figma.com') || domain.includes('miro.com')) {
+      memoryBytes += 120 * 1024 * 1024;
+    }
+
+    if (tab.active) memoryBytes += 20 * 1024 * 1024;
+    if (tab.audible) memoryBytes += 50 * 1024 * 1024;
+
+    if (tab.lastAccessed) {
+      const ageHours = (Date.now() - tab.lastAccessed) / (1000 * 60 * 60);
+      if (ageHours > 24) memoryBytes += 30 * 1024 * 1024;
+    }
+
+    return memoryBytes;
+  }
+
+  private getDomain(url: string): string {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return '';
     }
   }
 

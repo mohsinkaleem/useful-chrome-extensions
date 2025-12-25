@@ -50,6 +50,19 @@ A powerful Chrome extension for managing tabs, windows, and browser sessions wit
 - Hibernate inactive tabs (not accessed in last hour)
 - Respects pinned and audible tabs
 
+### 📊 Resource Monitor
+- **Compact overview** in main popup showing total memory and heavy tab count
+- **Dedicated resource page** for detailed monitoring
+- **Intelligent memory estimation** per tab based on characteristics
+- **Smart heuristics** for different websites (YouTube, Gmail, Google Meet, etc.)
+- **Color-coded memory bars** (green/yellow/orange/red)
+- **Top 5 resource consumers** with visual indicators
+- **Live updates** every 5 seconds
+- **Quick actions**: Hibernate heavy tabs, reload consuming tabs
+- **Memory indicators** shown directly in tab list
+- Identify and manage memory-hungry tabs instantly
+- **Note**: Uses intelligent estimation based on tab properties (URL, media playback, age) since Chrome removed the Processes API
+
 ### 📑 Bookmarking
 - Bulk bookmark tabs to folders
 - Bookmark entire windows
@@ -93,18 +106,22 @@ npm run clean   # Clean build directory
 tab-manager/
 ├── manifest.json           # Extension manifest (MV3)
 ├── popup.html             # Popup/side panel UI
+├── resource-monitor.html  # Dedicated resource monitor page
 ├── styles.css             # Styles
 ├── src/
 │   ├── background/
 │   │   ├── service-worker.ts    # Background service worker
 │   │   └── auto-grouper.ts      # Auto-grouping engine
 │   ├── popup/
-│   │   ├── popup.ts             # Main popup logic
-│   │   └── components/          # UI components
+│   │   ├── popup.ts                    # Main popup logic
+│   │   ├── resource-monitor-page.ts    # Resource monitor page logic
+│   │   └── components/                 # UI components
 │   │       ├── TabList.ts
 │   │       ├── SearchBar.ts
 │   │       ├── QuickActions.ts
 │   │       ├── ResourcePanel.ts
+│   │       ├── ResourceOverview.ts     # Compact overview component
+│   │       ├── ResourceMonitor.ts      # Full monitor component
 │   │       ├── MediaControls.ts
 │   │       └── SessionManager.ts
 │   ├── content/
@@ -139,8 +156,8 @@ The extension requires the following permissions:
 - `storage` - Save sessions and settings
 - `bookmarks` - Create bookmarks
 - `contextMenus` - Add right-click options
-- `<all_urls>` - Content script for media control
-
+- `processes` - Monitor memory and CPU usage (NEW)
+- `
 ## Usage Tips
 
 1. **Multi-Select**: Use checkboxes to select multiple tabs for batch operations
@@ -150,6 +167,7 @@ The extension requires the following permissions:
 5. **Auto-Group**: New tabs matching configured rules will be automatically grouped
 6. **Hibernate**: Click "Hibernate Inactive Tabs" to free up memory
 7. **Media**: Playing tabs appear in the Media section with quick controls
+8. **Resource Monitor**: Click "View Details →" on the resource overview to open the detailed monitoring page with top consumers and actions
 
 ## Customization
 

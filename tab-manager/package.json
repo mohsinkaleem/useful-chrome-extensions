@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Advanced Chrome Tab Manager Extension with TypeScript",
   "scripts": {
-    "build": "esbuild src/background/service-worker.ts src/popup/popup.ts src/content/content-script.ts --bundle --outdir=dist --target=chrome114 --format=esm --splitting",
+    "build": "esbuild src/background/service-worker.ts src/popup/popup.ts src/popup/resource-monitor-page.ts src/content/content-script.ts --bundle --outdir=dist --target=chrome114 --format=esm --splitting",
     "watch": "npm run build -- --watch",
     "clean": "rm -rf dist"
   },

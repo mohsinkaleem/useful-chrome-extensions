@@ -1,6 +1,12 @@
 // Tab list component
 import { normalizeUrl } from '../../shared/url-utils.js';
 
+interface TabResourceInfo {
+  tabId: number;
+  memory: number;
+  cpu: number;
+}
+
 export class TabList {
   private container: HTMLElement | null;
   private selectionCallbacks: Array<(selectedIds: number[]) => void> = [];
@@ -8,6 +14,7 @@ export class TabList {
   private selectedTabs: Set<number> = new Set();
   private highlightDuplicates: boolean = false;
   private duplicateUrls: Set<string> = new Set();
+  private tabResourceMap: Map<number, TabResourceInfo> = new Map();
 
   constructor() {
     this.container = document.getElementById('tabs-container');
@@ -16,6 +23,13 @@ export class TabList {
   setDuplicateHighlight(enabled: boolean, duplicateUrls: Set<string>) {
     this.highlightDuplicates = enabled;
     this.duplicateUrls = duplicateUrls;
+  }
+
+  setTabResources(resources: TabResourceInfo[]) {
+    this.tabResourceMap.clear();
+    resources.forEach(r => {
+      this.tabResourceMap.set(r.tabId, r);
+    });
   }
 
   render(tabsByWindow: Map<number, chrome.tabs.Tab[]>, viewMode: 'list' | 'compact' | 'grid') {
@@ -153,6 +167,30 @@ export class TabList {
     info.appendChild(title);
     if (viewMode !== 'compact') {
       info.appendChild(url);
+      
+      // Add memory indicator if available
+      if (tab.id && this.tabResourceMap.has(tab.id)) {
+        const resourceInfo = this.tabResourceMap.get(tab.id)!;
+        const memoryMB = resourceInfo.memory / (1024 * 1024);
+        
+        const memoryIndicator = document.createElement('div');
+        memoryIndicator.className = 'tab-memory-indicator';
+        memoryIndicator.innerHTML = `
+          <span class="memory-icon">⚡</span>
+          <span class="memory-text">${memoryMB.toFixed(0)} MB</span>
+        `;
+        
+        // Add color coding based on memory usage
+        if (memoryMB < 100) {
+          memoryIndicator.classList.add('low');
+        } else if (memoryMB < 300) {
+          memoryIndicator.classList.add('medium');
+        } else {
+          memoryIndicator.classList.add('high');
+        }
+        
+        info.appendChild(memoryIndicator);
+      }
     }
     
     // Badges
