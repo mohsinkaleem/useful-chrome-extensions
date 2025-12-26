@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   const enabledCheckbox = document.getElementById('enabled');
+  const filterModeCheckbox = document.getElementById('filterMode');
   const brightnessInput = document.getElementById('brightness');
   const contrastInput = document.getElementById('contrast');
   const saturationInput = document.getElementById('saturation');
@@ -14,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Default settings
   const DEFAULT_SETTINGS = {
     enabled: false,
+    filterMode: false,
     brightness: 100,
     contrast: 100,
     saturation: 100,
@@ -22,21 +24,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let saveTimeout = null;
 
+  // Update UI state based on which mode is active
+  function updateUIState() {
+    const anyModeActive = enabledCheckbox.checked || filterModeCheckbox.checked;
+    brightnessInput.disabled = !anyModeActive;
+    contrastInput.disabled = !anyModeActive;
+    saturationInput.disabled = !anyModeActive;
+    hueInput.disabled = !anyModeActive;
+  }
+
   // Load saved settings
   chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS), (result) => {
     enabledCheckbox.checked = result.enabled !== undefined ? result.enabled : DEFAULT_SETTINGS.enabled;
+    filterModeCheckbox.checked = result.filterMode !== undefined ? result.filterMode : DEFAULT_SETTINGS.filterMode;
     brightnessInput.value = result.brightness || DEFAULT_SETTINGS.brightness;
     contrastInput.value = result.contrast || DEFAULT_SETTINGS.contrast;
     saturationInput.value = result.saturation || DEFAULT_SETTINGS.saturation;
     hueInput.value = result.hue || DEFAULT_SETTINGS.hue;
     
     updateLabels();
+    updateUIState();
   });
 
   // Save settings with debouncing for sliders
   function saveSettings(immediate = false) {
     const settings = {
       enabled: enabledCheckbox.checked,
+      filterMode: filterModeCheckbox.checked,
       brightness: parseInt(brightnessInput.value),
       contrast: parseInt(contrastInput.value),
       saturation: parseInt(saturationInput.value),
@@ -65,13 +79,27 @@ document.addEventListener('DOMContentLoaded', () => {
     hueVal.textContent = hueInput.value;
   }
 
-  enabledCheckbox.addEventListener('change', () => saveSettings(true));
+  enabledCheckbox.addEventListener('change', () => {
+    if (enabledCheckbox.checked) {
+      filterModeCheckbox.checked = false;
+    }
+    updateUIState();
+    saveSettings(true);
+  });
+  
+  filterModeCheckbox.addEventListener('change', () => {
+    if (filterModeCheckbox.checked) {
+      enabledCheckbox.checked = false;
+    }
+    updateUIState();
+    saveSettings(true);
+  });
   brightnessInput.addEventListener('input', () => saveSettings(false));
   contrastInput.addEventListener('input', () => saveSettings(false));
   saturationInput.addEventListener('input', () => saveSettings(false));
   hueInput.addEventListener('input', () => saveSettings(false));
 
-  // Reset button - restore defaults but keep enabled state
+  // Reset button - restore defaults but keep mode states
   resetButton.addEventListener('click', () => {
     brightnessInput.value = DEFAULT_SETTINGS.brightness;
     contrastInput.value = DEFAULT_SETTINGS.contrast;
@@ -80,16 +108,18 @@ document.addEventListener('DOMContentLoaded', () => {
     saveSettings(true);
   });
 
-  // Clear settings button - completely reset everything including enabled state
+  // Clear settings button - completely reset everything
   clearButton.addEventListener('click', () => {
-    if (confirm('This will clear all settings and disable dark mode. Continue?')) {
+    if (confirm('This will clear all settings and disable all modes. Continue?')) {
       // Reset UI first
       enabledCheckbox.checked = DEFAULT_SETTINGS.enabled;
+      filterModeCheckbox.checked = DEFAULT_SETTINGS.filterMode;
       brightnessInput.value = DEFAULT_SETTINGS.brightness;
       contrastInput.value = DEFAULT_SETTINGS.contrast;
       saturationInput.value = DEFAULT_SETTINGS.saturation;
       hueInput.value = DEFAULT_SETTINGS.hue;
       updateLabels();
+      updateUIState();
       
       // Clear and save defaults immediately
       if (saveTimeout) clearTimeout(saveTimeout);

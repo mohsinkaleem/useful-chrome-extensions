@@ -31,14 +31,14 @@ function isPageAlreadyDark() {
   return luminance < 0.4;
 }
 
-function getCSS(brightness, contrast, saturation, hue, isDark) {
+function getCSS(brightness, contrast, saturation, hue, isDarkMode) {
   // Convert percentage values to decimal for CSS filters
   const b = brightness / 100;
   const c = contrast / 100;
   const s = saturation / 100;
 
-  if (isDark) {
-    // Page is already dark, just apply subtle adjustments without inversion
+  // Filter Mode: just apply filters without inversion
+  if (!isDarkMode) {
     return `
       html {
         filter: brightness(${b}) contrast(${c}) saturate(${s}) hue-rotate(${hue}deg) !important;
@@ -46,7 +46,7 @@ function getCSS(brightness, contrast, saturation, hue, isDark) {
       }
     `;
   } else {
-    // Page is light, apply full dark mode with inversion
+    // Dark Mode: apply full dark mode with inversion
     const totalHue = 180 + hue;
     return `
       html {
@@ -70,7 +70,10 @@ function getCSS(brightness, contrast, saturation, hue, isDark) {
 function updateTheme(settings) {
   let styleEl = document.getElementById(STYLE_ID);
 
-  if (!settings.enabled) {
+  // Check if either mode is enabled
+  const isActive = settings.enabled || settings.filterMode;
+  
+  if (!isActive) {
     if (styleEl) styleEl.remove();
     return;
   }
@@ -86,16 +89,15 @@ function updateTheme(settings) {
   const contrast = settings.contrast || 100;
   const saturation = settings.saturation || 100;
   const hue = settings.hue || 0;
-
-  // Update dark page detection
-  pageIsDark = isPageAlreadyDark();
+  const isDarkMode = settings.enabled === true; // Only invert if Dark Mode is on
   
-  styleEl.textContent = getCSS(brightness, contrast, saturation, hue, pageIsDark);
+  styleEl.textContent = getCSS(brightness, contrast, saturation, hue, isDarkMode);
 }
 
 // Default settings
 const DEFAULT_SETTINGS = {
   enabled: false,
+  filterMode: false,
   brightness: 100,
   contrast: 100,
   saturation: 100,
@@ -104,7 +106,7 @@ const DEFAULT_SETTINGS = {
 
 // Apply theme with settings
 function applyTheme() {
-  chrome.storage.sync.get(['enabled', 'brightness', 'contrast', 'saturation', 'hue'], (result) => {
+  chrome.storage.sync.get(['enabled', 'filterMode', 'brightness', 'contrast', 'saturation', 'hue'], (result) => {
     const settings = { ...DEFAULT_SETTINGS, ...result };
     updateTheme(settings);
   });

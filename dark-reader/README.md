@@ -4,7 +4,7 @@ A lightweight Chrome extension that intelligently applies dark mode to websites 
 
 ## Features
 
-- 🌙 **Smart Detection** - Automatically detects if a page is already dark (like YouTube dark mode) and doesn't invert it
+- 🌙 **Dual Modes** - Choose between Dark Mode (with inversion) or Filter Mode (filters only)
 - 🎨 **Full Control** - Adjust brightness, contrast, saturation, and hue rotation
 - 🚀 **Lag-Free** - Efficient CSS filter injection with debounced updates for smooth performance
 - 💾 **Persistent Settings** - All settings saved to Chrome storage and synced across devices
@@ -22,31 +22,42 @@ A lightweight Chrome extension that intelligently applies dark mode to websites 
 ## Usage
 
 1. Click the extension icon to open the popup
-2. Toggle the switch to enable/disable dark mode
-3. Adjust sliders to customize:
+2. Choose your mode (mutually exclusive):
+   - **Dark Mode**: Inverts colors + applies all filters (full dark mode effect)
+   - **Filter Mode**: Applies filters only without color inversion
+3. Adjust sliders to customize (enabled when either mode is on):
    - **Brightness**: 50-150%
    - **Contrast**: 50-150%
    - **Saturation**: 0-200%
    - **Hue Rotation**: 0-360°
-4. Click "Reset Defaults" to restore default values
+4. Click "Reset Defaults" to restore default slider values
 5. Click "Clear Settings" to completely reset everything
 
-## How It Works
+**NoTwo Modes
 
-### Smart Detection
-- Analyzes page background color using computed styles
-- Calculates luminance (perceived brightness) using the formula: `0.299*R + 0.587*G + 0.114*B`
-- If luminance < 0.4, treats page as already dark
-  - **Dark pages**: Applies only brightness/contrast/saturation/hue adjustments
-  - **Light pages**: Inverts colors and applies full dark mode filters
+**Dark Mode (Color Inversion)**
+- Inverts all page colors for a true dark mode experience
+- Applies additional filters for customization
+- Counter-inverts images, videos, and media to preserve original appearance
+- Perfect for making bright websites dark
+
+**Filter Mode (No Inversion)**
+- Applies only brightness, contrast, saturation, and hue adjustments
+- No color inversion - preserves original colors
+- Useful for fine-tuning page appearance without full dark mode
+- Great for reducing brightness or adjusting color temperature
 
 ### CSS Filters
 Uses CSS `filter` property for performance:
 ```css
-/* Light pages */
+/* Dark Mode */
 filter: invert(1) hue-rotate(180deg) brightness() contrast() saturate();
 
-/* Dark pages */
+/* Filter Mode */
+filter: brightness() contrast() saturate() hue-rotate();
+```
+
+In Dark Mode, images and videos are counter-inverted
 filter: brightness() contrast() saturate() hue-rotate();
 ```
 
@@ -100,7 +111,7 @@ To replace the extension icon with your own:
 **Note**: Requires ImageMagick installed (`brew install imagemagick` on macOS)
 
 ## Browser Support
-
+Both modes default to "Off" - choose the mode that works best for each page
 - Chrome 88+
 - Edge 88+
 - Any Chromium-based browser supporting Manifest V3

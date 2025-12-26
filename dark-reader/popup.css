@@ -114,3 +114,21 @@ input:checked + .slider {
 input:checked + .slider:before {
   transform: translateX(20px);
 }
+/* Disabled state for inputs */
+input[type=range]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+input[type=checkbox]:disabled + .slider {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.control-group:has(input:disabled) label {
+  opacity: 0.4;
+}
+
+.header:has(input:disabled) h3 {
+  opacity: 0.4;
+}
