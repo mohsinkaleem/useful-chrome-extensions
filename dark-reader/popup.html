@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>Dark Mode</h2>
+      <label class="switch">
+        <input type="checkbox" id="enabled">
+        <span class="slider round"></span>
+      </label>
+    </div>
+
+    <div class="control-group">
+      <label for="brightness">Brightness: <span id="brightness-val">100</span>%</label>
+      <input type="range" id="brightness" min="50" max="150" value="100">
+    </div>
+
+    <div class="control-group">
+      <label for="contrast">Contrast: <span id="contrast-val">100</span>%</label>
+      <input type="range" id="contrast" min="50" max="150" value="100">
+    </div>
+
+    <div class="control-group">
+      <label for="saturation">Saturation: <span id="saturation-val">100</span>%</label>
+      <input type="range" id="saturation" min="0" max="200" value="100">
+    </div>
+
+    <div class="control-group">
+      <label for="hue">Hue Rotation: <span id="hue-val">0</span>°</label>
+      <input type="range" id="hue" min="0" max="360" value="0">
+    </div>
+
+    <div class="button-group">
+      <button id="reset">Reset Defaults</button>
+      <button id="clear" class="danger">Clear Settings</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
