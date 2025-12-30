@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cookie Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🍪 Cookie Manager</h1>
+      <button id="export-btn" class="btn-export">Export Data</button>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="current-site">Current Site</button>
+      <button class="tab-btn" data-tab="stats">Statistics</button>
+    </nav>
+
+    <div id="current-site" class="tab-content active">
+      <div class="site-header-actions">
+        <div class="site-info">
+          <strong>Domain:</strong> <span id="current-domain">Loading...</span>
+        </div>
+        <button id="delete-all-btn" class="btn-delete-all">Delete All</button>
+      </div>
+      <div id="cookie-list" class="cookie-list"></div>
+    </div>
+
+    <div id="stats" class="tab-content">
+      <div class="stats-header">
+        <h2>Cookie Statistics by Domain</h2>
+      </div>
+      <table id="stats-table">
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>Count</th>
+            <th>Size (bytes)</th>
+          </tr>
+        </thead>
+        <tbody id="stats-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

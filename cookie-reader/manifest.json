@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Cookie Manager",
+  "version": "1.0.0",
+  "description": "Manage cookies, view statistics, and export data",
+  "permissions": [
+    "cookies",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "cookies.png",
+    "default_title": "Cookie Manager"
+  },
+  "icons": {
+    "16": "cookies.png",
+    "48": "cookies.png",
+    "128": "cookies.png"
+  }
+}
