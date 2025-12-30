@@ -5,7 +5,7 @@ A powerful yet simple Chrome extension to manage cookies, view global statistics
 ## Features
 
 *   **Current Site Management**:
-    *   View all cookies for the current active tab.
+    *   View all cookies visible to the current active tab (including cookies from parent domains).
     *   Delete individual cookies.
     *   **Delete All Site Data**: One-click button to remove cookies, `localStorage`, `sessionStorage`, and `IndexedDB` for the current domain.
     *   View detailed cookie properties (Value, Domain, Path, Expiry, Secure, HttpOnly, SameSite).
@@ -33,7 +33,7 @@ A powerful yet simple Chrome extension to manage cookies, view global statistics
 ### Managing Current Site
 1.  Navigate to any website.
 2.  Click the **Cookie Manager** icon in the toolbar.
-3.  The **Current Site** tab shows all cookies for that domain.
+3.  The **Current Site** tab shows all cookies visible to the current page.
 4.  Click **Delete** next to a specific cookie to remove it.
 5.  Click **Delete All** to wipe all cookies and local storage for the site (useful for resetting article limits or fresh sessions).
 
