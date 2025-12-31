@@ -2,6 +2,7 @@ class QuickLinksManager {
     constructor() {
         this.links = [];
         this.currentCategory = 'all';
+        this.searchTerm = '';
         this.editingId = null;
         this.currentSort = 'manual';
         this.draggedElement = null;
@@ -14,8 +15,8 @@ class QuickLinksManager {
         this.setupEventListeners();
         this.render();
         
-        // Auto-fill current tab URL if available
-        this.autoFillCurrentTab();
+        // Check for pending link from context menu
+        this.checkPendingLink();
     }
 
     async loadLinks() {
@@ -60,7 +61,7 @@ class QuickLinksManager {
     setupEventListeners() {
         // Add button
         document.getElementById('add-btn').addEventListener('click', () => {
-            this.showModal();
+            this.handleAddLink();
         });
 
         // Search input
@@ -154,39 +155,36 @@ class QuickLinksManager {
         document.getElementById('link-form').reset();
     }
 
-    async autoFillCurrentTab() {
+    async checkPendingLink() {
         try {
             // Check for pending link from context menu first
             const pendingResult = await chrome.storage.local.get(['pendingLink']);
             if (pendingResult.pendingLink && Date.now() - pendingResult.pendingLink.timestamp < 5000) {
                 // Auto-open modal with pending link data
-                setTimeout(() => {
-                    this.showModal();
-                    document.getElementById('link-title').value = pendingResult.pendingLink.title;
-                    document.getElementById('link-url').value = pendingResult.pendingLink.url;
-                }, 100);
+                this.showModal();
+                document.getElementById('link-title').value = pendingResult.pendingLink.title;
+                document.getElementById('link-url').value = pendingResult.pendingLink.url;
                 
                 // Clear the pending link
                 chrome.storage.local.remove(['pendingLink']);
-                return;
             }
+        } catch (error) {
+            console.error('Error checking pending link:', error);
+        }
+    }
 
+    async handleAddLink() {
+        this.showModal();
+        
+        try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (tab && tab.url && !tab.url.startsWith('chrome://')) {
-                // Only auto-fill if adding a new link, not editing
                 const titleInput = document.getElementById('link-title');
                 const urlInput = document.getElementById('link-url');
                 
-                // Set up event listeners for auto-fill when modal opens
-                const addBtn = document.getElementById('add-btn');
-                addBtn.addEventListener('click', () => {
-                    setTimeout(() => {
-                        if (!this.editingId) {
-                            if (!titleInput.value) titleInput.value = tab.title;
-                            if (!urlInput.value) urlInput.value = tab.url;
-                        }
-                    }, 100);
-                });
+                // Only auto-fill if fields are empty (which they should be for new link)
+                if (!titleInput.value) titleInput.value = tab.title;
+                if (!urlInput.value) urlInput.value = tab.url;
             }
         } catch (error) {
             console.error('Error getting current tab:', error);
@@ -212,6 +210,7 @@ class QuickLinksManager {
             return;
         }
 
+        const now = new Date().toISOString();
         const linkData = {
             id: this.editingId || Date.now().toString(),
             title,
@@ -220,8 +219,8 @@ class QuickLinksManager {
             description,
             createdAt: this.editingId ? 
                 this.links.find(l => l.id === this.editingId)?.createdAt : 
-                new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+                now,
+            updatedAt: now
         };
 
         if (this.editingId) {
@@ -277,24 +276,26 @@ class QuickLinksManager {
     }
 
     filterLinks(searchTerm) {
-        if (!searchTerm.trim()) {
-            this.render();
-            return;
-        }
-
-        const filteredLinks = this.getFilteredLinks().filter(link =>
-            link.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            link.url.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (link.description && link.description.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
-
-        this.renderLinks(filteredLinks);
+        this.searchTerm = searchTerm.trim().toLowerCase();
+        this.render();
     }
 
     getFilteredLinks() {
-        let filteredLinks = this.currentCategory === 'all' 
-            ? [...this.links] 
-            : this.links.filter(link => link.category === this.currentCategory);
+        let filteredLinks = this.links;
+
+        // Filter by category
+        if (this.currentCategory !== 'all') {
+            filteredLinks = filteredLinks.filter(link => link.category === this.currentCategory);
+        }
+
+        // Filter by search term
+        if (this.searchTerm) {
+            filteredLinks = filteredLinks.filter(link =>
+                link.title.toLowerCase().includes(this.searchTerm) ||
+                link.url.toLowerCase().includes(this.searchTerm) ||
+                (link.description && link.description.toLowerCase().includes(this.searchTerm))
+            );
+        }
 
         // Apply sorting
         switch (this.currentSort) {
@@ -334,22 +335,23 @@ class QuickLinksManager {
         const container = document.getElementById('links-container');
         const emptyState = document.getElementById('empty-state');
 
+        // Clear existing links (keep empty state element)
+        Array.from(container.children).forEach(child => {
+            if (child.id !== 'empty-state') container.removeChild(child);
+        });
+
         if (links.length === 0) {
             emptyState.style.display = 'block';
-            container.querySelectorAll('.link-item').forEach(item => item.remove());
             return;
         }
 
         emptyState.style.display = 'none';
 
-        // Clear existing links
-        container.querySelectorAll('.link-item').forEach(item => item.remove());
-
-        // Render links
+        const fragment = document.createDocumentFragment();
         links.forEach(link => {
-            const linkElement = this.createLinkElement(link);
-            container.appendChild(linkElement);
+            fragment.appendChild(this.createLinkElement(link));
         });
+        container.appendChild(fragment);
     }
 
     createLinkElement(link) {
@@ -430,9 +432,13 @@ class QuickLinksManager {
     }
 
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (!text) return '';
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 
     setupDragListeners(element) {

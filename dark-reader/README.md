@@ -1,14 +1,15 @@
 # DarkShift
 
-A lightweight Chrome extension that intelligently applies dark mode to websites while respecting pages that are already dark.
+A lightweight Chrome extension that applies dark mode on a per-site basis with full customization controls.
 
 ## Features
 
+- 🌐 **Per-Site Settings** - Enable dark mode only on sites you choose
 - 🌙 **Dual Modes** - Choose between Dark Mode (with inversion) or Filter Mode (filters only)
-- 🎨 **Full Control** - Adjust brightness, contrast, saturation, and hue rotation
-- 🚀 **Lag-Free** - Efficient CSS filter injection with debounced updates for smooth performance
-- 💾 **Persistent Settings** - All settings saved to Chrome storage and synced across devices
-- 🔄 **Reset & Clear** - Quick reset to defaults or clear all settings
+- 🎨 **Full Control** - Adjust brightness, contrast, saturation, and hue rotation per site
+- 🚀 **Performance Optimized** - Only active tabs for the current domain respond to changes
+- 💾 **Synced Settings** - Settings saved per domain and synced across devices
+- 🔄 **Per-Site Clear** - Remove settings for individual sites
 
 ## Installation
 
@@ -21,31 +22,54 @@ A lightweight Chrome extension that intelligently applies dark mode to websites 
 
 ## Usage
 
-1. Click the extension icon to open the popup
-2. Choose your mode (mutually exclusive):
+1. Navigate to any website
+2. Click the extension icon - you'll see the current domain displayed
+3. Choose your mode (mutually exclusive):
    - **Dark Mode**: Inverts colors + applies all filters (full dark mode effect)
    - **Filter Mode**: Applies filters only without color inversion
-3. Adjust sliders to customize (enabled when either mode is on):
+4. Adjust sliders to customize (enabled when either mode is on):
    - **Brightness**: 50-150%
    - **Contrast**: 50-150%
    - **Saturation**: 0-200%
    - **Hue Rotation**: 0-360°
-4. Click "Reset Defaults" to restore default slider values
-5. Click "Clear Settings" to completely reset everything
+5. Click "Reset Sliders" to restore default slider values
+6. Click "Clear This Site" to remove settings for the current domain
 
-**NoTwo Modes
+## How It Works
+
+### Per-Domain Storage
+Settings are stored per domain:
+```javascript
+{
+  "site:youtube.com": { enabled: true, brightness: 90, ... },
+  "site:github.com": { enabled: true, brightness: 100, ... },
+  "site:google.com": { enabled: false, ... }
+}
+```
+
+### Two Modes
+
+### Two Modes
 
 **Dark Mode (Color Inversion)**
 - Inverts all page colors for a true dark mode experience
-- Applies additional filters for customization
 - Counter-inverts images, videos, and media to preserve original appearance
 - Perfect for making bright websites dark
 
 **Filter Mode (No Inversion)**
 - Applies only brightness, contrast, saturation, and hue adjustments
 - No color inversion - preserves original colors
-- Useful for fine-tuning page appearance without full dark mode
 - Great for reducing brightness or adjusting color temperature
+
+### Performance Optimizations
+
+- **Per-domain storage listeners** - Only tabs matching the changed domain react
+- **Settings hash cache** - Skips DOM updates when nothing actually changed
+- **500ms debounce** - Prevents Chrome storage quota errors on rapid slider changes
+- **Minimal storage reads** - Quick exit path when no settings exist for a domain
+- **No background scripts** - Purely content script based for minimal overhead
+
+With 500+ tabs open, only tabs on the specific domain you're configuring will respond to changes.
 
 ### CSS Filters
 Uses CSS `filter` property for performance:
@@ -57,33 +81,24 @@ filter: invert(1) hue-rotate(180deg) brightness() contrast() saturate();
 filter: brightness() contrast() saturate() hue-rotate();
 ```
 
-In Dark Mode, images and videos are counter-inverted
-filter: brightness() contrast() saturate() hue-rotate();
-```
-
-Images and videos are counter-inverted on light pages to preserve original appearance.
-
-### Performance
-- **Debounced updates** - Slider changes wait 100ms before saving to prevent excessive storage writes
-- **Content script** runs at `document_start` for instant application
-- **CSS transitions** provide smooth filter changes
+Images and videos are counter-inverted in Dark Mode to preserve original appearance.
 
 ## Technical Stack
 
 - **Manifest V3** - Latest Chrome extension format
-- **Chrome Storage API** - Settings persistence with sync support
-- **Content Scripts** - Dynamic CSS injection
+- **Chrome Storage Sync API** - Per-site settings synced across devices
+- **Content Scripts** - Dynamic CSS injection per domain
 - **Vanilla JavaScript** - No dependencies, pure JS implementation
 
 ## File Structure
 
 ```
 ├── manifest.json       # Extension configuration
-├── popup.html         # UI interface
-├── popup.css          # Popup styling
-├── popup.js           # Settings management & event handling
-├── content.js         # CSS filter injection & dark mode detection
-└── icons/             # Extension icons
+├── popup.html          # UI interface with domain display
+├── popup.css           # Popup styling
+├── popup.js            # Per-site settings management
+├── content.js          # Per-domain CSS filter injection
+└── icons/              # Extension icons
     ├── icon16.png
     ├── icon48.png
     └── icon128.png
@@ -111,7 +126,7 @@ To replace the extension icon with your own:
 **Note**: Requires ImageMagick installed (`brew install imagemagick` on macOS)
 
 ## Browser Support
-Both modes default to "Off" - choose the mode that works best for each page
+
 - Chrome 88+
 - Edge 88+
 - Any Chromium-based browser supporting Manifest V3
@@ -122,4 +137,4 @@ MIT
 
 ---
 
-**Note**: Default state is "Off" - enable per page as needed. Settings are synced across your Chrome profile.
+**Note**: Settings are per-site. Enable dark mode on each site individually. Settings sync across your Chrome profile.

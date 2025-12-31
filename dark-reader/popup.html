@@ -1,14 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DarkShift Settings</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
+    <div class="domain-info">
+      <span id="domain">Loading...</span>
+    </div>
+
     <div class="header">
       <h2>Dark Mode</h2>
       <label class="switch">
-        <input type="checkbox" id="enabled">
+        <input type="checkbox" id="enabled" title="Toggle dark mode">
         <span class="slider round"></span>
       </label>
     </div>
@@ -16,7 +23,7 @@
     <div class="header">
       <h2>Filter Mode</h2>
       <label class="switch">
-        <input type="checkbox" id="filterMode">
+        <input type="checkbox" id="filterMode" title="Toggle filter mode">
         <span class="slider round"></span>
       </label>
     </div>
@@ -42,8 +49,8 @@
     </div>
 
     <div class="button-group">
-      <button id="reset">Reset Defaults</button>
-      <button id="clear" class="danger">Clear Settings</button>
+      <button id="reset">Reset Sliders</button>
+      <button id="clear" class="danger">Clear This Site</button>
     </div>
   </div>
   <script src="popup.js"></script>

@@ -1,4 +1,5 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  const domainEl = document.getElementById('domain');
   const enabledCheckbox = document.getElementById('enabled');
   const filterModeCheckbox = document.getElementById('filterMode');
   const brightnessInput = document.getElementById('brightness');
@@ -23,31 +24,61 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   let saveTimeout = null;
+  let pendingSettings = null;
+  let currentDomain = null;
+  let storageKey = null;
+
+  const sliders = [brightnessInput, contrastInput, saturationInput, hueInput];
+  const controlGroups = document.querySelectorAll('.control-group');
+
+  // Get current tab's domain
+  async function getCurrentDomain() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.url) {
+        const url = new URL(tab.url);
+        return url.hostname;
+      }
+    } catch (e) {}
+    return null;
+  }
 
   // Update UI state based on which mode is active
   function updateUIState() {
     const anyModeActive = enabledCheckbox.checked || filterModeCheckbox.checked;
-    brightnessInput.disabled = !anyModeActive;
-    contrastInput.disabled = !anyModeActive;
-    saturationInput.disabled = !anyModeActive;
-    hueInput.disabled = !anyModeActive;
+    sliders.forEach(slider => slider.disabled = !anyModeActive);
+    controlGroups.forEach(group => group.classList.toggle('disabled', !anyModeActive));
   }
 
-  // Load saved settings
-  chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS), (result) => {
-    enabledCheckbox.checked = result.enabled !== undefined ? result.enabled : DEFAULT_SETTINGS.enabled;
-    filterModeCheckbox.checked = result.filterMode !== undefined ? result.filterMode : DEFAULT_SETTINGS.filterMode;
-    brightnessInput.value = result.brightness || DEFAULT_SETTINGS.brightness;
-    contrastInput.value = result.contrast || DEFAULT_SETTINGS.contrast;
-    saturationInput.value = result.saturation || DEFAULT_SETTINGS.saturation;
-    hueInput.value = result.hue || DEFAULT_SETTINGS.hue;
-    
-    updateLabels();
-    updateUIState();
-  });
+  function updateLabels() {
+    brightnessVal.textContent = brightnessInput.value;
+    contrastVal.textContent = contrastInput.value;
+    saturationVal.textContent = saturationInput.value;
+    hueVal.textContent = hueInput.value;
+  }
 
-  // Save settings with debouncing for sliders
+  // Load settings for current domain
+  function loadSettings() {
+    if (!storageKey) return;
+    
+    chrome.storage.sync.get([storageKey], (result) => {
+      const settings = result[storageKey] || DEFAULT_SETTINGS;
+      enabledCheckbox.checked = settings.enabled ?? DEFAULT_SETTINGS.enabled;
+      filterModeCheckbox.checked = settings.filterMode ?? DEFAULT_SETTINGS.filterMode;
+      brightnessInput.value = settings.brightness ?? DEFAULT_SETTINGS.brightness;
+      contrastInput.value = settings.contrast ?? DEFAULT_SETTINGS.contrast;
+      saturationInput.value = settings.saturation ?? DEFAULT_SETTINGS.saturation;
+      hueInput.value = settings.hue ?? DEFAULT_SETTINGS.hue;
+      
+      updateLabels();
+      updateUIState();
+    });
+  }
+
+  // Save settings for current domain
   function saveSettings(immediate = false) {
+    if (!storageKey) return;
+    
     const settings = {
       enabled: enabledCheckbox.checked,
       filterMode: filterModeCheckbox.checked,
@@ -58,27 +89,43 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     updateLabels();
+    pendingSettings = { [storageKey]: settings };
     
     if (immediate) {
-      // Save immediately for toggle changes
       if (saveTimeout) clearTimeout(saveTimeout);
-      chrome.storage.sync.set(settings);
+      chrome.storage.sync.set(pendingSettings).catch(() => {});
+      pendingSettings = null;
     } else {
-      // Debounce for slider changes
       if (saveTimeout) clearTimeout(saveTimeout);
       saveTimeout = setTimeout(() => {
-        chrome.storage.sync.set(settings);
-      }, 100);
+        if (pendingSettings) {
+          chrome.storage.sync.set(pendingSettings).catch(() => {});
+          pendingSettings = null;
+        }
+      }, 500);
     }
   }
 
-  function updateLabels() {
-    brightnessVal.textContent = brightnessInput.value;
-    contrastVal.textContent = contrastInput.value;
-    saturationVal.textContent = saturationInput.value;
-    hueVal.textContent = hueInput.value;
+  // Initialize
+  currentDomain = await getCurrentDomain();
+  
+  if (!currentDomain) {
+    domainEl.textContent = 'Not available';
+    domainEl.style.color = '#888';
+    // Disable all controls
+    enabledCheckbox.disabled = true;
+    filterModeCheckbox.disabled = true;
+    sliders.forEach(s => s.disabled = true);
+    resetButton.disabled = true;
+    clearButton.disabled = true;
+    return;
   }
+  
+  storageKey = `site:${currentDomain}`;
+  domainEl.textContent = currentDomain;
+  loadSettings();
 
+  // Event listeners
   enabledCheckbox.addEventListener('change', () => {
     if (enabledCheckbox.checked) {
       filterModeCheckbox.checked = false;
@@ -94,12 +141,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updateUIState();
     saveSettings(true);
   });
-  brightnessInput.addEventListener('input', () => saveSettings(false));
-  contrastInput.addEventListener('input', () => saveSettings(false));
-  saturationInput.addEventListener('input', () => saveSettings(false));
-  hueInput.addEventListener('input', () => saveSettings(false));
+  
+  sliders.forEach(slider => slider.addEventListener('input', () => saveSettings(false)));
 
-  // Reset button - restore defaults but keep mode states
+  // Reset sliders to defaults
   resetButton.addEventListener('click', () => {
     brightnessInput.value = DEFAULT_SETTINGS.brightness;
     contrastInput.value = DEFAULT_SETTINGS.contrast;
@@ -108,10 +153,9 @@ document.addEventListener('DOMContentLoaded', () => {
     saveSettings(true);
   });
 
-  // Clear settings button - completely reset everything
+  // Clear settings for this site
   clearButton.addEventListener('click', () => {
-    if (confirm('This will clear all settings and disable all modes. Continue?')) {
-      // Reset UI first
+    if (confirm(`Clear settings for ${currentDomain}?`)) {
       enabledCheckbox.checked = DEFAULT_SETTINGS.enabled;
       filterModeCheckbox.checked = DEFAULT_SETTINGS.filterMode;
       brightnessInput.value = DEFAULT_SETTINGS.brightness;
@@ -121,11 +165,9 @@ document.addEventListener('DOMContentLoaded', () => {
       updateLabels();
       updateUIState();
       
-      // Clear and save defaults immediately
       if (saveTimeout) clearTimeout(saveTimeout);
-      chrome.storage.sync.clear(() => {
-        chrome.storage.sync.set(DEFAULT_SETTINGS);
-      });
+      pendingSettings = null;
+      chrome.storage.sync.remove([storageKey]).catch(() => {});
     }
   });
 });

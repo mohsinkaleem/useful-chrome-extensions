@@ -13,6 +13,17 @@ body {
   gap: 15px;
 }
 
+.domain-info {
+  background: #333;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 13px;
+  color: #4fc3f7;
+  font-weight: 500;
+  word-break: break-all;
+}
+
 .header {
   display: flex;
   justify-content: space-between;
@@ -125,10 +136,7 @@ input[type=checkbox]:disabled + .slider {
   cursor: not-allowed;
 }
 
-.control-group:has(input:disabled) label {
-  opacity: 0.4;
-}
-
-.header:has(input:disabled) h3 {
+/* Disabled label state - applied via JS */
+.control-group.disabled label {
   opacity: 0.4;
 }
