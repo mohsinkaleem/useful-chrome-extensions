@@ -1,10 +1,8 @@
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
-  import { getDomainsByRecency, getDomainsByCount, getUniqueFolders, getAllBookmarks } from './db.js';
+  import { onMount } from 'svelte';
+  import { getDomainsByRecency, getDomainsByCount, getUniqueFolders } from './db.js';
   import { getPlatformDisplayName, getPlatformIcon, getContentTypeDisplayName } from './url-parsers.js';
-  import { activeFilters } from './stores.js';
-  
-  const dispatch = createEventDispatcher();
+  import { activeFilters, allBookmarks } from './stores.js';
   
   // Props for search result stats
   export let searchResultStats = null;
@@ -57,7 +55,8 @@
   }
   
   async function loadPlatformData() {
-    const bookmarks = await getAllBookmarks();
+    // Use cached bookmarks from store instead of fetching again
+    const bookmarks = await allBookmarks.getCached();
     
     // Count platforms
     const platformCounts = {};
@@ -212,13 +211,6 @@
     } else {
       activeFilters.setFilter('hasPublishedDate', null);
     }
-  }
-
-  function dispatchFilters() {
-    // No-op or dispatch if parent needs to know something changed, 
-    // but parent should subscribe to store now.
-    // Keeping it for compatibility if needed, but passing store value.
-    dispatch('filter', $activeFilters);
   }
 
   function hasActiveFilters() {

@@ -2,6 +2,12 @@
 // Provides domain hierarchy visualization, behavioral analytics, and data insights
 
 import { db } from './db.js';
+import { allBookmarks } from './stores.js';
+
+// Use cached bookmarks to avoid redundant DB calls across insight functions
+async function getBookmarksCached() {
+  return await allBookmarks.getCached();
+}
 
 /**
  * Build domain hierarchy tree for visualization
@@ -9,7 +15,7 @@ import { db } from './db.js';
  */
 export async function getDomainHierarchy() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const hierarchy = {};
 
     bookmarks.forEach(bookmark => {
@@ -124,7 +130,7 @@ export async function getDomainTreemapData() {
  */
 export async function getStaleBookmarks(daysThreshold = 90) {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const now = Date.now();
     const threshold = daysThreshold * 24 * 60 * 60 * 1000;
     
@@ -144,7 +150,7 @@ export async function getStaleBookmarks(daysThreshold = 90) {
  */
 export async function getReadingListSuggestions(limit = 20) {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
     
     return bookmarks
@@ -166,7 +172,7 @@ export async function getReadingListSuggestions(limit = 20) {
  */
 export async function getMostAccessedBookmarks(limit = 20) {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     return bookmarks
       .filter(b => b.accessCount > 0)
@@ -183,7 +189,7 @@ export async function getMostAccessedBookmarks(limit = 20) {
  */
 export async function getCategoryTrends() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const trends = {};
     
     bookmarks.forEach(bookmark => {
@@ -235,7 +241,7 @@ export async function getCategoryTrends() {
  */
 export async function getExpertiseAreas() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const expertiseScores = {};
     
     bookmarks.forEach(bookmark => {
@@ -268,7 +274,7 @@ export async function getExpertiseAreas() {
  */
 export async function getBookmarkAndForget() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const sixMonthsAgo = Date.now() - (180 * 24 * 60 * 60 * 1000);
     
     return bookmarks
@@ -289,7 +295,7 @@ export async function getBookmarkAndForget() {
  */
 export async function getContentFreshness() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const now = Date.now();
     
     const ageGroups = {
@@ -335,7 +341,7 @@ export async function getContentFreshness() {
  */
 export async function getInsightsSummary() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const events = await db.events.toArray();
     
     const now = Date.now();
@@ -516,7 +522,7 @@ export async function getHourlyAccessPatterns() {
  */
 export async function getDeadLinkInsights() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const deadLinks = bookmarks.filter(b => b.isAlive === false);
     const now = Date.now();
     
@@ -635,7 +641,7 @@ export async function getDeadLinkInsights() {
  */
 export async function getCollectionHealthMetrics() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const total = bookmarks.length;
     
     if (total === 0) {
@@ -746,7 +752,7 @@ export async function getCollectionHealthMetrics() {
  */
 export async function getContentAnalysis() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     // Category Breakdown
     const categoryCount = {};
@@ -890,7 +896,7 @@ export async function getContentAnalysis() {
  */
 export async function getActionableInsights() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const now = Date.now();
     
     const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
@@ -1032,7 +1038,7 @@ export async function getActionableInsights() {
  */
 export async function getDomainIntelligence() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     // Group by domain
     const domainData = {};
@@ -1179,7 +1185,7 @@ export async function getDomainIntelligence() {
  */
 export async function getTimeBasedAnalysis() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const now = Date.now();
     
     // Bookmarking Hours (0-23)
@@ -1331,7 +1337,7 @@ export async function getTimeBasedAnalysis() {
  */
 export async function getPlatformDistribution() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const total = bookmarks.length;
     
     if (total === 0) {
@@ -1368,7 +1374,7 @@ export async function getPlatformDistribution() {
  */
 export async function getCreatorStats(limit = 20) {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     // Group by creator and platform
     const creatorMap = {};
@@ -1450,7 +1456,7 @@ export async function getCreatorStats(limit = 20) {
  */
 export async function getChannelClusters() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     const clusters = {
       youtube: {},
@@ -1517,7 +1523,7 @@ export async function getChannelClusters() {
  */
 export async function getRepositoryGroups() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const githubBookmarks = bookmarks.filter(b => b.platform === 'github');
     
     const repoMap = {};
@@ -1587,7 +1593,7 @@ export async function getRepositoryGroups() {
  */
 export async function getContentTypeDistribution() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     const distribution = {};
     
@@ -1625,7 +1631,7 @@ export async function getContentTypeDistribution() {
  */
 export async function getCreatorLeaderboard(limit = 10) {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     const now = Date.now();
     const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
     
@@ -1698,7 +1704,7 @@ export async function getCreatorLeaderboard(limit = 10) {
  */
 export async function getVisualGallery(limit = 50) {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     // Filter bookmarks with thumbnails
     const withThumbnails = bookmarks
@@ -1736,7 +1742,7 @@ export async function getVisualGallery(limit = 50) {
  */
 export async function getTopicClusters() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     const topicMap = {};
     
@@ -1814,7 +1820,7 @@ export async function getTopicClusters() {
  */
 export async function getPlatformInsightsSummary() {
   try {
-    const bookmarks = await db.bookmarks.toArray();
+    const bookmarks = await getBookmarksCached();
     
     const summary = {
       youtube: {

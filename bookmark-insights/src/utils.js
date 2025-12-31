@@ -1,6 +1,21 @@
 // Shared utility functions for Bookmark Insight
 
 /**
+ * Common stop words for text processing
+ * Used by similarity detection and word frequency analysis
+ */
+export const STOP_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+  'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did',
+  'will', 'would', 'could', 'should', 'may', 'might', 'can', 'about', 'from', 'up', 'out',
+  'into', 'over', 'under', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
+  'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their',
+  'what', 'which', 'who', 'when', 'where', 'why', 'how', 'all', 'each', 'every', 'both',
+  'few', 'more', 'most', 'other', 'some', 'such', 'no', 'not', 'only', 'same', 'so', 'than',
+  'too', 'very', 'just', 'also', 'now', 'here', 'there', 'then', 'once', 'if', 'any', 'as'
+]);
+
+/**
  * Format a timestamp to a localized date string
  * @param {number} timestamp - Unix timestamp in milliseconds
  * @returns {string} Formatted date string

@@ -3,10 +3,25 @@
 
 import { Document } from 'flexsearch';
 import { db, getAllBookmarks, setCache, getCache } from './db.js';
+import { allBookmarks as bookmarksStore } from './stores.js';
 
 // FlexSearch index instance
 let searchIndex = null;
 let indexInitialized = false;
+
+/**
+ * Get bookmarks using cached store when possible
+ * Falls back to direct db call if store not available
+ */
+async function getBookmarksCached() {
+  try {
+    // Try to use the cached store first
+    return await bookmarksStore.getCached();
+  } catch (error) {
+    // Fallback to direct db call
+    return await getAllBookmarks();
+  }
+}
 
 /**
  * Parse advanced search query with +/- modifiers, quoted phrases, and regex patterns
@@ -268,7 +283,8 @@ export async function rebuildSearchIndex() {
     }
   });
 
-  const bookmarks = await getAllBookmarks();
+  // Use cached bookmarks for better performance
+  const bookmarks = await getBookmarksCached();
   
   // Add all bookmarks to index
   for (const bookmark of bookmarks) {
@@ -621,11 +637,13 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 
   const {
     limit = 50,
-    offset = 0
+    offset = 0,
+    computeStats = false  // New option to compute stats in single pass
   } = options;
 
-  let allBookmarks = await getAllBookmarks();
-  let filteredBookmarks = allBookmarks;
+  // Use cached bookmarks for better performance
+  let allBookmarksData = await getBookmarksCached();
+  let filteredBookmarks = allBookmarksData;
 
   // Apply activeFilters if provided
   if (activeFilters) {
@@ -633,11 +651,12 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 
       filteredBookmarks = filteredBookmarks.filter(b => {
           if (activeFilters.domains && activeFilters.domains.length > 0) {
-              const domain = (b.domain || new URL(b.url).hostname || '').toLowerCase();
+              const domain = (b.domain || '').toLowerCase();
               if (!activeFilters.domains.some(d => domain.includes(d))) return false;
           }
           if (activeFilters.folders && activeFilters.folders.length > 0) {
-              const folder = (b.folderPath || b.folder || b.category || '').toLowerCase();
+              // Fixed: Only check folderPath, don't fall back to category
+              const folder = (b.folderPath || '').toLowerCase();
               if (!activeFilters.folders.some(f => folder.includes(f))) return false;
           }
           if (activeFilters.platforms && activeFilters.platforms.length > 0) {
@@ -757,13 +776,21 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
   
   const total = filteredBookmarks.length;
   
-  return {
+  // Build response
+  const response = {
     results: filteredBookmarks.slice(offset, offset + limit),
     total,
     hasMore: offset + limit < total,
     parsedQuery,
     specialFilters
   };
+  
+  // Compute stats in single pass if requested (avoids second search call)
+  if (computeStats) {
+    response.stats = computeSearchResultStats(filteredBookmarks);
+  }
+  
+  return response;
 }
 
 /**
@@ -841,84 +868,8 @@ export function computeSearchResultStats(bookmarks) {
   return { domains, folders, platforms, creators, contentTypes };
 }
 
-// Advanced search with filters
-export async function advancedSearch(query, filters = {}) {
-  const searchResult = await searchBookmarks(query, {
-    limit: 1000 // Get more results for filtering
-  });
-
-  let results = searchResult.results || [];
-
-  // Apply filters
-  if (filters.category) {
-    results = results.filter(b => b.category === filters.category);
-  }
-
-  if (filters.domain) {
-    results = results.filter(b => b.domain === filters.domain);
-  }
-
-  if (filters.domains && filters.domains.length > 0) {
-    results = results.filter(b => filters.domains.includes(b.domain));
-  }
-
-  if (filters.categories && filters.categories.length > 0) {
-    results = results.filter(b => filters.categories.includes(b.category));
-  }
-
-  if (filters.dateRange) {
-    const { startDate, endDate } = filters.dateRange;
-    results = results.filter(b => 
-      b.dateAdded >= startDate && b.dateAdded <= endDate
-    );
-  }
-
-  if (filters.isAlive !== undefined) {
-    results = results.filter(b => b.isAlive === filters.isAlive);
-  }
-
-  if (filters.hasDescription !== undefined) {
-    if (filters.hasDescription) {
-      results = results.filter(b => b.description && b.description.length > 0);
-    } else {
-      results = results.filter(b => !b.description || b.description.length === 0);
-    }
-  }
-
-  // Apply sorting
-  if (filters.sortBy) {
-    switch (filters.sortBy) {
-      case 'relevance':
-        // Already sorted by search score
-        break;
-      case 'date_desc':
-        results.sort((a, b) => b.dateAdded - a.dateAdded);
-        break;
-      case 'date_asc':
-        results.sort((a, b) => a.dateAdded - b.dateAdded);
-        break;
-      case 'title_asc':
-        results.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-        break;
-      case 'title_desc':
-        results.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
-        break;
-      case 'domain':
-        results.sort((a, b) => (a.domain || '').localeCompare(b.domain || ''));
-        break;
-    }
-  }
-
-  // Apply pagination
-  const limit = filters.limit || 50;
-  const offset = filters.offset || 0;
-  
-  return {
-    results: results.slice(offset, offset + limit),
-    total: results.length,
-    hasMore: offset + limit < results.length
-  };
-}
+// Note: advancedSearch function removed - use searchBookmarks() with activeFilters parameter instead
+// The main searchBookmarks() function now supports all advanced filtering via the activeFilters object
 
 // Clear the search index
 export async function clearSearchIndex() {

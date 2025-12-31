@@ -84,13 +84,20 @@ const createStatsStore = () => {
     
     /**
      * Start auto-refresh (call when dashboard opens)
+     * Only refreshes when the page is visible to save resources
      * @param {number} intervalMs - Refresh interval in milliseconds
      */
     startAutoRefresh(intervalMs = 30000) {
       this.refresh(); // Initial refresh
       if (!refreshInterval) {
-        refreshInterval = setInterval(() => this.refresh(), intervalMs);
-        console.log('Stats auto-refresh started');
+        const refreshIfVisible = () => {
+          // Only refresh when page is visible (saves resources when tab is in background)
+          if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+            this.refresh();
+          }
+        };
+        refreshInterval = setInterval(refreshIfVisible, intervalMs);
+        console.log('Stats auto-refresh started (visibility-aware)');
       }
     },
     
@@ -315,20 +322,77 @@ export async function updateSetting(key, value) {
 // UI State Stores - Filters, Search, Selection
 // =============================================
 
-// Store for all bookmarks to avoid repeated fetching
+// Store for all bookmarks with caching to avoid repeated fetching
 function createBookmarksStore() {
     const { subscribe, set, update } = writable([]);
+    let lastFetchTime = 0;
+    let isFetching = false;
+    const CACHE_TTL = 30000; // 30 seconds cache
     
     return {
         subscribe,
         set,
-        refresh: async () => {
+        /**
+         * Get cached bookmarks or fetch fresh if stale
+         * @param {number} maxAge - Max age in ms before refresh (default: 30s)
+         * @returns {Promise<Array>} Bookmarks array
+         */
+        getCached: async (maxAge = CACHE_TTL) => {
+            const now = Date.now();
+            let currentData = [];
+            
+            // Get current value synchronously
+            const unsubscribe = subscribe(value => { currentData = value; });
+            unsubscribe();
+            
+            // Return cached if fresh enough
+            if (currentData.length > 0 && (now - lastFetchTime) < maxAge) {
+                return currentData;
+            }
+            
+            // Prevent concurrent fetches
+            if (isFetching) {
+                // Wait for ongoing fetch
+                return new Promise(resolve => {
+                    const unsub = subscribe(value => {
+                        if (value.length > 0 || !isFetching) {
+                            unsub();
+                            resolve(value);
+                        }
+                    });
+                });
+            }
+            
+            // Fetch fresh data
+            isFetching = true;
             try {
                 const bookmarks = await getAllBookmarks();
                 set(bookmarks);
+                lastFetchTime = Date.now();
+                return bookmarks;
+            } catch (error) {
+                console.error('Error fetching bookmarks:', error);
+                return currentData;
+            } finally {
+                isFetching = false;
+            }
+        },
+        refresh: async () => {
+            try {
+                isFetching = true;
+                const bookmarks = await getAllBookmarks();
+                set(bookmarks);
+                lastFetchTime = Date.now();
+                return bookmarks;
             } catch (error) {
                 console.error('Error refreshing bookmarks:', error);
+                return [];
+            } finally {
+                isFetching = false;
             }
+        },
+        invalidate: () => {
+            lastFetchTime = 0;
         }
     };
 }

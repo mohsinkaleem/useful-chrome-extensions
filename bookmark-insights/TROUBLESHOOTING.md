@@ -71,11 +71,20 @@
 ### Performance Issues
 **Problem**: Extension is slow or unresponsive
 **Solutions**:
-- **Similarity Detection**: The "Scan for Similarities" feature is now optimized to run in the background without freezing the page. If it still feels slow, try processing smaller batches.
-- Check how many bookmarks you have (thousands can slow things down)
+
+**Recent Optimizations (v3.2):**
+- Search is now debounced (300ms) to eliminate typing lag
+- Centralized bookmark cache (30s TTL) prevents redundant database reads
+- Stats computed in single-pass with search results
+- Background refresh pauses when tab is hidden
+
+**If still slow:**
+- **Similarity Detection**: The "Scan for Similarities" feature runs in the background without freezing. If slow, try smaller batches.
+- Check bookmark count (10,000+ bookmarks may need patience)
 - Close and reopen the extension
 - Restart Chrome
 - Check Chrome's Task Manager (`Shift+Esc`) for memory usage
+- Reduce enrichment concurrency in settings (3 → 2)
 
 ### Favicon Loading Errors
 **Problem**: Console shows "Not allowed to load local resource: chrome://favicon/" or CSP violations

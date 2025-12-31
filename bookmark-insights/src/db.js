@@ -2,6 +2,7 @@
 // This provides a structured, indexed storage layer for bookmarks and enrichment data
 
 import Dexie from 'dexie';
+import { STOP_WORDS } from './utils.js';
 
 // Initialize Dexie database
 export const db = new Dexie('BookmarkInsightsDB');
@@ -316,28 +317,9 @@ export async function deleteBookmark(id) {
   }
 }
 
-// Search bookmarks (basic implementation, will be enhanced with FlexSearch later)
-export async function searchBookmarks(query) {
-  try {
-    if (!query || !query.trim()) {
-      return await db.bookmarks.orderBy('dateAdded').reverse().toArray();
-    }
-
-    const lowerQuery = query.toLowerCase();
-    const bookmarks = await db.bookmarks.toArray();
-    
-    return bookmarks.filter(bookmark => 
-      bookmark.title.toLowerCase().includes(lowerQuery) ||
-      bookmark.url.toLowerCase().includes(lowerQuery) ||
-      (bookmark.domain && bookmark.domain.toLowerCase().includes(lowerQuery)) ||
-      (bookmark.description && bookmark.description.toLowerCase().includes(lowerQuery)) ||
-      (bookmark.keywords && bookmark.keywords.some(k => k.toLowerCase().includes(lowerQuery)))
-    ).sort((a, b) => b.dateAdded - a.dateAdded);
-  } catch (error) {
-    console.error('Search error:', error);
-    return [];
-  }
-}
+// Note: The main searchBookmarks function is in search.js using FlexSearch
+// This legacy function is kept for backward compatibility but deprecated
+// Use import { searchBookmarks } from './search.js' instead
 
 // Get bookmarks by domain
 export async function getBookmarksByDomain(domain) {
@@ -1002,19 +984,13 @@ export async function getTitleWordFrequency() {
     const bookmarks = await getAllBookmarks();
     const wordCount = {};
     
-    const stopWords = new Set([
-      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-      'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did',
-      'will', 'would', 'could', 'should', 'may', 'might', 'can', 'about', 'from', 'up', 'out'
-    ]);
-    
     bookmarks.forEach(bookmark => {
       if (bookmark.title) {
         const words = bookmark.title
           .toLowerCase()
           .replace(/[^\w\s]/g, ' ')
           .split(/\s+/)
-          .filter(word => word.length > 2 && !stopWords.has(word));
+          .filter(word => word.length > 2 && !STOP_WORDS.has(word));
         
         words.forEach(word => {
           wordCount[word] = (wordCount[word] || 0) + 1;

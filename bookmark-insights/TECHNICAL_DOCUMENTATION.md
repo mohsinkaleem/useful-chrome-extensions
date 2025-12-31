@@ -1,6 +1,6 @@
 # Bookmark Insights - Technical Documentation
 
-**Version:** 3.1  
+**Version:** 3.2  
 **Last Updated:** December 31, 2025
 
 ## Table of Contents
@@ -57,14 +57,14 @@ Chrome Extension
 
 ```
 src/
-├── db.js              # IndexedDB layer (schema v4, CRUD, analytics, caching)
-├── stores.js          # Centralized state management (activeFilters, searchQuery, selectedBookmarks)
+├── db.js              # IndexedDB layer (schema v5, CRUD, analytics)
+├── stores.js          # Centralized state + bookmark cache with TTL
 ├── enrichment.js      # Enrichment pipeline & metadata fetching
-├── search.js          # FlexSearch + reactive filtering with activeFilters integration
-├── similarity.js      # TF-IDF similarity engine (on-demand)
-├── insights.js        # Analytics & insights (platform + 5 legacy functions)
+├── search.js          # FlexSearch + filtering with single-pass stats
+├── similarity.js      # TF-IDF similarity engine (uses cached bookmarks)
+├── insights.js        # Analytics & insights (uses cached bookmarks)
 ├── url-parsers.js     # Platform-specific URL parsing (YouTube, GitHub, etc.)
-├── utils.js           # Shared utilities
+├── utils.js           # Shared utilities and constants (STOP_WORDS)
 ├── Dashboard.svelte   # Main dashboard - orchestrates state, search, and filtering
 ├── Sidebar.svelte     # Reactive filter UI - subscribes to activeFilters store
 ├── VisualInsights.svelte  # Interactive insights (6 tabs incl. Platforms)
@@ -128,6 +128,23 @@ writable([])  // Array of bookmark IDs
 **Methods:**
 - `toggleSelection(id)` - Add/remove bookmark ID
 - `selectAll(ids)` - Select multiple bookmarks
+
+#### `allBookmarks` Store (Centralized Cache)
+
+High-performance bookmark cache with TTL to prevent redundant database reads:
+
+```javascript
+// Usage across modules
+const bookmarks = await allBookmarks.getCached();      // Default 30s TTL
+const fresh = await allBookmarks.getCached(60000);     // Custom 60s TTL
+allBookmarks.invalidate();                              // Force refresh next call
+```
+
+**Features:**
+- **30-second TTL**: Balances freshness with performance
+- **Deduplication**: Concurrent calls share the same fetch promise
+- **Cross-module**: Used by similarity.js (9 calls), insights.js (21 calls), Sidebar.svelte
+- **Visibility-aware**: Stats refresh pauses when tab is hidden
 - `clearSelection()` - Deselect all
 
 ### Reactive Integration
@@ -215,6 +232,7 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 - **v2**: Added `rawMetadata` field for comprehensive metadata storage
 - **v3**: Added `similarities` and `computedMetrics` tables for caching
 - **v4**: Added platform enrichment fields (`platform`, `creator`, `contentType`, `platformData`)
+- **v5**: Performance optimizations, centralized caching layer
 
 ### Tables
 
@@ -546,7 +564,22 @@ The search system (`search.js`) uses a hybrid approach:
 
 ### Caching System
 
-Intelligent caching with configurable TTL and smart invalidation.
+Multi-layer caching with configurable TTL and smart invalidation.
+
+**Bookmark Cache (stores.js):**
+
+Centralized bookmark cache prevents redundant database reads across modules:
+
+```javascript
+// All modules use cached bookmarks via:
+await allBookmarks.getCached(maxAge?)  // Default 30s TTL
+```
+
+- `similarity.js`: Uses cache for all 9 bookmark operations
+- `insights.js`: Uses cache for all 21 insight computations
+- `Sidebar.svelte`: Uses cache for filter counts
+
+**Computed Metrics Cache (db.js):**
 
 | Metric | TTL |
 |--------|-----|
@@ -580,6 +613,17 @@ Intelligent caching with configurable TTL and smart invalidation.
 - Accepts `activeFilters` from centralized store
 - Applies filters before text search for consistency
 - Returns `searchResultStats` for reactive sidebar updates
+
+**Performance Optimizations:**
+- **Debounced Search**: 300ms debounce in Dashboard prevents excessive searches during typing
+- **Single-Pass Stats**: `computeStats` option computes result statistics in the same pass
+- **Cached Bookmarks**: Uses `allBookmarks.getCached()` to avoid redundant DB reads
+
+```javascript
+// Single-pass search with stats
+const result = await searchBookmarks(query, filters, { computeStats: true });
+// Returns: { results, stats: { domains, folders, platforms, ... } }
+```
 
 **Field Boosting:**
 
@@ -739,6 +783,10 @@ searchQueryStore.update(fn)
 // selectedBookmarksStore
 selectedBookmarksStore.set(ids)
 selectedBookmarksStore.update(fn)
+
+// allBookmarks store (centralized cache)
+allBookmarks.getCached(maxAge?)    // Get cached bookmarks (default 30s TTL)
+allBookmarks.invalidate()          // Force cache refresh
 ```
 
 ### Similarity API (similarity.js)
@@ -878,4 +926,4 @@ MIT License
 
 ---
 
-**Last reviewed:** December 21, 2025
+**Last reviewed:** December 31, 2025

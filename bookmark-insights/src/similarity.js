@@ -3,6 +3,20 @@
 // Now with on-demand computation and caching for better performance
 
 import { getAllBookmarks, getCache, setCache, getCachedMetric, CACHE_DURATIONS, getBookmark, getBookmarksByDomain, getBookmarksByCategory, storeSimilarities, getStoredSimilarities } from './db.js';
+import { STOP_WORDS } from './utils.js';
+import { allBookmarks as bookmarksStore } from './stores.js';
+
+/**
+ * Get bookmarks using cached store when possible
+ * Falls back to direct db call if store not available
+ */
+async function getBookmarksCached() {
+  try {
+    return await bookmarksStore.getCached();
+  } catch (error) {
+    return await getBookmarksCached();
+  }
+}
 
 // Calculate TF-IDF scores for a document
 function calculateTFIDF(documents) {
@@ -97,14 +111,6 @@ function cosineSimilarity(vec1, vec2) {
 
 // Extract meaningful words from bookmark
 function extractWords(bookmark) {
-  const stopWords = new Set([
-    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-    'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did',
-    'will', 'would', 'could', 'should', 'may', 'might', 'can', 'about', 'from', 'up', 'out',
-    'into', 'over', 'under', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
-    'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their'
-  ]);
-  
   const words = [];
   
   // Extract from title (weight: 3)
@@ -113,7 +119,7 @@ function extractWords(bookmark) {
       .toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
-      .filter(w => w.length > 2 && !stopWords.has(w));
+      .filter(w => w.length > 2 && !STOP_WORDS.has(w));
     words.push(...titleWords, ...titleWords, ...titleWords); // Triple weight
   }
   
@@ -123,7 +129,7 @@ function extractWords(bookmark) {
       .toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
-      .filter(w => w.length > 2 && !stopWords.has(w))
+      .filter(w => w.length > 2 && !STOP_WORDS.has(w))
       .slice(0, 20); // Limit description words
     words.push(...descWords, ...descWords); // Double weight
   }
@@ -132,7 +138,7 @@ function extractWords(bookmark) {
   if (bookmark.keywords && Array.isArray(bookmark.keywords)) {
     const keywordWords = bookmark.keywords
       .map(k => k.toLowerCase())
-      .filter(w => w.length > 2 && !stopWords.has(w));
+      .filter(w => w.length > 2 && !STOP_WORDS.has(w));
     words.push(...keywordWords, ...keywordWords); // Double weight
   }
   
@@ -154,7 +160,7 @@ export async function findSimilarBookmarksEnhanced(threshold = 0.3, maxPairs = 1
       return cached.results;
     }
     
-    const bookmarks = await getAllBookmarks();
+    const bookmarks = await getBookmarksCached();
     
     if (bookmarks.length < 2) {
       return [];
@@ -229,7 +235,7 @@ export async function findSimilarBookmarksEnhanced(threshold = 0.3, maxPairs = 1
 // Find duplicate bookmarks (exact or very similar URLs)
 export async function findDuplicatesEnhanced() {
   try {
-    const bookmarks = await getAllBookmarks();
+    const bookmarks = await getBookmarksCached();
     const urlMap = new Map();
     const normalizedUrlMap = new Map();
     
@@ -287,7 +293,7 @@ export async function findDuplicatesEnhanced() {
 // Find bookmarks that might be related (same domain, similar category)
 export async function findRelatedBookmarks(bookmarkId, limit = 10) {
   try {
-    const bookmarks = await getAllBookmarks();
+    const bookmarks = await getBookmarksCached();
     const targetBookmark = bookmarks.find(b => b.id === bookmarkId);
     
     if (!targetBookmark) {
@@ -389,7 +395,7 @@ async function findSimilarCandidates(bookmark) {
   
   // Step 3: If we have keywords, look for bookmarks with matching keywords
   if (bookmark.keywords && bookmark.keywords.length > 0) {
-    const allBookmarks = await getAllBookmarks();
+    const allBookmarks = await getBookmarksCached();
     const keywordSet = new Set(bookmark.keywords.map(k => k.toLowerCase()));
     
     allBookmarks
@@ -488,7 +494,7 @@ export async function getSimilarBookmarksWithCache(bookmarkId) {
       
       if (!isStale) {
         // Enrich with bookmark details
-        const allBookmarks = await getAllBookmarks();
+        const allBookmarks = await getBookmarksCached();
         const bookmarkMap = new Map(allBookmarks.map(b => [b.id, b]));
         
         return stored.map(s => ({
@@ -504,7 +510,7 @@ export async function getSimilarBookmarksWithCache(bookmarkId) {
     const computed = await computeSimilarityForBookmark(bookmarkId);
     
     // Enrich with bookmark details
-    const allBookmarks = await getAllBookmarks();
+    const allBookmarks = await getBookmarksCached();
     const bookmarkMap = new Map(allBookmarks.map(b => [b.id, b]));
     
     return computed.map(s => ({
@@ -526,7 +532,7 @@ export async function getSimilarBookmarksWithCache(bookmarkId) {
  */
 export async function batchComputeSimilarities(progressCallback = null) {
   try {
-    const bookmarks = await getAllBookmarks();
+    const bookmarks = await getBookmarksCached();
     const enrichedBookmarks = bookmarks.filter(b => b.lastChecked);
     
     let completed = 0;
@@ -756,7 +762,7 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
       }
     }
     
-    const bookmarks = await getAllBookmarks();
+    const bookmarks = await getBookmarksCached();
     
     if (bookmarks.length < 2) {
       return { pairs: [], stats: { total: 0, sameDomain: 0, crossDomain: 0 }, fromCache: false };
@@ -986,7 +992,7 @@ export async function findUselessBookmarks(options = {}) {
   } = options;
   
   try {
-    const bookmarks = await getAllBookmarks();
+    const bookmarks = await getBookmarksCached();
     
     const results = {
       deadLinks: [],

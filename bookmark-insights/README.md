@@ -199,6 +199,14 @@ npm run build:js   # JavaScript only
 - **Charts**: Chart.js 4
 - **Build**: Rollup
 
+## Performance Optimizations
+
+- **Centralized Bookmark Cache**: 30-second TTL cache prevents redundant database reads across modules
+- **Debounced Search**: 300ms debounce eliminates UI lag during typing
+- **Single-Pass Stats**: Search results and statistics computed in one operation
+- **Visibility-Aware Refresh**: Background stats refresh pauses when tab is hidden
+- **Lazy Loading**: Charts and heavy computations load on-demand
+
 ## File Structure
 
 ```
@@ -206,13 +214,14 @@ npm run build:js   # JavaScript only
 ├── extension/         # Clean extension build (Load this in Chrome)
 ├── public/            # Compiled assets
 ├── src/               # Svelte components and logic
-│   ├── db.js          # IndexedDB operations & caching
+│   ├── db.js          # IndexedDB operations
 │   ├── enrichment.js  # Metadata fetching pipeline
 │   ├── url-parsers.js # Platform-specific URL parsing
-│   ├── search.js      # FlexSearch with platform filters
+│   ├── search.js      # FlexSearch with single-pass stats
 │   ├── similarity.js  # TF-IDF similarity engine
 │   ├── insights.js    # Analytics & platform insights
-│   ├── stores.js      # Svelte state management
+│   ├── stores.js      # Svelte state + bookmark cache
+│   ├── utils.js       # Shared utilities & constants
 │   ├── Dashboard.svelte   # Main dashboard
 │   └── Sidebar.svelte     # Filters with platforms & creators
 ├── background.js      # Compiled background service worker

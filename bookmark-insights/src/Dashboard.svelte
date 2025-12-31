@@ -7,8 +7,8 @@
   import Sidebar from './Sidebar.svelte';
   import DataExplorer from './DataExplorer.svelte';
   import VisualInsights from './VisualInsights.svelte';
-  import { SORT_OPTIONS } from './utils.js';
-  import { searchBookmarks, computeSearchResultStats } from './search.js';
+  import { SORT_OPTIONS, debounce } from './utils.js';
+  import { searchBookmarks } from './search.js';
   import { 
     getBookmarksPaginated, 
     getBookmarksByDomain, 
@@ -222,27 +222,33 @@
     });
   });
   
-  // Reactive search trigger
+  // Debounced search function to prevent excessive calls during typing
+  const debouncedLoadBookmarks = debounce(() => {
+      loadBookmarks(0, false);
+  }, 300);
+  
+  // Reactive search trigger with debouncing
   $: {
       $searchQueryStore;
       $activeFilters;
       currentSortBy;
-      resetPagination();
+      currentPage = 0;
+      debouncedLoadBookmarks();
   }
   
-  function resetPagination() {
-      currentPage = 0;
-      // We don't await here because it's triggered by reactive statement
-      loadBookmarks(0, false);
-  }
+  // Removed resetPagination - now handled inline with debouncing
 
   async function loadBookmarks(page, append) {
       loading = true;
       try {
+          // Compute stats in single pass when filters are active
+          const needsStats = $searchQueryStore || hasActiveFilters($activeFilters);
+          
           const options = {
               limit: pageSize,
               offset: page * pageSize,
-              sortBy: currentSortBy
+              sortBy: currentSortBy,
+              computeStats: needsStats  // Single-pass stats computation
           };
           
           const result = await searchBookmarks($searchQueryStore, $activeFilters, options);
@@ -257,13 +263,8 @@
           hasMore = result.hasMore;
           parsedSearchQuery = result.parsedQuery;
           
-          // Update stats for sidebar
-          if ($searchQueryStore || hasActiveFilters($activeFilters)) {
-               const statsResult = await searchBookmarks($searchQueryStore, $activeFilters, { limit: 1000, offset: 0 });
-               searchResultStats = computeSearchResultStats(statsResult.results);
-          } else {
-              searchResultStats = null;
-          }
+          // Use stats from single-pass computation (no second search call)
+          searchResultStats = needsStats ? result.stats : null;
           
       } catch (err) {
           console.error('Error loading bookmarks:', err);

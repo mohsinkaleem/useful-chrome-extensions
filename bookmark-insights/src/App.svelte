@@ -3,7 +3,8 @@
   import BookmarkCard from './BookmarkCard.svelte';
   import SearchBar from './SearchBar.svelte';
   import Sidebar from './Sidebar.svelte';
-  import { searchBookmarks, getAllBookmarks, getBookmarksByDomain, getBookmarksByDateRange, getBookmarksByFolder } from './db.js';
+  import { getAllBookmarks, getBookmarksByDomain, getBookmarksByDateRange, getBookmarksByFolder } from './db.js';
+  import { searchBookmarks } from './search.js';
   
   let bookmarks = [];
   let loading = true;
@@ -31,7 +32,8 @@
     
     try {
       loading = true;
-      bookmarks = await searchBookmarks(query);
+      const result = await searchBookmarks(query);
+      bookmarks = result.results || [];
     } catch (err) {
       error = err.message;
     } finally {
