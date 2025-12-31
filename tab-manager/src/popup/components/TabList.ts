@@ -36,15 +36,20 @@ export class TabList {
     if (!this.container) return;
     
     // Clean up all existing tooltips before re-rendering
+    // Note: We are moving to native tooltips for performance, but keeping cleanup just in case
     const existingTooltips = document.querySelectorAll('.tab-tooltip');
     existingTooltips.forEach(tooltip => tooltip.remove());
     
     this.container.innerHTML = '';
     
+    const fragment = document.createDocumentFragment();
+    
     for (const [windowId, tabs] of tabsByWindow.entries()) {
       const windowGroup = this.createWindowGroup(windowId, tabs, viewMode);
-      this.container.appendChild(windowGroup);
+      fragment.appendChild(windowGroup);
     }
+    
+    this.container.appendChild(fragment);
   }
 
   private createWindowGroup(windowId: number, tabs: chrome.tabs.Tab[], viewMode: string): HTMLElement {
@@ -63,8 +68,29 @@ export class TabList {
     actions.className = 'window-actions';
     
     const bookmarkBtn = this.createButton('★ All', async () => {
-      const { bulkBookmarkTabs } = await import('../../shared/bookmark-utils.js');
-      await bulkBookmarkTabs(tabs, `Window ${windowId}`);
+      try {
+        const bookmarkableTabs = tabs.filter(t => t.url && !t.url.startsWith('chrome://'));
+        
+        if (bookmarkableTabs.length === 0) {
+          alert('No bookmarkable tabs in this window.');
+          return;
+        }
+        
+        const defaultName = `Window ${windowId} (${bookmarkableTabs.length} tabs) - ${new Date().toLocaleDateString()}`;
+        const name = prompt(
+          `Bookmark ${bookmarkableTabs.length} tab(s) from Window ${windowId}?\n\nEnter folder name:`,
+          defaultName
+        );
+        
+        if (name) {
+          const { bulkBookmarkTabs } = await import('../../shared/bookmark-utils.js');
+          const bookmarks = await bulkBookmarkTabs(bookmarkableTabs, name);
+          alert(`✅ Successfully bookmarked ${bookmarks.length} tabs from Window ${windowId} to folder "${name}"`);
+        }
+      } catch (e) {
+        console.error('Failed to bookmark window tabs:', e);
+        alert('❌ Failed to bookmark tabs.');
+      }
     });
     
     const closeBtn = this.createButton('✕ Window', async () => {
@@ -81,10 +107,13 @@ export class TabList {
     const tabList = document.createElement('div');
     tabList.className = `tab-list ${viewMode}`;
     
+    // Use fragment for tabs
+    const tabsFragment = document.createDocumentFragment();
     for (const tab of tabs) {
       const tabItem = this.createTabItem(tab, viewMode);
-      tabList.appendChild(tabItem);
+      tabsFragment.appendChild(tabItem);
     }
+    tabList.appendChild(tabsFragment);
     
     group.appendChild(header);
     group.appendChild(tabList);
@@ -155,8 +184,18 @@ export class TabList {
     let urlText = displayUrl;
     try {
       if (displayUrl) {
-        const urlObj = new URL(displayUrl);
-        urlText = urlObj.hostname.replace(/^www\./, '');
+        // Optimization: Simple string manipulation for common protocols instead of new URL()
+        if (displayUrl.startsWith('http')) {
+          const parts = displayUrl.split('/');
+          if (parts.length >= 3) {
+            urlText = parts[2].replace(/^www\./, '');
+          } else {
+            urlText = displayUrl;
+          }
+        } else {
+          const urlObj = new URL(displayUrl);
+          urlText = urlObj.hostname.replace(/^www\./, '');
+        }
       }
     } catch (e) {
       // If URL parsing fails, use the original
@@ -227,51 +266,8 @@ export class TabList {
     item.appendChild(badges);
     item.appendChild(actions);
     
-    // Create hover tooltip
-    const tooltip = document.createElement('div');
-    tooltip.className = 'tab-tooltip hidden';
-    const tooltipContent = document.createElement('div');
-    tooltipContent.className = 'tooltip-content';
-    // Truncate title to max 60 characters
-    tooltipContent.textContent = displayTitle.length > 60 ? displayTitle.substring(0, 60) + '...' : displayTitle;
-    const tooltipUrl = document.createElement('div');
-    tooltipUrl.className = 'tooltip-url';
-    // Truncate URL to max 80 characters
-    tooltipUrl.textContent = displayUrl.length > 80 ? displayUrl.substring(0, 80) + '...' : displayUrl;
-    tooltip.appendChild(tooltipContent);
-    tooltip.appendChild(tooltipUrl);
-    document.body.appendChild(tooltip);
-    
-    // Show tooltip on hover
-    item.onmouseenter = (e) => {
-      const rect = item.getBoundingClientRect();
-      const tooltipRect = tooltip.getBoundingClientRect();
-      const tooltipHeight = 50; // estimated
-      const spaceAbove = rect.top;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      
-      let top: number;
-      // Position tooltip based on available space
-      if (spaceAbove > tooltipHeight || spaceAbove > spaceBelow) {
-        // Show above
-        top = rect.top - tooltipHeight - 4;
-      } else {
-        // Show below
-        top = rect.bottom + 4;
-      }
-      
-      tooltip.style.position = 'fixed';
-      tooltip.style.top = top + 'px';
-      tooltip.style.left = (rect.left + rect.width / 2) + 'px';
-      tooltip.style.transform = 'translateX(-50%)';
-      tooltip.classList.remove('hidden');
-    };
-    item.onmouseleave = () => {
-      tooltip.classList.add('hidden');
-    };
-    
-    // Store tooltip reference on item for cleanup
-    (item as any)._tooltip = tooltip;
+    // Use native tooltip for better performance with large number of tabs
+    item.title = `${displayTitle}\n${displayUrl}`;
     
     // Click to switch
     item.onclick = (e) => {

@@ -57,7 +57,8 @@ export class TabEventManager {
     chrome.tabs.onCreated.addListener(() => this.debouncedNotify());
     chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
       // Only notify on meaningful changes (not every favicon/loading state update)
-      if (changeInfo.status === 'complete' || changeInfo.title || changeInfo.url || 
+      // Removed 'status' check to prevent re-render on loading completion
+      if (changeInfo.title || changeInfo.url || 
           changeInfo.audible !== undefined || changeInfo.pinned !== undefined ||
           changeInfo.discarded !== undefined) {
         this.debouncedNotify();
@@ -79,9 +80,10 @@ export class TabEventManager {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
+    // Increased debounce to 300ms to batch more updates for large tab counts
     this.debounceTimer = setTimeout(() => {
       this.notifyListeners();
-    }, this.debounceDelay);
+    }, 300);
   }
 
   private notifyListeners() {

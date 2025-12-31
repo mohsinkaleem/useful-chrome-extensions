@@ -83,13 +83,75 @@ class TabManagerApp {
     });
 
     // Tab click
-    this.tabList.onTabClick((tabId) => {
-      chrome.tabs.update(tabId, { active: true });
+    this.tabList.onTabClick(async (tabId) => {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        
+        if (!tab.windowId) return;
+        
+        // Get current window state
+        const win = await chrome.windows.get(tab.windowId);
+        const updateInfo: chrome.windows.UpdateInfo = { focused: true };
+        
+        // Handle different window states
+        if (win.state === 'minimized') {
+          // Restore minimized window
+          updateInfo.state = 'normal';
+        } else if (win.state === 'fullscreen') {
+          // For fullscreen windows, we need to focus first, then activate tab
+          await chrome.windows.update(tab.windowId, { focused: true });
+          await chrome.tabs.update(tabId, { active: true });
+          return;
+        } else if (win.state === 'maximized') {
+          // Keep maximized state when focusing
+          updateInfo.state = 'maximized';
+        }
+        
+        // Focus the window first for better cross-display/cross-desktop support
+        await chrome.windows.update(tab.windowId, updateInfo);
+        
+        // Then activate the tab
+        await chrome.tabs.update(tabId, { active: true });
+      } catch (e) {
+        console.error('Failed to switch tab:', e);
+        alert('Failed to switch to tab. The window may have been closed.');
+      }
     });
 
     // Session manager
     document.getElementById('action-save-session')?.addEventListener('click', () => {
       this.sessionManager.showModal();
+    });
+
+    // Bookmark all tabs
+    document.getElementById('action-bookmark-all')?.addEventListener('click', async () => {
+      try {
+        const allTabs = await getAllTabs();
+        const bookmarkableTabs = allTabs.filter(t => t.url && !t.url.startsWith('chrome://'));
+        
+        if (bookmarkableTabs.length === 0) {
+          alert('No tabs available to bookmark.');
+          return;
+        }
+        
+        const tabsByWindow = await getTabsByWindow();
+        const windowCount = tabsByWindow.size;
+        
+        const defaultName = `All Tabs (${windowCount} windows) - ${new Date().toLocaleDateString()}`;
+        const name = prompt(
+          `Bookmark ${bookmarkableTabs.length} tabs from ${windowCount} window(s)?\n\nEnter folder name:`,
+          defaultName
+        );
+        
+        if (name) {
+          const { bulkBookmarkTabs } = await import('../shared/bookmark-utils.js');
+          const bookmarks = await bulkBookmarkTabs(bookmarkableTabs, name);
+          alert(`✅ Successfully bookmarked ${bookmarks.length} tabs from ${windowCount} window(s) to folder "${name}"`);
+        }
+      } catch (e) {
+        console.error('Failed to bookmark all tabs:', e);
+        alert('❌ Failed to bookmark tabs. See console for details.');
+      }
     });
 
     // Close all duplicates button
@@ -99,8 +161,13 @@ class TabManagerApp {
   }
 
   private async loadAndRenderTabs(searchQuery?: string, filters?: any) {
-    const tabs = await getAllTabs();
+    // Optimization: Get tabs by window only, then flatten to get all tabs
+    // This saves one expensive chrome.tabs.query({}) call
     const tabsByWindow = await getTabsByWindow();
+    const tabs: chrome.tabs.Tab[] = [];
+    for (const windowTabs of tabsByWindow.values()) {
+      tabs.push(...windowTabs);
+    }
     
     // Calculate duplicate URLs for highlighting
     const duplicates = findDuplicatesByUrl(tabs);
@@ -223,13 +290,35 @@ class TabManagerApp {
         this.selectedTabs.clear();
         break;
       case 'bookmark':
-        const tabsToBookmark = await chrome.tabs.query({ 
-          windowId: chrome.windows.WINDOW_ID_CURRENT 
-        });
-        const selectedTabObjs = tabsToBookmark.filter(t => t.id && tabs.includes(t.id));
-        // Import and use bookmark utility
-        const { bulkBookmarkTabs } = await import('../shared/bookmark-utils.js');
-        await bulkBookmarkTabs(selectedTabObjs, `Bookmarks ${new Date().toLocaleDateString()}`);
+        try {
+          const allTabs = await getAllTabs();
+          const selectedTabObjs = allTabs.filter(t => t.id && tabs.includes(t.id));
+          
+          if (selectedTabObjs.length === 0) {
+            alert('No tabs selected to bookmark.');
+            return;
+          }
+          
+          // Count unique windows
+          const windowIds = new Set(selectedTabObjs.map(t => t.windowId).filter(Boolean));
+          const windowCount = windowIds.size;
+          
+          const defaultName = `Selected Tabs (${selectedTabObjs.length}) - ${new Date().toLocaleDateString()}`;
+          const name = prompt(
+            `Bookmark ${selectedTabObjs.length} selected tab(s) from ${windowCount} window(s)?\n\nEnter folder name:`,
+            defaultName
+          );
+          
+          if (name) {
+            // Import and use bookmark utility
+            const { bulkBookmarkTabs } = await import('../shared/bookmark-utils.js');
+            const bookmarks = await bulkBookmarkTabs(selectedTabObjs, name);
+            alert(`✅ Successfully bookmarked ${bookmarks.length} tabs from ${windowCount} window(s) to folder "${name}"`);
+          }
+        } catch (e) {
+          console.error('Failed to bookmark selected tabs:', e);
+          alert('❌ Failed to bookmark tabs. See console for details.');
+        }
         break;
       case 'group':
         if (tabs.length > 0) {

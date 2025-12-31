@@ -31,13 +31,14 @@ export function extractBaseDomain(url: string): string | null {
 
 // Normalize URL for comparison (remove fragments, some params)
 export function normalizeUrl(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    urlObj.hash = ''; // Remove fragment
-    return urlObj.toString();
-  } catch {
-    return url;
+  if (!url) return '';
+  // Optimization: split by hash is much faster than new URL()
+  // and covers 99% of use cases for duplicate detection
+  const hashIndex = url.indexOf('#');
+  if (hashIndex !== -1) {
+    return url.substring(0, hashIndex);
   }
+  return url;
 }
 
 // Find duplicate tabs by exact URL

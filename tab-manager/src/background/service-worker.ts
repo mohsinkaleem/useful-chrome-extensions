@@ -31,6 +31,9 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Group Tabs by Domain',
     contexts: ['page']
   });
+
+  // Initialize badge
+  updateTabCountBadge();
 });
 
 // Context menu click handler
@@ -90,6 +93,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // Tab event listeners for auto-grouping
 chrome.tabs.onCreated.addListener((tab) => {
   autoGrouper.onTabCreated(tab);
+  debouncedUpdateTabCountBadge();
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -97,6 +101,48 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     autoGrouper.onTabUpdated(tab);
   }
 });
+
+chrome.tabs.onRemoved.addListener(() => {
+  debouncedUpdateTabCountBadge();
+});
+
+chrome.tabs.onAttached.addListener(() => {
+  debouncedUpdateTabCountBadge();
+});
+
+chrome.tabs.onDetached.addListener(() => {
+  debouncedUpdateTabCountBadge();
+});
+
+let badgeUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+
+function debouncedUpdateTabCountBadge() {
+  if (badgeUpdateTimer) {
+    clearTimeout(badgeUpdateTimer);
+  }
+  badgeUpdateTimer = setTimeout(() => {
+    updateTabCountBadge();
+    badgeUpdateTimer = null;
+  }, 200);
+}
+
+// Update badge with tab count
+async function updateTabCountBadge() {
+  const tabs = await chrome.tabs.query({});
+  const count = tabs.length;
+  
+  // Set badge text
+  await chrome.action.setBadgeText({ text: count.toString() });
+  
+  // Set badge color based on count
+  if (count > 50) {
+    await chrome.action.setBadgeBackgroundColor({ color: '#e74c3c' }); // Red
+  } else if (count > 30) {
+    await chrome.action.setBadgeBackgroundColor({ color: '#f39c12' }); // Orange
+  } else {
+    await chrome.action.setBadgeBackgroundColor({ color: '#3498db' }); // Blue
+  }
+}
 
 // Keep service worker alive
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
