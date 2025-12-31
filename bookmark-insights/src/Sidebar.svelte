@@ -21,7 +21,11 @@
     platforms: [],
     creators: [],
     contentTypes: [],
-    dateRange: null
+    dateRange: null,
+    readingTimeRange: null, // { min, max }
+    qualityScoreRange: null, // { min, max }
+    hasPublishedDate: null, // true/false/null
+    smartTags: [] // array of tag strings
   };
   let domainSortMode = 'count'; // 'recency' or 'count'
   let domainDisplayLimit = 30; // Initial limit for domains
@@ -118,7 +122,11 @@
                           selectedFilters.platforms.length > 0 ||
                           selectedFilters.creators.length > 0 ||
                           selectedFilters.contentTypes.length > 0 ||
-                          selectedFilters.dateRange !== null;
+                          selectedFilters.dateRange !== null ||
+                          selectedFilters.readingTimeRange !== null ||
+                          selectedFilters.qualityScoreRange !== null ||
+                          selectedFilters.hasPublishedDate !== null ||
+                          selectedFilters.smartTags.length > 0;
   
   function loadMoreDomains() {
     domainDisplayLimit += 30;
@@ -195,8 +203,34 @@
       platforms: [],
       creators: [],
       contentTypes: [],
-      dateRange: null
+      dateRange: null,
+      readingTimeRange: null,
+      qualityScoreRange: null,
+      hasPublishedDate: null,
+      smartTags: []
     };
+    dispatchFilters();
+  }
+  
+  function setReadingTimeFilter(min, max) {
+    selectedFilters.readingTimeRange = min || max ? { min, max } : null;
+    dispatchFilters();
+  }
+  
+  function setQualityScoreFilter(min, max) {
+    selectedFilters.qualityScoreRange = min || max ? { min, max } : null;
+    dispatchFilters();
+  }
+  
+  function togglePublishedDateFilter() {
+    // Cycle through: null -> true (has date) -> false (no date) -> null
+    if (selectedFilters.hasPublishedDate === null) {
+      selectedFilters.hasPublishedDate = true;
+    } else if (selectedFilters.hasPublishedDate === true) {
+      selectedFilters.hasPublishedDate = false;
+    } else {
+      selectedFilters.hasPublishedDate = null;
+    }
     dispatchFilters();
   }
 
@@ -592,5 +626,94 @@
         This Year
       </button>
     </div>
+  </div>
+  
+  <!-- Reading Time Filter -->
+  <div class="mb-4">
+    <h4 class="text-xs font-medium text-gray-700 uppercase tracking-wide mb-2">
+      ⏱️ Reading Time
+    </h4>
+    <div class="space-y-2">
+      <button
+        on:click={() => setReadingTimeFilter(null, 5)}
+        class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
+        class:bg-blue-50={selectedFilters.readingTimeRange?.max === 5}
+        class:text-blue-700={selectedFilters.readingTimeRange?.max === 5}
+      >
+        Quick read (&lt; 5 min)
+      </button>
+      <button
+        on:click={() => setReadingTimeFilter(5, 15)}
+        class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
+        class:bg-blue-50={selectedFilters.readingTimeRange?.min === 5 && selectedFilters.readingTimeRange?.max === 15}
+        class:text-blue-700={selectedFilters.readingTimeRange?.min === 5 && selectedFilters.readingTimeRange?.max === 15}
+      >
+        Medium (5-15 min)
+      </button>
+      <button
+        on:click={() => setReadingTimeFilter(15, null)}
+        class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
+        class:bg-blue-50={selectedFilters.readingTimeRange?.min === 15}
+        class:text-blue-700={selectedFilters.readingTimeRange?.min === 15}
+      >
+        Long read (&gt; 15 min)
+      </button>
+    </div>
+  </div>
+  
+  <!-- Quality Score Filter -->
+  <div class="mb-4">
+    <h4 class="text-xs font-medium text-gray-700 uppercase tracking-wide mb-2">
+      ⭐ Content Quality
+    </h4>
+    <div class="space-y-2">
+      <button
+        on:click={() => setQualityScoreFilter(70, 100)}
+        class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
+        class:bg-green-50={selectedFilters.qualityScoreRange?.min === 70}
+        class:text-green-700={selectedFilters.qualityScoreRange?.min === 70}
+      >
+        High (70-100)
+      </button>
+      <button
+        on:click={() => setQualityScoreFilter(40, 69)}
+        class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
+        class:bg-yellow-50={selectedFilters.qualityScoreRange?.min === 40 && selectedFilters.qualityScoreRange?.max === 69}
+        class:text-yellow-700={selectedFilters.qualityScoreRange?.min === 40 && selectedFilters.qualityScoreRange?.max === 69}
+      >
+        Medium (40-69)
+      </button>
+      <button
+        on:click={() => setQualityScoreFilter(null, 39)}
+        class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
+        class:bg-orange-50={selectedFilters.qualityScoreRange?.max === 39}
+        class:text-orange-700={selectedFilters.qualityScoreRange?.max === 39}
+      >
+        Low (&lt; 40)
+      </button>
+    </div>
+  </div>
+  
+  <!-- Published Date Filter -->
+  <div class="mb-4">
+    <h4 class="text-xs font-medium text-gray-700 uppercase tracking-wide mb-2">
+      📅 Published Date
+    </h4>
+    <button
+      on:click={togglePublishedDateFilter}
+      class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded"
+      class:bg-blue-50={selectedFilters.hasPublishedDate === true}
+      class:text-blue-700={selectedFilters.hasPublishedDate === true}
+      class:bg-orange-50={selectedFilters.hasPublishedDate === false}
+      class:text-orange-700={selectedFilters.hasPublishedDate === false}
+    >
+      {#if selectedFilters.hasPublishedDate === null}
+        All content
+      {:else if selectedFilters.hasPublishedDate === true}
+        ✓ Has publish date
+      {:else}
+        ✗ No publish date
+      {/if}
+    </button>
   </div>
 </div>

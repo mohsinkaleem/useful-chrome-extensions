@@ -6,11 +6,15 @@ A powerful, privacy-first bookmark intelligence system with smart search, enrich
 
 ### 🔍 Advanced Search
 
+- **Hybrid Search Engine**: Combines **FlexSearch** for high-performance fuzzy matching with a custom parser for advanced queries.
 - **Boolean operators**: `+term` (must include), `-term` (must exclude)
 - **Exact phrases**: `"quoted phrases"` for precise matching
 - **Regex patterns**: `/pattern/` or `/pattern/flags` for advanced matching
 - **Special filters**: `category:code`, `domain:github`, `accessed:yes`, `stale:yes`, `dead:yes`, `enriched:yes`, `folder:"path"`
 - **Platform filters**: `platform:youtube`, `channel:@mkbhd`, `repo:facebook/react`, `author:username`, `type:video|issue`
+- **Visual Filter Builder**: Quick-access buttons to easily add common filters.
+- **Search History**: Saves recent searches for quick access via a dropdown menu.
+- **Keyword Highlighting**: Matches are highlighted in Title, URL, and Description for better context.
 - **Smart relevance ranking** - title matches rank highest
 - **Dynamic filtering** - sidebar updates to show matching domains, folders, and platforms
 - **Visual query feedback** - parsed terms displayed as colored tags

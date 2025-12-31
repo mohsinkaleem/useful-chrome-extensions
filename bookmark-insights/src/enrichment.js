@@ -167,6 +167,21 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     };
   } catch (error) {
     console.error(`Error enriching bookmark ${bookmarkId}:`, error);
+    
+    // IMPORTANT: Update lastChecked even on failure to prevent infinite retry loops
+    // We set it to now so it won't be picked up again immediately by the "unenriched" filter
+    try {
+      const bookmark = await getBookmark(bookmarkId);
+      if (bookmark) {
+        bookmark.lastChecked = Date.now();
+        // Optionally mark as failed so we can filter for them later
+        bookmark.enrichmentError = error.message;
+        await upsertBookmark(bookmark);
+      }
+    } catch (dbError) {
+      console.error('Error updating bookmark after failure:', dbError);
+    }
+
     await logEvent(bookmarkId, 'enrichment', { success: false, error: error.message });
     return { success: false, error: error.message };
   }
@@ -244,6 +259,16 @@ export async function fetchPageMetadata(url) {
       jsonLd: [],
       other: {}
     };
+
+    // Clean HTML for better content extraction
+    // Remove scripts, styles, navs, headers, footers to avoid noise
+    const cleanHtml = html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gim, "")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gim, "")
+      .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gim, "")
+      .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gim, "")
+      .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gim, "")
+      .replace(/<!--[\s\S]*?-->/g, "");
 
     // Extract all meta tags using regex
     const metaTagRegex = /<meta\s+([^>]*?)>/gi;
@@ -345,17 +370,35 @@ export async function fetchPageMetadata(url) {
       }
     }
 
-    // Get snippet from first paragraph using regex
-    const paragraphMatch = html.match(/<p[^>]*>([^<]+)</i);
-    if (paragraphMatch) {
-      metadata.snippet = paragraphMatch[1]
+    // Get snippet from paragraphs (improved algorithm)
+    // Find all paragraphs in the cleaned HTML
+    const pRegex = /<p[^>]*>([^<]+)<\/p>/gi;
+    let pMatch;
+    const paragraphs = [];
+    
+    while ((pMatch = pRegex.exec(cleanHtml)) !== null) {
+      const text = pMatch[1]
         .replace(/&nbsp;/g, ' ')
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
-        .trim()
-        .substring(0, 200);
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .trim();
+        
+      // Filter out short or empty paragraphs (likely UI elements)
+      // And filter out cookie warnings or common UI text
+      if (text.length > 50 && 
+          !text.toLowerCase().includes('cookie') && 
+          !text.toLowerCase().includes('copyright')) {
+        paragraphs.push(text);
+      }
+      
+      if (paragraphs.length >= 3) break; // Get top 3 valid paragraphs
+    }
+    
+    if (paragraphs.length > 0) {
+      metadata.snippet = paragraphs.join(' ... ').substring(0, 300);
     }
 
     return metadata;
@@ -752,7 +795,7 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
         
         // Small delay between requests to be respectful
         if (currentIndex < bookmarksToProcess.length) {
-          await sleep(100); // 100ms delay between starting new requests
+          await sleep(50); // 50ms delay between starting new requests
         }
       }
     };
@@ -780,3 +823,159 @@ function sleep(ms) {
 
 // Export category rules for use in UI
 export { CATEGORY_RULES, PATH_PATTERNS, CONTENT_KEYWORDS };
+
+// ========== Deep Metadata Analysis (Re-analyze existing data without network requests) ==========
+
+import { analyzeBookmarkMetadata } from './metadata-analyzer.js';
+import { enhanceWithSchemaOrg } from './url-parsers.js';
+
+/**
+ * Re-analyze a bookmark's existing rawMetadata to extract deep insights
+ * This does NOT make network requests - it only processes existing data
+ * @param {Object} bookmark - Full bookmark object with rawMetadata
+ * @returns {Object} - Updated bookmark object with new analysis fields
+ */
+export async function reanalyzeBookmark(bookmark) {
+  if (!bookmark) {
+    return { success: false, error: 'No bookmark provided' };
+  }
+
+  try {
+    // Run deep metadata analysis on existing rawMetadata
+    const analysis = analyzeBookmarkMetadata(bookmark);
+    
+    if (!analysis) {
+      return { success: false, error: 'No metadata to analyze', skipped: true };
+    }
+
+    // Update bookmark with analyzed fields
+    bookmark.readingTime = analysis.readingTime;
+    bookmark.publishedDate = analysis.publishedDate;
+    bookmark.contentQualityScore = analysis.contentQualityScore;
+    bookmark.smartTags = analysis.smartTags;
+
+    // Enhance platform data with Schema.org if available
+    if (bookmark.rawMetadata && bookmark.platformData) {
+      const enhancedPlatformData = enhanceWithSchemaOrg(bookmark.platformData, bookmark.rawMetadata);
+      if (enhancedPlatformData) {
+        bookmark.platformData = enhancedPlatformData;
+        bookmark.contentType = enhancedPlatformData.type;
+      }
+    }
+
+    // Save updated bookmark
+    await upsertBookmark(bookmark);
+    
+    console.log(`Re-analyzed bookmark: ${bookmark.title} - Quality: ${analysis.contentQualityScore}, Reading time: ${analysis.readingTime || 'N/A'} min`);
+    
+    return { 
+      success: true, 
+      readingTime: analysis.readingTime,
+      publishedDate: analysis.publishedDate,
+      contentQualityScore: analysis.contentQualityScore,
+      smartTagsCount: analysis.smartTags?.length || 0
+    };
+  } catch (error) {
+    console.error(`Error re-analyzing bookmark ${bookmark.id}:`, error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Batch re-analyze bookmarks (process existing rawMetadata without network requests)
+ * @param {Array<Object>} bookmarks - Array of bookmark objects to re-analyze
+ * @param {Function} progressCallback - Optional callback for progress updates
+ * @returns {Object} - Summary of re-analysis results
+ */
+export async function batchReanalyze(bookmarks, progressCallback = null) {
+  if (!bookmarks || bookmarks.length === 0) {
+    return { processed: 0, success: 0, failed: 0, skipped: 0 };
+  }
+
+  console.log(`Starting batch re-analysis of ${bookmarks.length} bookmarks...`);
+  
+  let success = 0;
+  let failed = 0;
+  let skipped = 0;
+  let completed = 0;
+
+  // Process in chunks to avoid blocking
+  const chunkSize = 50;
+  
+  for (let i = 0; i < bookmarks.length; i += chunkSize) {
+    const chunk = bookmarks.slice(i, i + chunkSize);
+    
+    for (let j = 0; j < chunk.length; j++) {
+      const bookmark = chunk[j];
+      const globalIndex = i + j;
+      
+      try {
+        // Check if bookmark has rawMetadata to analyze
+        if (!bookmark.rawMetadata || Object.keys(bookmark.rawMetadata).length === 0) {
+          skipped++;
+          completed++;
+          
+          if (progressCallback) {
+            progressCallback({
+              current: globalIndex + 1,
+              total: bookmarks.length,
+              completed: completed,
+              bookmarkId: bookmark.id,
+              title: bookmark.title,
+              status: 'skipped',
+              reason: 'No metadata to analyze'
+            });
+          }
+          continue;
+        }
+
+        const result = await reanalyzeBookmark(bookmark);
+        
+        if (result.success) {
+          success++;
+        } else if (result.skipped) {
+          skipped++;
+        } else {
+          failed++;
+        }
+        completed++;
+        
+        if (progressCallback) {
+          progressCallback({
+            current: globalIndex + 1,
+            total: bookmarks.length,
+            completed: completed,
+            bookmarkId: bookmark.id,
+            title: bookmark.title,
+            status: result.success ? 'completed' : (result.skipped ? 'skipped' : 'failed'),
+            result: result
+          });
+        }
+      } catch (error) {
+        console.error(`Error re-analyzing bookmark ${bookmark.id}:`, error);
+        failed++;
+        completed++;
+        
+        if (progressCallback) {
+          progressCallback({
+            current: globalIndex + 1,
+            total: bookmarks.length,
+            completed: completed,
+            bookmarkId: bookmark.id,
+            title: bookmark.title,
+            status: 'error',
+            error: error.message
+          });
+        }
+      }
+    }
+    
+    // Small delay between chunks to allow UI to update
+    if (i + chunkSize < bookmarks.length) {
+      await sleep(100);
+    }
+  }
+
+  console.log(`Re-analysis complete: ${success} analyzed, ${failed} failed, ${skipped} skipped`);
+  return { processed: bookmarks.length, success, failed, skipped };
+}

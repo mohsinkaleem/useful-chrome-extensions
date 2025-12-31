@@ -89,6 +89,8 @@
     sortBy: 'date_desc'
   };
   
+  let parsedSearchQuery = null;
+  
   // Chart variables
   let domainChart = null;
   let activityChart = null;
@@ -129,6 +131,11 @@
   let runningPlatformBackfill = false;
   let platformBackfillProgress = null;
   let platformBackfillResult = null;
+  
+  // Deep metadata analysis state
+  let runningDeepAnalysis = false;
+  let deepAnalysisProgress = null;
+  let deepAnalysisResult = null;
   
   // Advanced insights data
   let domainHierarchy = [];
@@ -266,6 +273,7 @@
       if (query && query.trim()) {
         // Use advanced search with +/- term support
         const searchResult = await searchBookmarks(query, { limit: 1000 });
+        parsedSearchQuery = searchResult.parsedQuery;
         const allResults = searchResult.results || [];
         
         // Compute stats from ALL search results for sidebar
@@ -329,6 +337,7 @@
         hasMore = startIndex + pageSize < filteredResults.length;
       } else {
         // No search query - clear search stats and load all bookmarks
+        parsedSearchQuery = null;
         searchResultStats = null;
         await loadBookmarksPaginated();
       }
@@ -1026,6 +1035,53 @@
     }
   }
   
+  // Deep metadata analysis - re-analyzes existing rawMetadata without network requests
+  async function handleDeepAnalysis() {
+    runningDeepAnalysis = true;
+    deepAnalysisProgress = null;
+    deepAnalysisResult = null;
+    
+    try {
+      // Import required functions
+      const { batchReanalyze } = await import('./enrichment.js');
+      const { getAllBookmarks } = await import('./db.js');
+      
+      // Get ALL bookmarks (no pagination needed - it's local data)
+      const allBookmarks = await getAllBookmarks();
+      
+      console.log(`Starting deep analysis on ${allBookmarks.length} bookmarks`);
+      
+      // Run batch re-analysis with progress tracking
+      const result = await batchReanalyze(allBookmarks, (progress) => {
+        deepAnalysisProgress = {
+          current: progress.current,
+          total: progress.total,
+          completed: progress.completed,
+          title: progress.title,
+          status: progress.status
+        };
+      });
+      
+      deepAnalysisResult = {
+        processed: result.processed,
+        analyzed: result.success,
+        skipped: result.skipped,
+        failed: result.failed
+      };
+      
+      console.log('Deep analysis complete:', deepAnalysisResult);
+      
+      // Refresh data after analysis
+      await loadBookmarksPaginated(0, false);
+      
+    } catch (err) {
+      console.error('Error during deep analysis:', err);
+      deepAnalysisResult = { error: err.message };
+    } finally {
+      runningDeepAnalysis = false;
+    }
+  }
+  
   async function deleteSimilarBookmark(bookmarkId, pairIndex) {
     try {
       // First check if the bookmark still exists
@@ -1443,6 +1499,28 @@
       alert('Error deleting bookmark. Please try again.');
     }
   }
+
+  async function handleEnrichBookmark(event) {
+    const { bookmarkId } = event.detail;
+    
+    try {
+      const response = await chrome.runtime.sendMessage({ 
+        action: 'enrichSpecificBookmarks', 
+        ids: [bookmarkId] 
+      });
+      
+      if (response.success) {
+        // Refresh the list to show new metadata
+        await loadBookmarksPaginated(currentPage, false);
+      } else {
+        console.error('Enrichment failed:', response.error);
+        alert('Enrichment failed: ' + response.error);
+      }
+    } catch (err) {
+      console.error('Error enriching bookmark:', err);
+      alert('Error enriching bookmark. Please try again.');
+    }
+  }
   
   function toggleViewMode() {
     viewMode = viewMode === 'list' ? 'card' : 'list';
@@ -1740,6 +1818,54 @@
               </div>
             </div>
             
+            <!-- Visual Filter Builder -->
+            <div class="mb-4">
+              <div class="flex flex-wrap gap-2">
+                <button 
+                  class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
+                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'category:'}
+                >
+                  + Category
+                </button>
+                <button 
+                  class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
+                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'domain:'}
+                >
+                  + Domain
+                </button>
+                <button 
+                  class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
+                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'folder:'}
+                >
+                  + Folder
+                </button>
+                <button 
+                  class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
+                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'platform:'}
+                >
+                  + Platform
+                </button>
+                <button 
+                  class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
+                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'type:'}
+                >
+                  + Type
+                </button>
+                <button 
+                  class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
+                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'dead:yes'}
+                >
+                  + Dead Links
+                </button>
+                <button 
+                  class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
+                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'stale:yes'}
+                >
+                  + Stale
+                </button>
+              </div>
+            </div>
+
             <!-- Multi-Select Toolbar -->
             {#if multiSelectMode}
               <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
@@ -1780,9 +1906,11 @@
                     <BookmarkListItem 
                       {bookmark} 
                       {multiSelectMode}
+                      {parsedSearchQuery}
                       isSelected={selectedBookmarks.has(bookmark.id)}
                       on:toggle-select={handleToggleSelect}
                       on:delete={handleDeleteSingle}
+                      on:enrich={handleEnrichBookmark}
                     />
                   {/each}
                 </div>
@@ -1790,7 +1918,7 @@
             {:else}
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {#each bookmarks as bookmark (bookmark.id)}
-                  <BookmarkCard {bookmark} />
+                  <BookmarkCard {bookmark} {parsedSearchQuery} />
                 {/each}
               </div>
             {/if}
@@ -1896,7 +2024,7 @@
                     Enriching...
                   </span>
                 {:else}
-                  Run Enrichment
+                  {forceReenrich ? `Re-enrich ${enrichmentBatchSize} Bookmarks` : `Enrich Next ${enrichmentBatchSize} Pending`}
                 {/if}
               </button>
             </div>
@@ -1906,29 +2034,29 @@
                   <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div class="text-center">
                       <div class="text-xl font-bold text-purple-700">{enrichmentStatus.pendingCount || enrichmentStatus.queueSize || 0}</div>
-                      <div class="text-xs text-purple-600">Pending</div>
+                      <div class="text-xs text-purple-600">Pending Enrichment</div>
                     </div>
                     <div class="text-center">
                       <div class="text-xl font-bold text-green-700">{enrichmentStatus.enrichedCount || 0}</div>
-                      <div class="text-xs text-green-600">Enriched</div>
+                      <div class="text-xs text-green-600">Successfully Enriched</div>
                     </div>
                     <div class="text-center">
                       <div class="text-xl font-bold text-blue-700">{enrichmentStatus.totalBookmarks || 0}</div>
-                      <div class="text-xs text-blue-600">Total HTTP</div>
+                      <div class="text-xs text-blue-600">Total HTTP Bookmarks</div>
                     </div>
                     <div class="text-center">
                       <div class="text-xl font-bold {enrichmentStatus.enabled ? 'text-green-700' : 'text-gray-500'}">
                         {enrichmentStatus.enabled ? '✓' : '○'}
                       </div>
                       <div class="text-xs {enrichmentStatus.enabled ? 'text-green-600' : 'text-gray-500'}">
-                        {enrichmentStatus.enabled ? 'Enabled' : 'Disabled'}
+                        {enrichmentStatus.enabled ? 'System Enabled' : 'System Disabled'}
                       </div>
                     </div>
                   </div>
                   {#if enrichmentStatus.pendingCount > 0 && enrichmentStatus.totalBookmarks > 0}
                     <div class="mt-3">
                       <div class="flex justify-between text-xs text-purple-600 mb-1">
-                        <span>Progress</span>
+                        <span>Overall Coverage</span>
                         <span>{((enrichmentStatus.enrichedCount / enrichmentStatus.totalBookmarks) * 100).toFixed(1)}%</span>
                       </div>
                       <div class="w-full bg-purple-200 rounded-full h-2">
@@ -1942,6 +2070,19 @@
                 </div>
               {/if}
               
+              <div class="mb-4 text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200">
+                <p class="font-medium mb-1">How it works:</p>
+                <ul class="list-disc list-inside space-y-1 text-xs">
+                  {#if forceReenrich}
+                    <li><strong>Force Mode:</strong> Will re-download metadata for {enrichmentBatchSize} bookmarks, starting with unenriched ones, then oldest checked.</li>
+                    <li>Use this to refresh data or fix broken metadata.</li>
+                  {:else}
+                    <li><strong>Standard Mode:</strong> Will process the next {enrichmentBatchSize} bookmarks that have <strong>never</strong> been enriched.</li>
+                    <li>Already enriched bookmarks are skipped to save resources.</li>
+                  {/if}
+                </ul>
+              </div>
+
               <!-- Enrichment Configuration -->
               <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
@@ -1951,7 +2092,7 @@
                     <input 
                       type="number" 
                       min="5" 
-                      max="100" 
+                      max="200" 
                       bind:value={enrichmentBatchSize}
                       class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                       disabled={runningEnrichment}
@@ -1965,14 +2106,14 @@
                     <input 
                       type="number" 
                       min="1" 
-                      max="10" 
+                      max="20" 
                       bind:value={enrichmentConcurrency}
                       class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                       disabled={runningEnrichment}
                     />
                   </label>
                   <p class="text-xs text-gray-500 mt-1">
-                    Higher = faster, but more resource intensive (recommended: 3-5)
+                    Higher = faster, but more resource intensive (recommended: 5-10)
                   </p>
                 </div>
                 <div>
@@ -2172,6 +2313,151 @@
                   Click "Detect Platforms" to parse all bookmark URLs and extract platform-specific data.
                   This enables filtering by platform, channel, repo, and more.
                 </p>
+              {/if}
+            </div>
+          </div>
+          
+          <!-- Deep Content Analysis Section -->
+          <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">
+                  <span class="inline-block mr-2">🔍</span>
+                  Deep Content Analysis
+                </h3>
+                <p class="text-sm text-gray-500 mt-1">
+                  Analyze existing metadata to extract reading time, publish date, quality score, and smart tags (no network requests)
+                </p>
+              </div>
+              <button
+                on:click={handleDeepAnalysis}
+                disabled={runningDeepAnalysis}
+                class="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:opacity-50 flex-shrink-0"
+              >
+                {#if runningDeepAnalysis}
+                  <span class="flex items-center">
+                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Analyzing...
+                  </span>
+                {:else}
+                  Run Analysis
+                {/if}
+              </button>
+            </div>
+            <div class="p-6">
+              <div class="text-sm text-gray-600 mb-4">
+                <p class="mb-2">Extracts intelligent insights from your bookmarks:</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                  <div class="flex items-start gap-2">
+                    <span class="text-lg">⏱️</span>
+                    <div>
+                      <div class="font-medium text-gray-800">Reading Time</div>
+                      <div class="text-xs text-gray-500">Estimated time to read/watch content</div>
+                    </div>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <span class="text-lg">📅</span>
+                    <div>
+                      <div class="font-medium text-gray-800">Published Date</div>
+                      <div class="text-xs text-gray-500">When the content was published</div>
+                    </div>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <span class="text-lg">⭐</span>
+                    <div>
+                      <div class="font-medium text-gray-800">Quality Score</div>
+                      <div class="text-xs text-gray-500">Content completeness rating (0-100)</div>
+                    </div>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <span class="text-lg">🏷️</span>
+                    <div>
+                      <div class="font-medium text-gray-800">Smart Tags</div>
+                      <div class="text-xs text-gray-500">Auto-generated topic keywords</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Progress -->
+              {#if runningDeepAnalysis && deepAnalysisProgress}
+                <div class="mb-4">
+                  <div class="flex justify-between text-sm text-gray-600 mb-1">
+                    <span>Analyzing bookmarks...</span>
+                    <span>{deepAnalysisProgress.current} / {deepAnalysisProgress.total}</span>
+                  </div>
+                  <div class="w-full bg-gray-200 rounded-full h-2 mb-2">
+                    <div 
+                      class="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                      style="width: {(deepAnalysisProgress.current / deepAnalysisProgress.total) * 100}%"
+                    ></div>
+                  </div>
+                  {#if deepAnalysisProgress.title}
+                    <p class="text-xs text-gray-500 truncate">
+                      Processing: {deepAnalysisProgress.title}
+                      {#if deepAnalysisProgress.status}
+                        <span class="ml-2 px-1.5 py-0.5 rounded text-xs
+                          {deepAnalysisProgress.status === 'completed' ? 'bg-green-100 text-green-700' : ''}
+                          {deepAnalysisProgress.status === 'skipped' ? 'bg-yellow-100 text-yellow-700' : ''}
+                          {deepAnalysisProgress.status === 'failed' ? 'bg-red-100 text-red-700' : ''}
+                        ">
+                          {deepAnalysisProgress.status}
+                        </span>
+                      {/if}
+                    </p>
+                  {/if}
+                </div>
+              {/if}
+              
+              <!-- Results -->
+              {#if deepAnalysisResult}
+                <div class="p-4 rounded-lg {deepAnalysisResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}">
+                  {#if deepAnalysisResult.error}
+                    <div class="text-red-700 text-sm">
+                      <strong>Error:</strong> {deepAnalysisResult.error}
+                    </div>
+                  {:else}
+                    <div class="text-green-700 text-sm space-y-2">
+                      <div class="font-medium">✅ Deep Analysis Complete!</div>
+                      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                        <div class="text-center p-2 bg-white rounded">
+                          <div class="text-lg font-bold text-indigo-600">{deepAnalysisResult.processed}</div>
+                          <div class="text-gray-600">Processed</div>
+                        </div>
+                        <div class="text-center p-2 bg-white rounded">
+                          <div class="text-lg font-bold text-green-600">{deepAnalysisResult.analyzed}</div>
+                          <div class="text-gray-600">Analyzed</div>
+                        </div>
+                        <div class="text-center p-2 bg-white rounded">
+                          <div class="text-lg font-bold text-yellow-600">{deepAnalysisResult.skipped}</div>
+                          <div class="text-gray-600">Skipped</div>
+                        </div>
+                        <div class="text-center p-2 bg-white rounded">
+                          <div class="text-lg font-bold text-red-600">{deepAnalysisResult.failed}</div>
+                          <div class="text-gray-600">Failed</div>
+                        </div>
+                      </div>
+                      <p class="text-xs text-green-600 mt-2">
+                        Your bookmarks now have enhanced metadata for smarter filtering and insights!
+                      </p>
+                    </div>
+                  {/if}
+                </div>
+              {:else if !runningDeepAnalysis}
+                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <p class="text-gray-600 text-sm">
+                    Click "Run Analysis" to process all bookmarks that have been enriched with metadata.
+                    This will extract additional insights without making any network requests.
+                  </p>
+                  <div class="mt-3 text-xs text-gray-500 space-y-1">
+                    <div>• Processes existing metadata only (very fast)</div>
+                    <div>• Safe to run multiple times (idempotent)</div>
+                    <div>• Enables future smart filtering features</div>
+                  </div>
+                </div>
               {/if}
             </div>
           </div>

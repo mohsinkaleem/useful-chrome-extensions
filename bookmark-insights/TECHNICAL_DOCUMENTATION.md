@@ -389,6 +389,22 @@ hasimage:yes              # Has thumbnail/preview image
 playlist:PLxxxxxxx        # YouTube playlist ID
 ```
 
+### Search System
+
+The search system (`search.js`) uses a hybrid approach:
+
+1.  **FlexSearch**: Used for high-performance fuzzy matching of regular keywords.
+    -   Indexed fields: `title`, `url`, `description`, `keywords`, `category`, `domain`.
+    -   Supports fuzzy matching and suggestions.
+2.  **Custom Parser**: Handles advanced query syntax (boolean operators, regex, phrases).
+    -   `+term`: Must include.
+    -   `-term`: Must exclude.
+    -   `"phrase"`: Exact match.
+    -   `/regex/`: Regular expression match.
+3.  **Special Filters**: Parsed separately and applied before text search.
+    -   `category:`, `domain:`, `folder:`, `platform:`, etc.
+4.  **Highlighting**: `highlightText` utility highlights matching terms in the UI.
+
 ---
 
 ## Core Systems

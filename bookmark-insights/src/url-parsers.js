@@ -4,9 +4,10 @@
 /**
  * Main entry point - parse a bookmark URL and extract structured platform data
  * @param {string} url - The bookmark URL to parse
+ * @param {Object} metadata - Optional metadata object with Schema.org types for enhanced detection
  * @returns {Object} Structured platform data
  */
-export function parseBookmarkUrl(url) {
+export function parseBookmarkUrl(url, metadata = null) {
   if (!url) return null;
   
   try {
@@ -15,39 +16,114 @@ export function parseBookmarkUrl(url) {
     
     // Try platform-specific parsers
     if (isYouTube(hostname)) {
-      return parseYouTubeUrl(urlObj);
+      return parseYouTubeUrl(urlObj, metadata);
     }
     if (isGitHub(hostname)) {
-      return parseGitHubUrl(urlObj);
+      return parseGitHubUrl(urlObj, metadata);
     }
     if (isMedium(hostname)) {
-      return parseMediumUrl(urlObj);
+      return parseMediumUrl(urlObj, metadata);
     }
     if (isDevTo(hostname)) {
-      return parseDevToUrl(urlObj);
+      return parseDevToUrl(urlObj, metadata);
     }
     if (isSubstack(hostname)) {
-      return parseSubstackUrl(urlObj);
+      return parseSubstackUrl(urlObj, metadata);
     }
     if (isTwitter(hostname)) {
-      return parseTwitterUrl(urlObj);
+      return parseTwitterUrl(urlObj, metadata);
     }
     if (isReddit(hostname)) {
-      return parseRedditUrl(urlObj);
+      return parseRedditUrl(urlObj, metadata);
     }
     if (isStackOverflow(hostname)) {
-      return parseStackOverflowUrl(urlObj);
+      return parseStackOverflowUrl(urlObj, metadata);
     }
     if (isNpm(hostname)) {
-      return parseNpmUrl(urlObj);
+      return parseNpmUrl(urlObj, metadata);
     }
     
-    // Generic parsing for unknown platforms
-    return parseGenericUrl(urlObj);
+    // Generic parsing for unknown platforms (use Schema.org if available)
+    return parseGenericUrl(urlObj, metadata);
   } catch (e) {
     console.warn('Error parsing URL:', url, e);
     return null;
   }
+}
+
+/**
+ * Enhance content type detection using Schema.org structured data
+ * @param {Object} platformData - Platform data from URL parsing
+ * @param {Object} metadata - Raw metadata with schemaOrg field
+ * @returns {Object} Enhanced platform data with refined type
+ */
+export function enhanceWithSchemaOrg(platformData, metadata) {
+  if (!metadata || !metadata.schemaOrg || !platformData) {
+    return platformData;
+  }
+
+  const schemas = Array.isArray(metadata.schemaOrg) ? metadata.schemaOrg : [metadata.schemaOrg];
+  
+  for (const schema of schemas) {
+    const schemaType = schema['@type'];
+    
+    // Map Schema.org types to more specific content types
+    switch (schemaType) {
+      case 'TechArticle':
+        platformData.type = 'tech-article';
+        platformData.subtype = 'technical';
+        break;
+      case 'BlogPosting':
+        platformData.type = 'blog-post';
+        platformData.subtype = 'blog';
+        break;
+      case 'NewsArticle':
+        platformData.type = 'news-article';
+        platformData.subtype = 'news';
+        break;
+      case 'ScholarlyArticle':
+        platformData.type = 'scholarly-article';
+        platformData.subtype = 'academic';
+        break;
+      case 'VideoObject':
+        if (platformData.type !== 'video') {
+          platformData.type = 'video';
+        }
+        platformData.subtype = 'video-content';
+        break;
+      case 'Course':
+        platformData.type = 'course';
+        platformData.subtype = 'education';
+        break;
+      case 'HowTo':
+        platformData.type = 'tutorial';
+        platformData.subtype = 'how-to';
+        break;
+      case 'FAQPage':
+        platformData.type = 'faq';
+        platformData.subtype = 'reference';
+        break;
+      case 'SoftwareApplication':
+        platformData.type = 'software';
+        platformData.subtype = 'tool';
+        break;
+      case 'APIReference':
+        platformData.type = 'api-docs';
+        platformData.subtype = 'documentation';
+        break;
+    }
+    
+    // Extract author from Schema.org if not already set
+    if (schema.author && !platformData.creator) {
+      if (typeof schema.author === 'object') {
+        platformData.creator = schema.author.name || schema.author['@id'];
+      } else {
+        platformData.creator = schema.author;
+      }
+    }
+  }
+  
+  return platformData;
 }
 
 // Platform detection helpers

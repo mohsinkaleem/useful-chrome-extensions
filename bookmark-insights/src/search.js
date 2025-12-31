@@ -593,9 +593,54 @@ export async function searchBookmarks(query, options = {}) {
   // If there's remaining text query, filter further
   let filteredBookmarks;
   if (remainingQuery.trim()) {
-    filteredBookmarks = allBookmarks.filter(bookmark => 
-      matchesAdvancedQuery(bookmark, parsedQuery)
-    );
+    // Use FlexSearch for regular terms if available
+    if (parsedQuery.regular.length > 0) {
+      try {
+        const index = await initializeSearchIndex();
+        const regularQuery = parsedQuery.regular.join(' ');
+        
+        // Search using FlexSearch
+        const searchResults = await index.search(regularQuery, {
+          limit: 10000, // Get all potential matches
+          suggest: true // Enable suggestions/fuzzy matching
+        });
+        
+        // FlexSearch Document search returns results grouped by field:
+        // [{ field: 'title', result: [id1, id2] }, { field: 'url', result: [id3] }, ...]
+        // We need to collect all unique IDs
+        const resultIds = new Set();
+        
+        if (Array.isArray(searchResults)) {
+          searchResults.forEach(fieldResult => {
+            if (fieldResult && Array.isArray(fieldResult.result)) {
+              fieldResult.result.forEach(id => resultIds.add(id));
+            }
+          });
+        }
+        
+        // Filter the already filtered bookmarks (from special filters)
+        // to only include those found by FlexSearch
+        filteredBookmarks = allBookmarks.filter(bookmark => resultIds.has(bookmark.id));
+        
+        // Then apply the remaining advanced query logic (negative terms, phrases, regex)
+        // This is still needed because FlexSearch might not handle negative terms/regex exactly as we want
+        // or we want to be double sure
+        filteredBookmarks = filteredBookmarks.filter(bookmark => 
+          matchesAdvancedQuery(bookmark, parsedQuery)
+        );
+      } catch (err) {
+        console.error('FlexSearch failed, falling back to manual search:', err);
+        // Fallback to manual search
+        filteredBookmarks = allBookmarks.filter(bookmark => 
+          matchesAdvancedQuery(bookmark, parsedQuery)
+        );
+      }
+    } else {
+      // No regular terms (only negative, phrases, or regex), use manual filter
+      filteredBookmarks = allBookmarks.filter(bookmark => 
+        matchesAdvancedQuery(bookmark, parsedQuery)
+      );
+    }
     
     // Calculate relevance scores and sort
     filteredBookmarks = filteredBookmarks.map(bookmark => ({

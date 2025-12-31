@@ -55,12 +55,28 @@ db.version(4).stores({
   // platformData will be populated during enrichment
 });
 
+// Schema version 5: Add deep metadata analysis fields
+// Adds readingTime, publishedDate, contentQualityScore, and smartTags for content intelligence
+db.version(5).stores({
+  bookmarks: 'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId, platform, creator, contentType, publishedDate',
+  enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
+  events: '++eventId, bookmarkId, type, timestamp',
+  cache: 'key',
+  settings: 'key',
+  similarities: '++id, bookmark1Id, bookmark2Id, score, [bookmark1Id+bookmark2Id]',
+  computedMetrics: 'key'
+}).upgrade(tx => {
+  console.log('Upgrading database to version 5 - adding deep metadata analysis fields');
+  // New fields: readingTime (minutes), publishedDate (timestamp), contentQualityScore (0-100), smartTags (array)
+  // These will be populated during metadata analysis (can be run on existing rawMetadata without new fetches)
+});
+
 // Define default settings
 const DEFAULT_SETTINGS = {
   enrichmentEnabled: true,
   enrichmentSchedule: 'manual', // 'manual' only - user triggers enrichment
-  enrichmentBatchSize: 20,
-  enrichmentConcurrency: 3, // Number of parallel requests (1-10)
+  enrichmentBatchSize: 50,
+  enrichmentConcurrency: 5, // Number of parallel requests (1-20)
   enrichmentRateLimit: 1000, // milliseconds between requests (deprecated with concurrency)
   enrichmentFreshnessDays: 30, // Re-enrich bookmarks older than this many days (0 = always re-enrich)
   autoCategorizationEnabled: true,
@@ -801,6 +817,51 @@ export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {
     // Content types filter
     if (filters.contentTypes && filters.contentTypes.length > 0) {
       bookmarks = bookmarks.filter(b => filters.contentTypes.includes(b.contentType));
+    }
+    
+    // Reading time filter
+    if (filters.readingTimeRange) {
+      const { min, max } = filters.readingTimeRange;
+      bookmarks = bookmarks.filter(b => {
+        if (!b.readingTime) return false;
+        if (min !== null && min !== undefined && b.readingTime < min) return false;
+        if (max !== null && max !== undefined && b.readingTime > max) return false;
+        return true;
+      });
+    }
+    
+    // Quality score filter
+    if (filters.qualityScoreRange) {
+      const { min, max } = filters.qualityScoreRange;
+      bookmarks = bookmarks.filter(b => {
+        if (b.contentQualityScore === null || b.contentQualityScore === undefined) return false;
+        if (min !== null && min !== undefined && b.contentQualityScore < min) return false;
+        if (max !== null && max !== undefined && b.contentQualityScore > max) return false;
+        return true;
+      });
+    }
+    
+    // Published date filter
+    if (filters.hasPublishedDate !== null && filters.hasPublishedDate !== undefined) {
+      if (filters.hasPublishedDate === true) {
+        // Only bookmarks with published dates
+        bookmarks = bookmarks.filter(b => b.publishedDate);
+      } else if (filters.hasPublishedDate === false) {
+        // Only bookmarks without published dates
+        bookmarks = bookmarks.filter(b => !b.publishedDate);
+      }
+      // If null, show all (no filter)
+    }
+    
+    // Smart tags filter
+    if (filters.smartTags && filters.smartTags.length > 0) {
+      bookmarks = bookmarks.filter(b => {
+        if (!b.smartTags || b.smartTags.length === 0) return false;
+        // Check if bookmark has any of the selected tags
+        return filters.smartTags.some(tag => 
+          b.smartTags.some(bTag => bTag.toLowerCase() === tag.toLowerCase())
+        );
+      });
     }
     
     if (filters.category) {

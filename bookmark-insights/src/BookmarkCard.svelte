@@ -1,8 +1,9 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard } from './utils.js';
+  import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard, highlightText } from './utils.js';
   
   export let bookmark;
+  export let parsedSearchQuery = null;
   
   const dispatch = createEventDispatcher();
   
@@ -38,7 +39,7 @@
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-1.5">
         <h3 class="text-sm font-medium text-gray-900 truncate flex-1" title={bookmark.title}>
-          {bookmark.title}
+          {@html highlightText(bookmark.title, parsedSearchQuery)}
         </h3>
         <!-- Status Icons -->
         <div class="flex items-center gap-1 flex-shrink-0">
@@ -67,7 +68,7 @@
         </div>
       </div>
       <p class="text-xs text-gray-500 truncate mt-1" title={bookmark.url}>
-        {bookmark.url}
+        {@html highlightText(bookmark.url, parsedSearchQuery)}
       </p>
       <div class="flex items-center justify-between mt-2 gap-2 flex-wrap">
         <div class="flex items-center gap-1.5">
@@ -80,6 +81,50 @@
             </span>
           {/if}
         </div>
+        {#if bookmark.description}
+          <p class="text-xs text-gray-500 mt-2 line-clamp-2 w-full" title={bookmark.description}>
+            {@html highlightText(bookmark.description, parsedSearchQuery)}
+          </p>
+        {/if}
+        <!-- Deep Metadata -->
+        {#if bookmark.readingTime || bookmark.publishedDate || bookmark.contentQualityScore}
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
+            {#if bookmark.readingTime}
+              <span class="text-xs text-gray-600 bg-gray-50 px-2 py-0.5 rounded flex items-center gap-1" title="Estimated reading time">
+                ⏱️ {bookmark.readingTime} min
+              </span>
+            {/if}
+            {#if bookmark.publishedDate}
+              <span class="text-xs text-gray-600 bg-gray-50 px-2 py-0.5 rounded flex items-center gap-1" title="Published date">
+                📅 {formatDate(bookmark.publishedDate)}
+              </span>
+            {/if}
+            {#if bookmark.contentQualityScore}
+              <span class="text-xs px-2 py-0.5 rounded flex items-center gap-1"
+                    class:text-green-700={bookmark.contentQualityScore >= 70}
+                    class:bg-green-50={bookmark.contentQualityScore >= 70}
+                    class:text-yellow-700={bookmark.contentQualityScore >= 40 && bookmark.contentQualityScore < 70}
+                    class:bg-yellow-50={bookmark.contentQualityScore >= 40 && bookmark.contentQualityScore < 70}
+                    class:text-orange-700={bookmark.contentQualityScore < 40}
+                    class:bg-orange-50={bookmark.contentQualityScore < 40}
+                    title="Content quality score">
+                ⭐ {bookmark.contentQualityScore}
+              </span>
+            {/if}
+          </div>
+        {/if}
+        {#if bookmark.smartTags && bookmark.smartTags.length > 0}
+          <div class="flex items-center gap-1 mt-2 flex-wrap">
+            {#each bookmark.smartTags.slice(0, 5) as tag}
+              <span class="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded" title="Smart tag">
+                {tag}
+              </span>
+            {/each}
+            {#if bookmark.smartTags.length > 5}
+              <span class="text-xs text-gray-500">+{bookmark.smartTags.length - 5} more</span>
+            {/if}
+          </div>
+        {/if}
         <div class="flex items-center space-x-2">
           <button
             on:click={handleCopyUrl}

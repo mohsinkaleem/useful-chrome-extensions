@@ -1,15 +1,21 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard } from './utils.js';
+  import { formatDate, getFaviconUrl, getGeneratedFavicon, getDomainLabel, copyToClipboard, highlightText } from './utils.js';
   
   export let bookmark;
   export let isSelected = false;
   export let multiSelectMode = false;
+  export let parsedSearchQuery = null;
   
   const dispatch = createEventDispatcher();
   
   let showCopied = false;
   
+  function handleImageError(event) {
+    // Fallback to generated icon if the favicon URL fails to load
+    event.target.src = getGeneratedFavicon(bookmark);
+  }
+
   function openBookmark(url) {
     chrome.tabs.create({ url });
   }
@@ -60,6 +66,7 @@
     <!-- Favicon -->
     <img 
       src="{getFaviconUrl(bookmark)}"
+      on:error={handleImageError}
       alt="Favicon"
       class="w-4 h-4 mr-3 flex-shrink-0"
     />
@@ -74,7 +81,7 @@
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-1.5">
             <h3 class="text-sm font-medium text-gray-900 truncate hover:text-blue-600 flex-1" title={bookmark.title}>
-              {bookmark.title}
+              {@html highlightText(bookmark.title, parsedSearchQuery)}
             </h3>
             <!-- Status Icons -->
             <div class="flex items-center gap-1 flex-shrink-0">
@@ -104,7 +111,7 @@
           </div>
           <div class="flex items-center mt-1 space-x-2 sm:space-x-4">
             <p class="text-xs text-gray-500 flex-1 min-w-0" title={bookmark.url}>
-              <span class="truncate block">{bookmark.url}</span>
+              <span class="truncate block">{@html highlightText(bookmark.url, parsedSearchQuery)}</span>
             </p>
             <span class="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded whitespace-nowrap flex-shrink-0">
               {getDomainLabel(bookmark)}
@@ -120,6 +127,48 @@
               📁 {bookmark.folderPath}
             </p>
           {/if}
+          {#if bookmark.description}
+            <p class="text-xs text-gray-500 mt-1 line-clamp-2" title={bookmark.description}>
+              {@html highlightText(bookmark.description, parsedSearchQuery)}
+            </p>
+          {/if}
+          <!-- Deep Metadata -->
+          {#if bookmark.readingTime || bookmark.publishedDate || bookmark.contentQualityScore || (bookmark.smartTags && bookmark.smartTags.length > 0)}
+            <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+              {#if bookmark.readingTime}
+                <span class="text-xs text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded" title="Estimated reading time">
+                  ⏱️ {bookmark.readingTime}min
+                </span>
+              {/if}
+              {#if bookmark.publishedDate}
+                <span class="text-xs text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded" title="Published: {formatDate(bookmark.publishedDate)}">
+                  📅 {formatDate(bookmark.publishedDate)}
+                </span>
+              {/if}
+              {#if bookmark.contentQualityScore}
+                <span class="text-xs px-1.5 py-0.5 rounded"
+                      class:text-green-700={bookmark.contentQualityScore >= 70}
+                      class:bg-green-50={bookmark.contentQualityScore >= 70}
+                      class:text-yellow-700={bookmark.contentQualityScore >= 40 && bookmark.contentQualityScore < 70}
+                      class:bg-yellow-50={bookmark.contentQualityScore >= 40 && bookmark.contentQualityScore < 70}
+                      class:text-orange-700={bookmark.contentQualityScore < 40}
+                      class:bg-orange-50={bookmark.contentQualityScore < 40}
+                      title="Quality: {bookmark.contentQualityScore}/100">
+                  ⭐{bookmark.contentQualityScore}
+                </span>
+              {/if}
+              {#if bookmark.smartTags && bookmark.smartTags.length > 0}
+                {#each bookmark.smartTags.slice(0, 3) as tag}
+                  <span class="text-xs text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded" title="Tag">
+                    {tag}
+                  </span>
+                {/each}
+                {#if bookmark.smartTags.length > 3}
+                  <span class="text-xs text-gray-500">+{bookmark.smartTags.length - 3}</span>
+                {/if}
+              {/if}
+            </div>
+          {/if}
         </div>
         
         <!-- Date and Actions -->
@@ -127,6 +176,15 @@
           <span class="text-xs text-gray-400 whitespace-nowrap hidden sm:block">
             {formatDate(bookmark.dateAdded)}
           </span>
+          <button
+            on:click|stopPropagation={() => dispatch('enrich', { bookmarkId: bookmark.id })}
+            class="p-1 text-gray-400 hover:text-purple-600 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Enrich metadata now"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+          </button>
           <button
             on:click={handleCopyUrl}
             class="p-1 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
