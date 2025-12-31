@@ -154,6 +154,7 @@
   let enhancedSimilarPairs = [];
   let enhancedSimilarStats = null;
   let enhancedSimilarCacheInfo = null; // Cache info for similarity detection
+  let activeSimilarityTab = 'duplicates'; // Tab state for unified similarity card
   let selectedComparisonPair = null; // For side-by-side comparison modal
   
   // Useless bookmarks detection
@@ -2455,234 +2456,235 @@
             </div>
           </div>
           
-          <!-- Duplicates -->
+          <!-- Duplicates & Similarities (Unified) -->
           <div class="bg-white rounded-lg shadow">
             <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
-                Duplicate Bookmarks {#if !loadingDuplicates}({duplicates.length} groups){/if}
-              </h3>
-            </div>
-            <div class="p-6">
-              {#if loadingDuplicates}
-                <div class="flex items-center justify-center py-8">
-                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <span class="ml-3 text-gray-500">Finding duplicates...</span>
+              <div class="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <h3 class="text-lg font-medium text-gray-900">
+                    Duplicates & Similarities
+                  </h3>
+                  <p class="text-xs text-gray-500 mt-1">Manage exact duplicates and find similar content</p>
                 </div>
-              {:else if duplicates.length === 0}
-                <p class="text-gray-500">No duplicate bookmarks found. Great!</p>
-              {:else}
-                <div class="space-y-6 max-h-[32rem] overflow-y-auto">
-                  {#each duplicates.slice(0, duplicatesDisplayLimit) as group, groupIndex}
-                    <div class="border border-gray-200 rounded-lg p-4">
-                      <h4 class="font-medium text-gray-900 mb-3 truncate" title={group[0].url}>
-                        {group[0].url}
-                      </h4>
-                      <div class="space-y-2">
-                        {#each group as bookmark, index}
-                          <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
-                            <div class="flex-1 min-w-0">
-                              <div class="text-sm font-medium truncate">{bookmark.title}</div>
-                              <div class="text-xs text-gray-500">
-                                {bookmark.folderPath || 'No folder'}
-                              </div>
-                            </div>
-                            {#if index > 0}
-                              <button
-                                on:click={() => deleteDuplicate(bookmark.id, groupIndex)}
-                                class="ml-4 px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 flex-shrink-0"
-                              >
-                                Delete
-                              </button>
-                            {/if}
-                          </div>
-                        {/each}
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-                {#if duplicates.length > duplicatesDisplayLimit}
-                  <div class="mt-4 text-center">
-                    <button
-                      on:click={loadMoreDuplicates}
-                      class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-                    >
-                      Load More ({duplicatesDisplayLimit} of {duplicates.length} shown)
-                    </button>
-                  </div>
-                {/if}
-              {/if}
-            </div>
-          </div>
-          
-          <!-- Smart Similar Detection (On-demand) -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <h3 class="text-lg font-medium text-gray-900">
-                  🔍 Smart Similar Detection {#if enhancedSimilarStats}({enhancedSimilarStats.total} pairs){/if}
-                </h3>
-                <p class="text-xs text-gray-500 mt-1">Advanced fuzzy matching using title, description, keywords & domain analysis</p>
-              </div>
-              <div class="flex items-center gap-2">
-                {#if enhancedSimilarCacheInfo?.fromCache}
-                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-md" title="Loaded from cache">
-                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
-                    </svg>
-                    Cached {Math.round((enhancedSimilarCacheInfo.cacheAge || 0) / 60000)}m ago
-                  </span>
+                <div class="flex items-center gap-2">
+                  {#if enhancedSimilarCacheInfo?.fromCache}
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-md" title="Loaded from cache">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                      </svg>
+                      Cached {Math.round((enhancedSimilarCacheInfo.cacheAge || 0) / 60000)}m ago
+                    </span>
+                  {/if}
                   <button
                     on:click={() => runSmartSimilarDetection(true)}
                     disabled={loadingEnhancedSimilar}
-                    class="px-2.5 py-1.5 text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md disabled:opacity-50"
-                    title="Force refresh - recompute similarity analysis"
+                    class="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                   >
-                    🔄 Refresh
+                    {#if loadingEnhancedSimilar}
+                      <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Scanning...
+                    {:else}
+                      🔍 Scan for Similarities
+                    {/if}
                   </button>
-                {:else if enhancedSimilarStats}
-                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-green-50 text-green-700 border border-green-200 rounded-md">
-                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                    </svg>
-                    Fresh analysis
-                  </span>
-                {/if}
+                </div>
+              </div>
+              
+              <!-- Tabs -->
+              <div class="flex space-x-4 mt-4 border-b border-gray-100">
                 <button
-                  on:click={() => runSmartSimilarDetection(false)}
-                  disabled={loadingEnhancedSimilar}
-                  class="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                  class="pb-2 text-sm font-medium border-b-2 transition-colors {activeSimilarityTab === 'duplicates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+                  on:click={() => activeSimilarityTab = 'duplicates'}
                 >
-                  {#if loadingEnhancedSimilar}
-                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    Analyzing...
-                  {:else}
-                    🔍 Run Analysis
-                  {/if}
+                  Exact Duplicates ({duplicates.length})
+                </button>
+                <button
+                  class="pb-2 text-sm font-medium border-b-2 transition-colors {activeSimilarityTab === 'similar' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+                  on:click={() => activeSimilarityTab = 'similar'}
+                >
+                  Similar Content ({enhancedSimilarStats ? enhancedSimilarStats.total : 0})
                 </button>
               </div>
             </div>
+            
             <div class="p-6">
-              {#if loadingEnhancedSimilar}
-                <div class="flex items-center justify-center py-8">
-                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                  <span class="ml-3 text-gray-500">Running smart similarity analysis...</span>
-                </div>
-              {:else if enhancedSimilarPairs.length === 0 && !enhancedSimilarStats}
-                <div class="text-center py-8">
-                  <p class="text-gray-500 mb-4">Click "Run Analysis" to detect similar bookmarks using advanced fuzzy matching.</p>
-                  <p class="text-xs text-gray-400">This analysis uses title, description, keywords, and domain information to find similar content.</p>
-                </div>
-              {:else if enhancedSimilarPairs.length === 0}
-                <p class="text-gray-500">No similar bookmarks detected with enhanced matching.</p>
-              {:else}
-                <!-- Stats Summary -->
-                {#if enhancedSimilarStats}
-                  <div class="mb-4 p-3 bg-indigo-50 rounded-lg flex items-center justify-between">
-                    <div class="flex gap-4 text-sm">
-                      <span class="text-indigo-700">
-                        <strong>{enhancedSimilarStats.sameDomain}</strong> same-domain pairs
-                      </span>
-                      <span class="text-indigo-600">
-                        <strong>{enhancedSimilarStats.crossDomain}</strong> cross-domain pairs
-                      </span>
-                      <span class="text-indigo-500">
-                        Avg: <strong>{(enhancedSimilarStats.avgSimilarity * 100).toFixed(0)}%</strong> similar
-                      </span>
-                    </div>
+              <!-- Exact Duplicates Tab -->
+              {#if activeSimilarityTab === 'duplicates'}
+                {#if loadingDuplicates}
+                  <div class="flex items-center justify-center py-8">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    <span class="ml-3 text-gray-500">Finding duplicates...</span>
                   </div>
-                {/if}
-                
-                <div class="space-y-3 max-h-[40rem] overflow-y-auto">
-                  {#each enhancedSimilarPairs.slice(0, similarDisplayLimit) as pair, idx}
-                    <div class="border {pair.sameDomain ? 'border-indigo-200 bg-indigo-50' : 'border-purple-200 bg-purple-50'} rounded-lg p-4">
-                      <div class="flex justify-between items-center mb-3">
-                        <div class="flex items-center gap-2">
-                          <span class="text-xs font-semibold px-2 py-1 rounded {pair.sameDomain ? 'bg-indigo-200 text-indigo-800' : 'bg-purple-200 text-purple-800'}">
-                            {Math.round(pair.similarity * 100)}% match
-                          </span>
-                          {#if pair.sameDomain}
-                            <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">Same Domain</span>
-                          {/if}
-                          {#if pair.sameCategory}
-                            <span class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">Same Category</span>
-                          {/if}
+                {:else if duplicates.length === 0}
+                  <div class="text-center py-8">
+                    <p class="text-gray-500">No exact duplicate bookmarks found. Great job!</p>
+                  </div>
+                {:else}
+                  <div class="space-y-6 max-h-[32rem] overflow-y-auto">
+                    {#each duplicates.slice(0, duplicatesDisplayLimit) as group, groupIndex}
+                      <div class="border border-gray-200 rounded-lg p-4">
+                        <h4 class="font-medium text-gray-900 mb-3 truncate" title={group[0].url}>
+                          {group[0].url}
+                        </h4>
+                        <div class="space-y-2">
+                          {#each group as bookmark, index}
+                            <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+                              <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium truncate">{bookmark.title}</div>
+                                <div class="text-xs text-gray-500">
+                                  {bookmark.folderPath || 'No folder'}
+                                </div>
+                              </div>
+                              {#if index > 0}
+                                <button
+                                  on:click={() => deleteDuplicate(bookmark.id, groupIndex)}
+                                  class="ml-4 px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 flex-shrink-0"
+                                >
+                                  Delete
+                                </button>
+                              {/if}
+                            </div>
+                          {/each}
                         </div>
-                        <button
-                          on:click={() => openComparisonModal(pair)}
-                          class="text-xs px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50"
-                        >
-                          Compare Details
-                        </button>
                       </div>
-                      
-                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <!-- Bookmark 1 -->
-                        <div class="p-3 bg-white rounded border border-gray-200">
-                          <div class="flex justify-between items-start mb-2">
-                            <div class="flex-1 min-w-0">
-                              <div class="text-sm font-medium text-gray-800 truncate" title={pair.bookmark1.title}>
-                                {pair.bookmark1.title}
-                              </div>
-                              <div class="text-xs text-gray-500 truncate" title={pair.bookmark1.url}>
-                                {pair.bookmark1.url}
-                              </div>
-                            </div>
+                    {/each}
+                  </div>
+                  {#if duplicates.length > duplicatesDisplayLimit}
+                    <div class="mt-4 text-center">
+                      <button
+                        on:click={loadMoreDuplicates}
+                        class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                      >
+                        Load More ({duplicatesDisplayLimit} of {duplicates.length} shown)
+                      </button>
+                    </div>
+                  {/if}
+                {/if}
+              
+              <!-- Similar Content Tab -->
+              {:else if activeSimilarityTab === 'similar'}
+                {#if loadingEnhancedSimilar}
+                  <div class="flex items-center justify-center py-8">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <span class="ml-3 text-gray-500">Running smart similarity analysis...</span>
+                  </div>
+                {:else if enhancedSimilarPairs.length === 0 && !enhancedSimilarStats}
+                  <div class="text-center py-8">
+                    <p class="text-gray-500 mb-4">Click "Scan for Similarities" to detect similar bookmarks using advanced fuzzy matching.</p>
+                    <p class="text-xs text-gray-400">This analysis uses title, description, keywords, and domain information to find similar content.</p>
+                  </div>
+                {:else if enhancedSimilarPairs.length === 0}
+                  <p class="text-gray-500 text-center py-8">No similar bookmarks detected with enhanced matching.</p>
+                {:else}
+                  <!-- Stats Summary -->
+                  {#if enhancedSimilarStats}
+                    <div class="mb-4 p-3 bg-indigo-50 rounded-lg flex items-center justify-between">
+                      <div class="flex gap-4 text-sm">
+                        <span class="text-indigo-700">
+                          <strong>{enhancedSimilarStats.sameDomain}</strong> same-domain pairs
+                        </span>
+                        <span class="text-indigo-600">
+                          <strong>{enhancedSimilarStats.crossDomain}</strong> cross-domain pairs
+                        </span>
+                        <span class="text-indigo-500">
+                          Avg: <strong>{(enhancedSimilarStats.avgSimilarity * 100).toFixed(0)}%</strong> similar
+                        </span>
+                      </div>
+                    </div>
+                  {/if}
+                  
+                  <div class="space-y-3 max-h-[40rem] overflow-y-auto">
+                    {#each enhancedSimilarPairs.slice(0, similarDisplayLimit) as pair, idx}
+                      <div class="border {pair.sameDomain ? 'border-indigo-200 bg-indigo-50' : 'border-purple-200 bg-purple-50'} rounded-lg p-4">
+                        <div class="flex justify-between items-center mb-3">
+                          <div class="flex items-center gap-2">
+                            <span class="text-xs font-semibold px-2 py-1 rounded {pair.sameDomain ? 'bg-indigo-200 text-indigo-800' : 'bg-purple-200 text-purple-800'}">
+                              {Math.round(pair.similarity * 100)}% match
+                            </span>
+                            {#if pair.sameDomain}
+                              <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">Same Domain</span>
+                            {/if}
+                            {#if pair.sameCategory}
+                              <span class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">Same Category</span>
+                            {/if}
                           </div>
-                          <div class="flex items-center justify-between mt-2">
-                            <div class="text-xs text-gray-400">
-                              Coverage: {pair.coverage1.percentage.toFixed(0)}%
-                            </div>
-                            <div class="flex gap-1">
-                              <a href={pair.bookmark1.url} target="_blank" rel="noopener" 
-                                 class="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">Open</a>
-                              <button
-                                on:click={() => deleteFromComparison(pair.bookmark1.id)}
-                                class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                              >Delete</button>
-                            </div>
-                          </div>
+                          <button
+                            on:click={() => openComparisonModal(pair)}
+                            class="text-xs px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                          >
+                            Compare Details
+                          </button>
                         </div>
                         
-                        <!-- Bookmark 2 -->
-                        <div class="p-3 bg-white rounded border border-gray-200">
-                          <div class="flex justify-between items-start mb-2">
-                            <div class="flex-1 min-w-0">
-                              <div class="text-sm font-medium text-gray-800 truncate" title={pair.bookmark2.title}>
-                                {pair.bookmark2.title}
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <!-- Bookmark 1 -->
+                          <div class="p-3 bg-white rounded border border-gray-200">
+                            <div class="flex justify-between items-start mb-2">
+                              <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium text-gray-800 truncate" title={pair.bookmark1.title}>
+                                  {pair.bookmark1.title}
+                                </div>
+                                <div class="text-xs text-gray-500 truncate" title={pair.bookmark1.url}>
+                                  {pair.bookmark1.url}
+                                </div>
                               </div>
-                              <div class="text-xs text-gray-500 truncate" title={pair.bookmark2.url}>
-                                {pair.bookmark2.url}
+                            </div>
+                            <div class="flex items-center justify-between mt-2">
+                              <div class="text-xs text-gray-400">
+                                Coverage: {pair.coverage1.percentage.toFixed(0)}%
+                              </div>
+                              <div class="flex gap-1">
+                                <a href={pair.bookmark1.url} target="_blank" rel="noopener" 
+                                   class="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">Open</a>
+                                <button
+                                  on:click={() => deleteFromComparison(pair.bookmark1.id)}
+                                  class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                >Delete</button>
                               </div>
                             </div>
                           </div>
-                          <div class="flex items-center justify-between mt-2">
-                            <div class="text-xs text-gray-400">
-                              Coverage: {pair.coverage2.percentage.toFixed(0)}%
+                          
+                          <!-- Bookmark 2 -->
+                          <div class="p-3 bg-white rounded border border-gray-200">
+                            <div class="flex justify-between items-start mb-2">
+                              <div class="flex-1 min-w-0">
+                                <div class="text-sm font-medium text-gray-800 truncate" title={pair.bookmark2.title}>
+                                  {pair.bookmark2.title}
+                                </div>
+                                <div class="text-xs text-gray-500 truncate" title={pair.bookmark2.url}>
+                                  {pair.bookmark2.url}
+                                </div>
+                              </div>
                             </div>
-                            <div class="flex gap-1">
-                              <a href={pair.bookmark2.url} target="_blank" rel="noopener" 
-                                 class="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">Open</a>
-                              <button
-                                on:click={() => deleteFromComparison(pair.bookmark2.id)}
-                                class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                              >Delete</button>
+                            <div class="flex items-center justify-between mt-2">
+                              <div class="text-xs text-gray-400">
+                                Coverage: {pair.coverage2.percentage.toFixed(0)}%
+                              </div>
+                              <div class="flex gap-1">
+                                <a href={pair.bookmark2.url} target="_blank" rel="noopener" 
+                                   class="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">Open</a>
+                                <button
+                                  on:click={() => deleteFromComparison(pair.bookmark2.id)}
+                                  class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                                >Delete</button>
+                              </div>
                             </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  {/each}
-                </div>
-                
-                {#if enhancedSimilarPairs.length > similarDisplayLimit}
-                  <div class="mt-4 text-center">
-                    <button
-                      on:click={loadMoreSimilar}
-                      class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-                    >
-                      Load More ({similarDisplayLimit} of {enhancedSimilarPairs.length} shown)
-                    </button>
+                    {/each}
                   </div>
+                  
+                  {#if enhancedSimilarPairs.length > similarDisplayLimit}
+                    <div class="mt-4 text-center">
+                      <button
+                        on:click={loadMoreSimilar}
+                        class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                      >
+                        Load More ({similarDisplayLimit} of {enhancedSimilarPairs.length} shown)
+                      </button>
+                    </div>
+                  {/if}
                 {/if}
               {/if}
             </div>

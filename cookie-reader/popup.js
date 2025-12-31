@@ -6,6 +6,74 @@ let allStats = [];
 let statsOffset = 0;
 const STATS_BATCH_SIZE = 50;
 
+function renderNextBatch() {
+  const tbody = document.getElementById('stats-body');
+  const loadMoreContainer = document.getElementById('load-more-container');
+  
+  if (allStats.length === 0) {
+    showEmptyState('stats-body', 'No cookies found');
+    loadMoreContainer.style.display = 'none';
+    return;
+  }
+  
+  const nextBatch = allStats.slice(statsOffset, statsOffset + STATS_BATCH_SIZE);
+  
+  nextBatch.forEach(stat => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td title="${escapeHtml(stat.domain)}">${escapeHtml(stat.domain)}</td>
+      <td>${stat.count}</td>
+      <td>${formatBytes(stat.size)}</td>
+      <td>${stat.secure}</td>
+      <td>${stat.httpOnly}</td>
+      <td>${stat.session}</td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  statsOffset += nextBatch.length;
+
+  // Show/hide load more button
+  if (statsOffset < allStats.length) {
+    loadMoreContainer.style.display = 'block';
+  } else {
+    loadMoreContainer.style.display = 'none';
+  }
+}
+
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function showEmptyState(containerId, message) {
+  const container = document.getElementById(containerId);
+  const emptyState = document.createElement('div');
+  emptyState.className = 'empty-state';
+  emptyState.textContent = message;
+  
+  if (containerId === 'cookie-list') {
+    container.innerHTML = '';
+    container.appendChild(emptyState);
+  } else if (containerId === 'stats-body') {
+    container.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: #999;">${message}</td></tr>`;
+  }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', init);
 
@@ -265,41 +333,6 @@ async function calculateStats() {
   return statsArray;
 }
 
-function renderNextBatch() {
-  const tbody = document.getElementById('stats-body');
-  const loadMoreContainer = document.getElementById('load-more-container');
-  
-  if (allStats.length === 0) {
-    showEmptyState('stats-body', 'No cookies found');
-    loadMoreContainer.style.display = 'none';
-    return;
-  }
-  
-  const nextBatch = allStats.slice(statsOffset, statsOffset + STATS_BATCH_SIZE);
-  
-  nextBatch.forEach(stat => {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td title="${escapeHtml(stat.domain)}">${escapeHtml(stat.domain)}</td>
-      <td>${stat.count}</td>
-      <td>${formatBytes(stat.size)}</td>
-      <td>${stat.secure}</td>
-      <td>${stat.httpOnly}</td>
-      <td>${stat.session}</td>
-    `;
-    tbody.appendChild(row);
-  });
-
-  statsOffset += nextBatch.length;
-
-  // Show/hide load more button
-  if (statsOffset < allStats.length) {
-    loadMoreContainer.style.display = 'block';
-  } else {
-    loadMoreContainer.style.display = 'none';
-  }
-}
-
 function formatBytes(bytes, decimals = 2) {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -361,28 +394,4 @@ async function exportData() {
     console.error('Error exporting data:', error);
     alert('Error exporting data. Please try again.');
   }
-}
-
-function showEmptyState(containerId, message) {
-  const container = document.getElementById(containerId);
-  const emptyState = document.createElement('div');
-  emptyState.className = 'empty-state';
-  emptyState.textContent = message;
-  
-  if (containerId === 'cookie-list') {
-    container.innerHTML = '';
-    container.appendChild(emptyState);
-  } else if (containerId === 'stats-body') {
-    container.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: #999;">${message}</td></tr>`;
-  }
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }

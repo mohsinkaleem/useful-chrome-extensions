@@ -38,7 +38,7 @@ Chrome Extension
 ├── Dashboard (Full Page)
 │   ├── Bookmarks Tab - Browse & filter
 │   ├── Insights Tab - VisualInsights component (6 tabs)
-│   ├── Health Tab - Enrichment, dead links, similar detection
+│   ├── Health Tab - Enrichment, dead links, unified duplicates & similarities
 │   └── Data Tab - Database explorer
 ├── Background Service Worker
 │   ├── Bookmark event listeners
@@ -443,7 +443,8 @@ folder:"path"
 
 - **Algorithm:** TF-IDF with cosine similarity
 - **Pre-filtering:** Same domain/category candidates first (reduces O(n²))
-- **Trigger:** Manual "Run Analysis" button (not automatic)
+- **Trigger:** Manual "Scan for Similarities" button (not automatic)
+- **Performance:** Uses `yieldToMain` pattern to prevent UI freezing during heavy computation
 - **Threshold:** >0.4 similarity for matches
 
 ### Dead Link Re-check

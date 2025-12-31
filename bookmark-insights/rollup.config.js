@@ -62,7 +62,7 @@ export default [
     }
   },
   {
-    input: 'background-new.js',
+    input: 'src/background.js',
     output: {
       sourcemap: !production,
       format: 'es',

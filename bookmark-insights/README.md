@@ -58,9 +58,9 @@ Six interactive tabs with actionable insights:
 ### 🏥 Health & Maintenance
 
 - **Dead links** - View, re-check, or delete unreachable bookmarks
-- **Smart similar detection** - On-demand fuzzy matching with side-by-side comparison
+- **Duplicates & Similarities** - Unified interface for managing exact duplicates and finding similar content
+- **Smart similar detection** - Non-blocking, on-demand fuzzy matching with side-by-side comparison
 - **Cached results** - Shows cache status with option to force refresh
-- **Duplicate detection** - Exact and normalized URL matching
 - **Malformed URL detection** - Find invalid bookmark URLs
 
 ### 📚 Bookmark Display
@@ -119,22 +119,38 @@ domain:github.com +tutorial -video enriched:yes
 platform:youtube channel:@fireship type:video
 ```
 
-## Installation
+## Getting Started
 
-### Development
-
+### 1. Install Dependencies
 ```bash
 npm install
-npm run build
 ```
 
-Then load in Chrome:
+### 2. Build & Package
+To create a clean extension folder without `node_modules` (recommended for loading into Chrome):
+```bash
+npm run package
+```
 
-1. Go to `chrome://extensions/`
-2. Enable "Developer mode"
-3. Click "Load unpacked" and select this folder
+### 3. Load into Chrome
+1. Open Chrome and navigate to `chrome://extensions/`
+2. Enable **Developer mode** (top right toggle)
+3. Click **Load unpacked**
+4. Select the **`extension/`** folder in this project directory
 
-## Usage
+---
+
+## Development
+
+For active development with hot-reloading (CSS) and watch mode (JS):
+
+```bash
+npm run dev
+```
+
+*Note: When running in dev mode, changes are built to the root directory. For the cleanest experience, use `npm run package` after making changes to refresh the `extension/` folder.*
+
+## Search Syntax
 
 **Popup** - Click extension icon for quick search and recent bookmarks
 
@@ -180,19 +196,22 @@ npm run build:js   # JavaScript only
 ## File Structure
 
 ```
-src/
-├── db.js              # IndexedDB operations & caching (schema v4)
-├── enrichment.js      # Metadata fetching pipeline
-├── url-parsers.js     # Platform-specific URL parsing
-├── search.js          # FlexSearch with platform filters
-├── similarity.js      # TF-IDF similarity engine
-├── insights.js        # Analytics & platform insights
-├── stores.js          # Svelte state management
-├── Dashboard.svelte   # Main dashboard
-├── Sidebar.svelte     # Filters with platforms & creators
-├── VisualInsights.svelte  # 6-tab analytics
-├── CreatorExplorer.svelte # Creator/channel browser
-└── ...
+.
+├── extension/         # Clean extension build (Load this in Chrome)
+├── public/            # Compiled assets
+├── src/               # Svelte components and logic
+│   ├── db.js          # IndexedDB operations & caching
+│   ├── enrichment.js  # Metadata fetching pipeline
+│   ├── url-parsers.js # Platform-specific URL parsing
+│   ├── search.js      # FlexSearch with platform filters
+│   ├── similarity.js  # TF-IDF similarity engine
+│   ├── insights.js    # Analytics & platform insights
+│   ├── stores.js      # Svelte state management
+│   ├── Dashboard.svelte   # Main dashboard
+│   └── Sidebar.svelte     # Filters with platforms & creators
+├── background.js      # Compiled background service worker
+├── manifest.json      # Extension manifest
+└── rollup.config.js   # Build configuration
 ```
 
 ## Permissions

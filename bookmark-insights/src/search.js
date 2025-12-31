@@ -230,7 +230,10 @@ export async function initializeSearchIndex() {
       });
       
       // Import serialized data
-      searchIndex.import(cachedIndex.serialized);
+      const keys = Object.keys(cachedIndex.serialized);
+      for (const key of keys) {
+        await searchIndex.import(key, cachedIndex.serialized[key]);
+      }
       indexInitialized = true;
       console.log('Loaded FlexSearch index from cache');
       return searchIndex;
@@ -276,7 +279,10 @@ export async function rebuildSearchIndex() {
   
   // Cache the serialized index
   try {
-    const serialized = await searchIndex.export();
+    const serialized = {};
+    await searchIndex.export((key, data) => {
+      serialized[key] = data;
+    });
     await setCache('flexsearch_index', { serialized, timestamp: Date.now() });
     console.log(`Indexed ${bookmarks.length} bookmarks`);
   } catch (error) {

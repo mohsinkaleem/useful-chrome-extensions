@@ -71,6 +71,7 @@
 ### Performance Issues
 **Problem**: Extension is slow or unresponsive
 **Solutions**:
+- **Similarity Detection**: The "Scan for Similarities" feature is now optimized to run in the background without freezing the page. If it still feels slow, try processing smaller batches.
 - Check how many bookmarks you have (thousands can slow things down)
 - Close and reopen the extension
 - Restart Chrome

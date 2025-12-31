@@ -720,6 +720,9 @@ function calculateComprehensiveSimilarity(bookmark1, bookmark2) {
   };
 }
 
+// Helper to yield control to main thread to prevent UI freezing
+const yieldToMain = () => new Promise(resolve => setTimeout(resolve, 0));
+
 /**
  * Find similar bookmarks using enhanced fuzzy matching on same domain + metadata
  * Returns pairs with detailed comparison data for side-by-side viewing
@@ -779,6 +782,8 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
     });
     
     const pairs = [];
+    let operationsCount = 0;
+    const YIELD_THRESHOLD = 100; // Yield every 100 comparisons
     
     // Phase 1: Compare within same domains (highest priority)
     for (const [domain, groupBookmarks] of domainGroups.entries()) {
@@ -786,6 +791,9 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
       
       for (let i = 0; i < groupBookmarks.length; i++) {
         for (let j = i + 1; j < groupBookmarks.length; j++) {
+          operationsCount++;
+          if (operationsCount % YIELD_THRESHOLD === 0) await yieldToMain();
+
           const b1 = groupBookmarks[i];
           const b2 = groupBookmarks[j];
           
@@ -820,6 +828,9 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
       
       for (let i = 0; i < sampledBookmarks.length; i++) {
         for (let j = i + 1; j < sampledBookmarks.length; j++) {
+          operationsCount++;
+          if (operationsCount % YIELD_THRESHOLD === 0) await yieldToMain();
+
           const b1 = sampledBookmarks[i];
           const b2 = sampledBookmarks[j];
           
