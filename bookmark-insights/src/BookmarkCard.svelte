@@ -1,6 +1,7 @@
 <script>
   import { createEventDispatcher } from 'svelte';
   import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard, highlightText } from './utils.js';
+  import { selectedBookmarks } from './stores.js';
   
   export let bookmark;
   export let parsedSearchQuery = null;
@@ -21,15 +22,33 @@
       setTimeout(() => showCopied = false, 2000);
     }
   }
+
+  function toggleSelection(event) {
+    event.stopPropagation();
+    selectedBookmarks.toggle(bookmark.id);
+  }
 </script>
 
-<div class="bookmark-card bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
+<div class="bookmark-card bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200 relative group"
      class:border-red-200={bookmark.isAlive === false}
      class:bg-red-50={bookmark.isAlive === false}
+     class:ring-2={$selectedBookmarks.has(bookmark.id)}
+     class:ring-blue-500={$selectedBookmarks.has(bookmark.id)}
      role="button"
      tabindex="0"
      on:click={() => openBookmark(bookmark.url)}
      on:keydown={(e) => e.key === 'Enter' && openBookmark(bookmark.url)}>
+  
+  <!-- Selection Checkbox -->
+  <div class="absolute top-2 right-2 z-10"
+       class:opacity-0={!$selectedBookmarks.has(bookmark.id)}
+       class:group-hover:opacity-100={true}>
+      <input type="checkbox" 
+             checked={$selectedBookmarks.has(bookmark.id)}
+             on:click={toggleSelection}
+             class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" />
+  </div>
+
   <div class="flex items-start space-x-3">
     <img 
       src="{getFaviconUrl(bookmark)}"

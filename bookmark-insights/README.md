@@ -72,6 +72,8 @@ Six interactive tabs with actionable insights:
 - **Status icons** - Visual indicators for dead links, enriched status, access count
 - **Category tags** - Category labels displayed on bookmarks
 - **Favicon display** - Website icons for quick recognition
+- **Multi-select** - Select multiple bookmarks for batch operations (persistent across view changes)
+- **Reactive filtering** - Sidebar counts update dynamically as you apply filters
 - **Clear filters** - One-click button to reset all sidebar filters
 
 ### 💾 Data Explorer

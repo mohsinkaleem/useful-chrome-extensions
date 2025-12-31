@@ -62,6 +62,9 @@
     findUselessBookmarks,
     getUselessBookmarkIds
   } from './similarity.js';
+
+  import { activeFilters, searchQuery as searchQueryStore, allBookmarks, selectedBookmarks } from './stores.js';
+  import { parseSearchQuery } from './search.js';
   
   Chart.register(...registerables);
   
@@ -69,7 +72,6 @@
   let loading = true;
   let error = null;
   let currentView = 'bookmarks'; // bookmarks, insights, health, dataExplorer
-  let searchQuery = '';
   
   // Pagination variables
   let currentPage = 0;
@@ -79,15 +81,6 @@
   
   // Sorting state
   let currentSortBy = 'date_desc';
-  
-  // Filter state
-  let currentFilters = {
-    domains: [],
-    folders: [],
-    dateRange: null,
-    searchQuery: '',
-    sortBy: 'date_desc'
-  };
   
   let parsedSearchQuery = null;
   
@@ -187,7 +180,7 @@
   let backupValidation = null;
   
   // Multi-select state
-  let selectedBookmarks = new Set();
+  // selectedBookmarks moved to store
   let multiSelectMode = false;
   let viewMode = 'list'; // 'list' or 'card'
   
@@ -196,7 +189,8 @@
   
   onMount(async () => {
     try {
-      await loadBookmarksPaginated();
+      // Initial load handled by reactive statement or explicit call
+      // loadBookmarks(0, false); 
       if (currentView === 'insights') {
         await loadInsights();
       } else if (currentView === 'health') {
@@ -228,161 +222,88 @@
     });
   });
   
-  async function loadBookmarksPaginated(page = 0, append = false) {
-    try {
-      const filters = { ...currentFilters };
-      const result = await getBookmarksPaginated(page, pageSize, filters);
-      
-      if (append) {
-        bookmarks = [...bookmarks, ...result.bookmarks];
-      } else {
-        bookmarks = result.bookmarks;
-      }
-      
-      currentPage = result.currentPage;
-      totalCount = result.totalCount;
-      hasMore = result.hasMore;
-    } catch (err) {
-      console.error('Error loading bookmarks:', err);
-      throw err;
-    }
+  // Reactive search trigger
+  $: {
+      $searchQueryStore;
+      $activeFilters;
+      currentSortBy;
+      resetPagination();
+  }
+  
+  function resetPagination() {
+      currentPage = 0;
+      // We don't await here because it's triggered by reactive statement
+      loadBookmarks(0, false);
   }
 
-  async function loadMoreBookmarks() {
-    if (!hasMore || loading) return;
-    
-    try {
+  async function loadBookmarks(page, append) {
       loading = true;
-      await loadBookmarksPaginated(currentPage + 1, true);
-    } catch (err) {
-      error = err.message;
-    } finally {
-      loading = false;
-    }
-  }
-  
-  async function handleSearch(event) {
-    const query = event.detail.query;
-    searchQuery = query;
-    currentFilters.searchQuery = query;
-    
-    try {
-      loading = true;
-      currentPage = 0;
-      
-      if (query && query.trim()) {
-        // Use advanced search with +/- term support
-        const searchResult = await searchBookmarks(query, { limit: 1000 });
-        parsedSearchQuery = searchResult.parsedQuery;
-        const allResults = searchResult.results || [];
-        
-        // Compute stats from ALL search results for sidebar
-        searchResultStats = computeSearchResultStats(allResults);
-        
-        // Apply additional filters (domains, folders, date range, platforms, creators, contentTypes) if any
-        let filteredResults = allResults;
-        
-        if (currentFilters.domains && currentFilters.domains.length > 0) {
-          filteredResults = filteredResults.filter(b => currentFilters.domains.includes(b.domain));
-        }
-        if (currentFilters.folders && currentFilters.folders.length > 0) {
-          filteredResults = filteredResults.filter(b => currentFilters.folders.includes(b.folderPath));
-        }
-        if (currentFilters.dateRange) {
-          filteredResults = filteredResults.filter(b => 
-            b.dateAdded >= currentFilters.dateRange.startDate && 
-            b.dateAdded <= currentFilters.dateRange.endDate
-          );
-        }
-        // Platform filter
-        if (currentFilters.platforms && currentFilters.platforms.length > 0) {
-          filteredResults = filteredResults.filter(b => currentFilters.platforms.includes(b.platform || 'other'));
-        }
-        // Creators filter
-        if (currentFilters.creators && currentFilters.creators.length > 0) {
-          filteredResults = filteredResults.filter(b => {
-            if (!b.creator) return false;
-            const bookmarkCreatorKey = `${b.platform || 'other'}:${b.creator}`;
-            return currentFilters.creators.some(c => c.key === bookmarkCreatorKey);
-          });
-        }
-        // Content types filter
-        if (currentFilters.contentTypes && currentFilters.contentTypes.length > 0) {
-          filteredResults = filteredResults.filter(b => currentFilters.contentTypes.includes(b.contentType));
-        }
-        
-        // Apply sorting
-        const sortBy = currentFilters.sortBy || 'relevance';
-        if (sortBy !== 'relevance') {
-          switch (sortBy) {
-            case 'date_desc':
-              filteredResults.sort((a, b) => b.dateAdded - a.dateAdded);
-              break;
-            case 'date_asc':
-              filteredResults.sort((a, b) => a.dateAdded - b.dateAdded);
-              break;
-            case 'title_asc':
-              filteredResults.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-              break;
-            case 'title_desc':
-              filteredResults.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
-              break;
+      try {
+          const options = {
+              limit: pageSize,
+              offset: page * pageSize,
+              sortBy: currentSortBy
+          };
+          
+          const result = await searchBookmarks($searchQueryStore, $activeFilters, options);
+          
+          if (append) {
+              bookmarks = [...bookmarks, ...result.results];
+          } else {
+              bookmarks = result.results;
           }
-        }
-        
-        // Paginate
-        const startIndex = currentPage * pageSize;
-        bookmarks = filteredResults.slice(startIndex, startIndex + pageSize);
-        totalCount = filteredResults.length;
-        hasMore = startIndex + pageSize < filteredResults.length;
-      } else {
-        // No search query - clear search stats and load all bookmarks
-        parsedSearchQuery = null;
-        searchResultStats = null;
-        await loadBookmarksPaginated();
+          
+          totalCount = result.total;
+          hasMore = result.hasMore;
+          parsedSearchQuery = result.parsedQuery;
+          
+          // Update stats for sidebar
+          if ($searchQueryStore || hasActiveFilters($activeFilters)) {
+               const statsResult = await searchBookmarks($searchQueryStore, $activeFilters, { limit: 1000, offset: 0 });
+               searchResultStats = computeSearchResultStats(statsResult.results);
+          } else {
+              searchResultStats = null;
+          }
+          
+      } catch (err) {
+          console.error('Error loading bookmarks:', err);
+          error = err.message;
+      } finally {
+          loading = false;
       }
-    } catch (err) {
-      error = err.message;
-    } finally {
-      loading = false;
-    }
+  }
+
+  function loadMoreBookmarks() {
+      if (!hasMore || loading) return;
+      currentPage++;
+      loadBookmarks(currentPage, true);
+  }
+
+  function handleSearch(event) {
+    const rawQuery = event.detail.query;
+    // Just update the store with the raw query. 
+    // We do NOT extract filters here to avoid clearing the user's input while typing.
+    // The search logic (searchBookmarks) will parse the query string internally.
+    searchQueryStore.set(rawQuery);
   }
   
-  async function handleFilter(event) {
-    const filters = event.detail;
-    currentFilters = { ...currentFilters, ...filters };
-    
-    try {
-      loading = true;
-      currentPage = 0;
-      
-      // Re-run search with new filters if there's a search query
-      if (searchQuery && searchQuery.trim()) {
-        await handleSearch({ detail: { query: searchQuery } });
-        return;
-      }
-      
-      await loadBookmarksPaginated();
-    } catch (err) {
-      error = err.message;
-    } finally {
-      loading = false;
-    }
+  function hasActiveFilters(filters) {
+      return filters.domains.length > 0 || 
+             filters.folders.length > 0 || 
+             filters.platforms.length > 0 || 
+             filters.types.length > 0 || 
+             filters.creators.length > 0 ||
+             filters.deadLinks || 
+             filters.stale ||
+             filters.dateRange ||
+             filters.readingTimeRange ||
+             filters.qualityScoreRange ||
+             filters.hasPublishedDate !== null;
   }
   
-  async function handleSortChange(sortKey) {
+  function handleSortChange(sortKey) {
     currentSortBy = sortKey;
-    currentFilters.sortBy = sortKey;
-    
-    try {
-      loading = true;
-      currentPage = 0;
-      await loadBookmarksPaginated();
-    } catch (err) {
-      error = err.message;
-    } finally {
-      loading = false;
-    }
+    // Reactive statement will trigger reload
   }
   
   async function switchView(view) {
@@ -392,7 +313,7 @@
     try {
       if (view === 'bookmarks') {
         currentPage = 0;
-        await loadBookmarksPaginated();
+        await loadBookmarks(0, false);
       } else if (view === 'insights') {
         await loadInsights();
       } else if (view === 'health') {
@@ -904,30 +825,26 @@
   
   function handleInsightCategoryFilter(event) {
     const { category } = event.detail;
-    currentFilters = { ...currentFilters, searchQuery: `category:${category}` };
+    searchQueryStore.set(`category:${category}`);
     currentView = 'bookmarks';
-    loadBookmarksPaginated(0, false);
   }
   
   function handleInsightDomainFilter(event) {
     const { domain } = event.detail;
-    currentFilters = { ...currentFilters, domains: [domain] };
+    activeFilters.addFilter('domains', domain);
     currentView = 'bookmarks';
-    loadBookmarksPaginated(0, false);
   }
   
   async function handleFilterByAccessed(event) {
     // Filter to show only accessed bookmarks
-    searchQuery = 'accessed:yes';
+    searchQueryStore.set('accessed:yes');
     currentView = 'bookmarks';
-    await handleSearch(searchQuery);
   }
   
   async function handleFilterByStale() {
     // Filter to show stale/unused bookmarks
-    searchQuery = 'stale:yes';
+    activeFilters.setFilter('stale', true);
     currentView = 'bookmarks';
-    await handleSearch(searchQuery);
   }
   
   async function handleFilterByDead() {
@@ -961,7 +878,7 @@
       try {
         await deleteBookmarks(ids);
         // Refresh the current view
-        await loadBookmarksPaginated(0, false);
+        await loadBookmarks(0, false);
       } catch (err) {
         console.error('Error deleting bookmarks:', err);
         alert('Failed to delete some bookmarks. Please try again.');
@@ -971,9 +888,8 @@
   
   async function handleSearchFromInsights(event) {
     const { query } = event.detail;
-    searchQuery = query;
+    searchQueryStore.set(query);
     currentView = 'bookmarks';
-    await handleSearch(query);
   }
   
   // ============================================================================
@@ -1025,7 +941,7 @@
       platformBackfillResult = result;
       
       // Refresh data after backfill
-      await loadBookmarksPaginated(0, false);
+      await loadBookmarks(0, false);
       
     } catch (err) {
       console.error('Error during platform backfill:', err);
@@ -1072,7 +988,7 @@
       console.log('Deep analysis complete:', deepAnalysisResult);
       
       // Refresh data after analysis
-      await loadBookmarksPaginated(0, false);
+      await loadBookmarks(0, false);
       
     } catch (err) {
       console.error('Error during deep analysis:', err);
@@ -1424,39 +1340,27 @@
     multiSelectMode = !multiSelectMode;
     if (!multiSelectMode) {
       selectedBookmarks.clear();
-      selectedBookmarks = selectedBookmarks;
     }
-  }
-  
-  function handleToggleSelect(event) {
-    const { bookmarkId, selected } = event.detail;
-    if (selected) {
-      selectedBookmarks.add(bookmarkId);
-    } else {
-      selectedBookmarks.delete(bookmarkId);
-    }
-    selectedBookmarks = selectedBookmarks;
   }
   
   function selectAllBookmarks() {
-    selectedBookmarks = new Set(bookmarks.map(b => b.id));
+    selectedBookmarks.selectAll(bookmarks.map(b => b.id));
   }
   
   function deselectAllBookmarks() {
     selectedBookmarks.clear();
-    selectedBookmarks = selectedBookmarks;
   }
   
   async function deleteSelectedBookmarks() {
-    if (selectedBookmarks.size === 0) return;
+    if ($selectedBookmarks.size === 0) return;
     
-    if (!confirm(`Are you sure you want to delete ${selectedBookmarks.size} bookmark(s)?`)) {
+    if (!confirm(`Are you sure you want to delete ${$selectedBookmarks.size} bookmark(s)?`)) {
       return;
     }
     
     try {
       loading = true;
-      const bookmarkIds = Array.from(selectedBookmarks);
+      const bookmarkIds = Array.from($selectedBookmarks);
       const result = await deleteBookmarks(bookmarkIds);
       
       if (result.errors.length > 0) {
@@ -1468,12 +1372,11 @@
       
       // Clear selections and reload
       selectedBookmarks.clear();
-      selectedBookmarks = selectedBookmarks;
       multiSelectMode = false;
       
       // Reload bookmarks
       currentPage = 0;
-      await loadBookmarksPaginated();
+      await loadBookmarks();
     } catch (err) {
       console.error('Error deleting bookmarks:', err);
       alert('Error deleting bookmarks. Please try again.');
@@ -1493,7 +1396,7 @@
       await deleteBookmark(bookmarkId);
       // Reload bookmarks to refresh the list
       currentPage = 0;
-      await loadBookmarksPaginated();
+      await loadBookmarks();
     } catch (err) {
       console.error('Error deleting bookmark:', err);
       alert('Error deleting bookmark. Please try again.');
@@ -1511,7 +1414,7 @@
       
       if (response.success) {
         // Refresh the list to show new metadata
-        await loadBookmarksPaginated(currentPage, false);
+        await loadBookmarks(currentPage, false);
       } else {
         console.error('Enrichment failed:', response.error);
         alert('Enrichment failed: ' + response.error);
@@ -1716,12 +1619,12 @@
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     {#if currentView === 'bookmarks'}
       <div class="mb-4">
-        <SearchBar on:search={handleSearch} />
+        <SearchBar value={$searchQueryStore} on:search={handleSearch} />
       </div>
       
       <div class="flex gap-6 min-h-0">
         <div class="flex-shrink-0">
-          <Sidebar bind:this={sidebarRef} on:filter={handleFilter} {searchResultStats} isSearchActive={!!searchQuery} />
+          <Sidebar bind:this={sidebarRef} {searchResultStats} isSearchActive={!!$searchQueryStore} />
         </div>
         
         <div class="flex-1 min-w-0 overflow-hidden">
@@ -1733,7 +1636,7 @@
             <div class="text-center text-red-600 p-8">
               <p>Error: {error}</p>
               <button
-                on:click={() => loadBookmarksPaginated()}
+                on:click={() => loadBookmarks(0, false)}
                 class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
                 Retry
@@ -1741,81 +1644,190 @@
             </div>
           {:else if bookmarks.length === 0}
             <div class="text-center text-gray-500 p-8">
-              {#if searchQuery}
-                <p>No bookmarks found for "{searchQuery}"</p>
+              {#if $searchQueryStore}
+                <p>No bookmarks found for "{$searchQueryStore}"</p>
               {:else}
                 <p>No bookmarks found</p>
               {/if}
             </div>
           {:else}
-            <div class="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div class="flex items-center gap-3">
-                <h2 class="text-lg font-medium text-gray-900">
-                  {totalCount} bookmark{totalCount !== 1 ? 's' : ''}
-                  {#if currentFilters.domains.length > 0 || currentFilters.folders.length > 0 || currentFilters.dateRange || currentFilters.searchQuery}
-                    <span class="text-sm text-gray-500">
-                      (filtered)
+            <div class="mb-4 flex flex-col gap-4">
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div class="flex items-center gap-3">
+                  <h2 class="text-lg font-medium text-gray-900">
+                    {totalCount} bookmark{totalCount !== 1 ? 's' : ''}
+                  </h2>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 sm:gap-4">
+                  <div class="text-sm text-gray-500">
+                    Showing {bookmarks.length} of {totalCount}
+                  </div>
+                  
+                  <!-- Sort Dropdown -->
+                  <select
+                    bind:value={currentSortBy}
+                    on:change={(e) => handleSortChange(e.target.value)}
+                    class="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white"
+                  >
+                    {#each Object.values(SORT_OPTIONS) as option}
+                      <option value={option.key}>{option.label}</option>
+                    {/each}
+                  </select>
+                  
+                  <!-- Multi-Select Toggle -->
+                  <button
+                    on:click={toggleMultiSelectMode}
+                    class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+                    class:bg-blue-50={multiSelectMode}
+                    class:border-blue-300={multiSelectMode}
+                    class:text-blue-700={multiSelectMode}
+                  >
+                    {multiSelectMode ? 'Cancel' : 'Select'}
+                  </button>
+                  
+                  <!-- View Mode Toggle -->
+                  <button
+                    on:click={toggleViewMode}
+                    class="p-2 text-gray-500 hover:text-gray-700 border border-gray-300 rounded-md"
+                    title="Toggle view mode"
+                  >
+                    {#if viewMode === 'list'}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+                      </svg>
+                    {:else}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
+                      </svg>
+                    {/if}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Active Filters Chips -->
+              {#if $activeFilters.domains.length > 0 || $activeFilters.folders.length > 0 || $activeFilters.dateRange || $searchQueryStore || $activeFilters.tags.length > 0 || $activeFilters.platforms.length > 0 || $activeFilters.types.length > 0 || $activeFilters.creators.length > 0 || $activeFilters.deadLinks || $activeFilters.stale}
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm text-gray-500 mr-1">Filters:</span>
+                  
+                  <!-- Search Query Chip -->
+                  {#if $searchQueryStore}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Search: {$searchQueryStore}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-blue-400 hover:text-blue-600 focus:outline-none" on:click={() => searchQueryStore.set('')}>
+                        <span class="sr-only">Remove search filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
                     </span>
                   {/if}
-                </h2>
-                <!-- Clear Filters Button -->
-                {#if currentFilters.domains.length > 0 || currentFilters.folders.length > 0 || currentFilters.dateRange}
-                  <button
-                    on:click={() => { if (sidebarRef) sidebarRef.clearAllFilters(); }}
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md transition-colors"
-                    title="Clear all sidebar filters"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                    Clear Filters
-                  </button>
-                {/if}
-              </div>
-              <div class="flex flex-wrap items-center gap-2 sm:gap-4">
-                <div class="text-sm text-gray-500">
-                  Showing {bookmarks.length} of {totalCount}
-                </div>
-                
-                <!-- Sort Dropdown -->
-                <select
-                  bind:value={currentSortBy}
-                  on:change={(e) => handleSortChange(e.target.value)}
-                  class="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white"
-                >
-                  {#each Object.values(SORT_OPTIONS) as option}
-                    <option value={option.key}>{option.label}</option>
+
+                  <!-- Domain Chips -->
+                  {#each $activeFilters.domains as domain}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      Domain: {domain}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-green-400 hover:text-green-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('domains', domain)}>
+                        <span class="sr-only">Remove domain filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
                   {/each}
-                </select>
-                
-                <!-- Multi-Select Toggle -->
-                <button
-                  on:click={toggleMultiSelectMode}
-                  class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-                  class:bg-blue-50={multiSelectMode}
-                  class:border-blue-300={multiSelectMode}
-                  class:text-blue-700={multiSelectMode}
-                >
-                  {multiSelectMode ? 'Cancel' : 'Select'}
-                </button>
-                
-                <!-- View Mode Toggle -->
-                <button
-                  on:click={toggleViewMode}
-                  class="p-2 text-gray-500 hover:text-gray-700 border border-gray-300 rounded-md"
-                  title="Toggle view mode"
-                >
-                  {#if viewMode === 'list'}
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
-                    </svg>
-                  {:else}
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
-                    </svg>
+
+                  <!-- Folder Chips -->
+                  {#each $activeFilters.folders as folder}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                      Folder: {folder}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-yellow-400 hover:text-yellow-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('folders', folder)}>
+                        <span class="sr-only">Remove folder filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
+                  {/each}
+
+                  <!-- Platform Chips -->
+                  {#each $activeFilters.platforms as platform}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                      Platform: {platform}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-indigo-400 hover:text-indigo-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('platforms', platform)}>
+                        <span class="sr-only">Remove platform filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
+                  {/each}
+
+                  <!-- Type Chips -->
+                  {#each $activeFilters.types as type}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      Type: {type}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-purple-400 hover:text-purple-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('types', type)}>
+                        <span class="sr-only">Remove type filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
+                  {/each}
+
+                  <!-- Creator Chips -->
+                  {#each $activeFilters.creators as creator}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800">
+                      Creator: {creator.creator}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-pink-400 hover:text-pink-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('creators', creator)}>
+                        <span class="sr-only">Remove creator filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
+                  {/each}
+
+                  <!-- Tag Chips -->
+                  {#each $activeFilters.tags as tag}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                      Tag: {tag}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-gray-400 hover:text-gray-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('tags', tag)}>
+                        <span class="sr-only">Remove tag filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
+                  {/each}
+
+                  <!-- Date Range Chip -->
+                  {#if $activeFilters.dateRange}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Date: {$activeFilters.dateRange}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-blue-400 hover:text-blue-600 focus:outline-none" on:click={() => activeFilters.setFilter('dateRange', null)}>
+                        <span class="sr-only">Remove date filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
                   {/if}
-                </button>
-              </div>
+
+                  <!-- Dead Links Chip -->
+                  {#if $activeFilters.deadLinks}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      Dead Links
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-red-400 hover:text-red-600 focus:outline-none" on:click={() => activeFilters.setFilter('deadLinks', false)}>
+                        <span class="sr-only">Remove dead links filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
+                  {/if}
+
+                  <!-- Stale Chip -->
+                  {#if $activeFilters.stale}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                      Stale
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-orange-400 hover:text-orange-600 focus:outline-none" on:click={() => activeFilters.setFilter('stale', false)}>
+                        <span class="sr-only">Remove stale filter</span>
+                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                      </button>
+                    </span>
+                  {/if}
+
+                  <!-- Clear All Button -->
+                  <button
+                    on:click={() => { activeFilters.clearFilters(); searchQueryStore.set(''); }}
+                    class="text-xs text-red-600 hover:text-red-800 underline ml-2"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              {/if}
             </div>
             
             <!-- Visual Filter Builder -->
@@ -1823,43 +1835,43 @@
               <div class="flex flex-wrap gap-2">
                 <button 
                   class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
-                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'category:'}
+                  on:click={() => searchQueryStore.update(s => (s ? s + ' ' : '') + 'category:')}
                 >
                   + Category
                 </button>
                 <button 
                   class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
-                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'domain:'}
+                  on:click={() => searchQueryStore.update(s => (s ? s + ' ' : '') + 'domain:')}
                 >
                   + Domain
                 </button>
                 <button 
                   class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
-                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'folder:'}
+                  on:click={() => searchQueryStore.update(s => (s ? s + ' ' : '') + 'folder:')}
                 >
                   + Folder
                 </button>
                 <button 
                   class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
-                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'platform:'}
+                  on:click={() => searchQueryStore.update(s => (s ? s + ' ' : '') + 'platform:')}
                 >
                   + Platform
                 </button>
                 <button 
                   class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
-                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'type:'}
+                  on:click={() => searchQueryStore.update(s => (s ? s + ' ' : '') + 'type:')}
                 >
                   + Type
                 </button>
                 <button 
                   class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
-                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'dead:yes'}
+                  on:click={() => searchQueryStore.update(s => (s ? s + ' ' : '') + 'dead:yes')}
                 >
                   + Dead Links
                 </button>
                 <button 
                   class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-200 transition-colors"
-                  on:click={() => searchQuery = (searchQuery ? searchQuery + ' ' : '') + 'stale:yes'}
+                  on:click={() => searchQueryStore.update(s => (s ? s + ' ' : '') + 'stale:yes')}
                 >
                   + Stale
                 </button>
@@ -1907,8 +1919,6 @@
                       {bookmark} 
                       {multiSelectMode}
                       {parsedSearchQuery}
-                      isSelected={selectedBookmarks.has(bookmark.id)}
-                      on:toggle-select={handleToggleSelect}
                       on:delete={handleDeleteSingle}
                       on:enrich={handleEnrichBookmark}
                     />

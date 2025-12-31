@@ -556,22 +556,126 @@ export function applySpecialFilters(bookmarks, filters) {
   });
 }
 
+/**
+ * Parse search query to extract filters (domain:, folder:, etc.)
+ * @param {string} query - Raw search query
+ * @returns {Object} - { text, filters }
+ */
+export function parseSearchQuery(query) {
+  if (!query) return { text: '', filters: {} };
+
+  const filters = {
+    domains: [],
+    folders: [],
+    platforms: [],
+    types: [],
+    tags: [],
+    deadLinks: false,
+    stale: false
+  };
+
+  let text = query;
+
+  // Helper to extract and remove patterns
+  const extract = (prefix, targetArray) => {
+    const regex = new RegExp(`${prefix}:"([^"]+)"|${prefix}:([^\\s]+)`, 'gi');
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const value = match[1] || match[2];
+      targetArray.push(value.toLowerCase());
+    }
+    text = text.replace(regex, '').trim();
+  };
+
+  extract('domain', filters.domains);
+  extract('site', filters.domains); // Alias
+  extract('folder', filters.folders);
+  extract('platform', filters.platforms);
+  extract('type', filters.types);
+  extract('tag', filters.tags);
+  
+  // Boolean flags
+  if (text.match(/dead:yes|is:dead/i)) {
+      filters.deadLinks = true;
+      text = text.replace(/dead:yes|is:dead/gi, '').trim();
+  }
+  
+  if (text.match(/stale:yes|is:stale/i)) {
+      filters.stale = true;
+      text = text.replace(/stale:yes|is:stale/gi, '').trim();
+  }
+
+  // Clean up extra spaces
+  text = text.replace(/\s+/g, ' ').trim();
+
+  return { text, filters };
+}
+
 // Search bookmarks with advanced query support
-export async function searchBookmarks(query, options = {}) {
+export async function searchBookmarks(query, activeFilters = null, options = {}) {
+  // Handle legacy call signature: searchBookmarks(query, options)
+  if (activeFilters && !activeFilters.domains && !Array.isArray(activeFilters.domains)) {
+      options = activeFilters;
+      activeFilters = null;
+  }
+
   const {
     limit = 50,
     offset = 0
   } = options;
 
+  let allBookmarks = await getAllBookmarks();
+  let filteredBookmarks = allBookmarks;
+
+  // Apply activeFilters if provided
+  if (activeFilters) {
+      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+
+      filteredBookmarks = filteredBookmarks.filter(b => {
+          if (activeFilters.domains && activeFilters.domains.length > 0) {
+              const domain = (b.domain || new URL(b.url).hostname || '').toLowerCase();
+              if (!activeFilters.domains.some(d => domain.includes(d))) return false;
+          }
+          if (activeFilters.folders && activeFilters.folders.length > 0) {
+              const folder = (b.folderPath || b.folder || b.category || '').toLowerCase();
+              if (!activeFilters.folders.some(f => folder.includes(f))) return false;
+          }
+          if (activeFilters.platforms && activeFilters.platforms.length > 0) {
+              if (!activeFilters.platforms.includes(b.platform)) return false;
+          }
+          if (activeFilters.types && activeFilters.types.length > 0) {
+              if (!activeFilters.types.includes(b.contentType)) return false;
+          }
+          if (activeFilters.creators && activeFilters.creators.length > 0) {
+              const key = `${b.platform || 'other'}:${b.creator}`;
+              // activeFilters.creators contains objects { key, creator, platform }
+              if (!activeFilters.creators.some(c => c.key === key)) return false;
+          }
+          if (activeFilters.tags && activeFilters.tags.length > 0) {
+              if (!b.tags || !Array.isArray(b.tags)) return false;
+              if (!activeFilters.tags.some(t => b.tags.includes(t))) return false;
+          }
+          if (activeFilters.deadLinks) {
+              if (b.isAlive !== false) return false;
+          }
+          if (activeFilters.stale) {
+              const isOld = b.dateAdded < thirtyDaysAgo;
+              const neverAccessed = !b.accessCount || b.accessCount === 0;
+              const isAlive = b.isAlive !== false;
+              if (!(isOld && neverAccessed && isAlive)) return false;
+          }
+          
+          return true;
+      });
+  }
+
   if (!query || !query.trim()) {
-    // Return all bookmarks sorted by date if no query
-    const bookmarks = await getAllBookmarks();
     return {
-      results: bookmarks
+      results: filteredBookmarks
         .sort((a, b) => b.dateAdded - a.dateAdded)
         .slice(offset, offset + limit),
-      total: bookmarks.length,
-      hasMore: offset + limit < bookmarks.length,
+      total: filteredBookmarks.length,
+      hasMore: offset + limit < filteredBookmarks.length,
       parsedQuery: null
     };
   }
@@ -582,16 +686,12 @@ export async function searchBookmarks(query, options = {}) {
   // Parse the advanced query from remaining text
   const parsedQuery = parseAdvancedQuery(remainingQuery);
   
-  // Get all bookmarks
-  let allBookmarks = await getAllBookmarks();
-  
   // Apply special filters first
   if (Object.keys(specialFilters).length > 0) {
-    allBookmarks = applySpecialFilters(allBookmarks, specialFilters);
+    filteredBookmarks = applySpecialFilters(filteredBookmarks, specialFilters);
   }
   
   // If there's remaining text query, filter further
-  let filteredBookmarks;
   if (remainingQuery.trim()) {
     // Use FlexSearch for regular terms if available
     if (parsedQuery.regular.length > 0) {
@@ -620,7 +720,7 @@ export async function searchBookmarks(query, options = {}) {
         
         // Filter the already filtered bookmarks (from special filters)
         // to only include those found by FlexSearch
-        filteredBookmarks = allBookmarks.filter(bookmark => resultIds.has(bookmark.id));
+        filteredBookmarks = filteredBookmarks.filter(bookmark => resultIds.has(bookmark.id));
         
         // Then apply the remaining advanced query logic (negative terms, phrases, regex)
         // This is still needed because FlexSearch might not handle negative terms/regex exactly as we want
@@ -631,13 +731,13 @@ export async function searchBookmarks(query, options = {}) {
       } catch (err) {
         console.error('FlexSearch failed, falling back to manual search:', err);
         // Fallback to manual search
-        filteredBookmarks = allBookmarks.filter(bookmark => 
+        filteredBookmarks = filteredBookmarks.filter(bookmark => 
           matchesAdvancedQuery(bookmark, parsedQuery)
         );
       }
     } else {
       // No regular terms (only negative, phrases, or regex), use manual filter
-      filteredBookmarks = allBookmarks.filter(bookmark => 
+      filteredBookmarks = filteredBookmarks.filter(bookmark => 
         matchesAdvancedQuery(bookmark, parsedQuery)
       );
     }
@@ -652,7 +752,7 @@ export async function searchBookmarks(query, options = {}) {
     filteredBookmarks.sort((a, b) => b._searchScore - a._searchScore);
   } else {
     // No text query, just use filtered results sorted by date
-    filteredBookmarks = allBookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
+    filteredBookmarks = filteredBookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
   }
   
   const total = filteredBookmarks.length;
@@ -674,6 +774,9 @@ export async function searchBookmarks(query, options = {}) {
 export function computeSearchResultStats(bookmarks) {
   const domainCounts = new Map();
   const folderCounts = new Map();
+  const platformCounts = new Map();
+  const creatorCounts = new Map();
+  const typeCounts = new Map();
   
   for (const bookmark of bookmarks) {
     // Count domains
@@ -691,6 +794,28 @@ export function computeSearchResultStats(bookmarks) {
       const current = folderCounts.get(bookmark.folderPath) || 0;
       folderCounts.set(bookmark.folderPath, current + 1);
     }
+
+    // Count platforms
+    const platform = bookmark.platform || 'other';
+    platformCounts.set(platform, (platformCounts.get(platform) || 0) + 1);
+
+    // Count creators
+    if (bookmark.creator) {
+      const key = `${bookmark.platform || 'other'}:${bookmark.creator}`;
+      if (!creatorCounts.has(key)) {
+        creatorCounts.set(key, { 
+          creator: bookmark.creator, 
+          platform: bookmark.platform || 'other', 
+          count: 0 
+        });
+      }
+      creatorCounts.get(key).count++;
+    }
+
+    // Count content types
+    if (bookmark.contentType) {
+      typeCounts.set(bookmark.contentType, (typeCounts.get(bookmark.contentType) || 0) + 1);
+    }
   }
   
   // Convert to sorted arrays
@@ -701,8 +826,19 @@ export function computeSearchResultStats(bookmarks) {
   const folders = Array.from(folderCounts.entries())
     .map(([folder, count]) => ({ folder, count }))
     .sort((a, b) => b.count - a.count);
+
+  const platforms = Array.from(platformCounts.entries())
+    .map(([platform, count]) => ({ platform, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const creators = Array.from(creatorCounts.values())
+    .sort((a, b) => b.count - a.count);
+
+  const contentTypes = Array.from(typeCounts.entries())
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count);
   
-  return { domains, folders };
+  return { domains, folders, platforms, creators, contentTypes };
 }
 
 // Advanced search with filters

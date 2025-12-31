@@ -310,3 +310,163 @@ export async function updateSetting(key, value) {
     console.error('Error updating setting:', error);
   }
 }
+
+// =============================================
+// UI State Stores - Filters, Search, Selection
+// =============================================
+
+// Store for all bookmarks to avoid repeated fetching
+function createBookmarksStore() {
+    const { subscribe, set, update } = writable([]);
+    
+    return {
+        subscribe,
+        set,
+        refresh: async () => {
+            try {
+                const bookmarks = await getAllBookmarks();
+                set(bookmarks);
+            } catch (error) {
+                console.error('Error refreshing bookmarks:', error);
+            }
+        }
+    };
+}
+
+export const allBookmarks = createBookmarksStore();
+
+function createActiveFiltersStore() {
+    const { subscribe, set, update } = writable({
+        domains: [],
+        folders: [],
+        platforms: [],
+        types: [],
+        creators: [],
+        tags: [],
+        deadLinks: false,
+        stale: false,
+        dateRange: null,
+        readingTimeRange: null,
+        qualityScoreRange: null,
+        hasPublishedDate: null
+    });
+
+    return {
+        subscribe,
+        set,
+        addFilter: (category, value) => update(state => {
+            if (Array.isArray(state[category])) {
+                // For objects (like creators), we might need deep comparison or just check reference/key
+                // Assuming value is primitive or we handle it carefully.
+                // For creators, Sidebar used { key, creator, platform }
+                if (category === 'creators') {
+                     const existing = state.creators.find(c => c.key === value.key);
+                     if (!existing) return { ...state, creators: [...state.creators, value] };
+                } else if (!state[category].includes(value)) {
+                    return { ...state, [category]: [...state[category], value] };
+                }
+            } else if (typeof state[category] === 'boolean') {
+                return { ...state, [category]: value };
+            } else {
+                // For objects/nulls like dateRange
+                return { ...state, [category]: value };
+            }
+            return state;
+        }),
+        removeFilter: (category, value) => update(state => {
+            if (Array.isArray(state[category])) {
+                if (category === 'creators') {
+                    return { ...state, creators: state.creators.filter(c => c.key !== value.key) };
+                }
+                return { ...state, [category]: state[category].filter(i => i !== value) };
+            } else if (typeof state[category] === 'boolean') {
+                return { ...state, [category]: false };
+            } else {
+                return { ...state, [category]: null };
+            }
+            return state;
+        }),
+        toggleFilter: (category, value) => update(state => {
+             if (Array.isArray(state[category])) {
+                if (category === 'creators') {
+                    const existing = state.creators.find(c => c.key === value.key);
+                    if (existing) {
+                        return { ...state, creators: state.creators.filter(c => c.key !== value.key) };
+                    } else {
+                        return { ...state, creators: [...state.creators, value] };
+                    }
+                }
+                if (state[category].includes(value)) {
+                    return { ...state, [category]: state[category].filter(i => i !== value) };
+                } else {
+                    return { ...state, [category]: [...state[category], value] };
+                }
+            } else if (typeof state[category] === 'boolean') {
+                return { ...state, [category]: !state[category] };
+            }
+            return state;
+        }),
+        setFilter: (category, value) => update(state => ({ ...state, [category]: value })),
+        clearFilters: () => set({
+            domains: [],
+            folders: [],
+            platforms: [],
+            types: [],
+            creators: [],
+            tags: [],
+            deadLinks: false,
+            stale: false,
+            dateRange: null,
+            readingTimeRange: null,
+            qualityScoreRange: null,
+            hasPublishedDate: null
+        }),
+        reset: () => set({
+            domains: [],
+            folders: [],
+            platforms: [],
+            types: [],
+            creators: [],
+            tags: [],
+            deadLinks: false,
+            stale: false,
+            dateRange: null,
+            readingTimeRange: null,
+            qualityScoreRange: null,
+            hasPublishedDate: null
+        })
+    };
+}
+
+export const activeFilters = createActiveFiltersStore();
+
+export const searchQuery = writable('');
+
+function createSelectedBookmarksStore() {
+    const { subscribe, set, update } = writable(new Set());
+
+    return {
+        subscribe,
+        set,
+        toggle: (id) => update(s => {
+            const newSet = new Set(s);
+            if (newSet.has(id)) newSet.delete(id);
+            else newSet.add(id);
+            return newSet;
+        }),
+        add: (id) => update(s => {
+            const newSet = new Set(s);
+            newSet.add(id);
+            return newSet;
+        }),
+        remove: (id) => update(s => {
+            const newSet = new Set(s);
+            newSet.delete(id);
+            return newSet;
+        }),
+        selectAll: (ids) => set(new Set(ids)),
+        clear: () => set(new Set())
+    };
+}
+
+export const selectedBookmarks = createSelectedBookmarksStore();

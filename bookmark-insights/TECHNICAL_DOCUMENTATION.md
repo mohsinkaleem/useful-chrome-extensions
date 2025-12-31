@@ -1,7 +1,7 @@
 # Bookmark Insights - Technical Documentation
 
-**Version:** 3.0  
-**Last Updated:** December 21, 2025
+**Version:** 3.1  
+**Last Updated:** December 31, 2025
 
 ## Table of Contents
 
@@ -36,7 +36,7 @@ Chrome Extension
 ├── Popup (384x384)
 │   └── Quick search, recent items
 ├── Dashboard (Full Page)
-│   ├── Bookmarks Tab - Browse & filter
+│   ├── Bookmarks Tab - Browse & filter (centralized state)
 │   ├── Insights Tab - VisualInsights component (6 tabs)
 │   ├── Health Tab - Enrichment, dead links, unified duplicates & similarities
 │   └── Data Tab - Database explorer
@@ -45,6 +45,10 @@ Chrome Extension
 │   ├── Enrichment queue manager
 │   ├── Tab monitoring (opt-in)
 │   └── Message router
+├── State Management (Svelte Stores)
+│   ├── activeFilters - Centralized filter state
+│   ├── searchQueryStore - Search text state
+│   └── selectedBookmarksStore - Multi-select state
 └── IndexedDB Layer (Dexie)
     └── 7 tables: bookmarks, enrichmentQueue, events, cache, settings, similarities, computedMetrics
 ```
@@ -54,21 +58,152 @@ Chrome Extension
 ```
 src/
 ├── db.js              # IndexedDB layer (schema v4, CRUD, analytics, caching)
-├── stores.js          # Svelte stores for reactive state
+├── stores.js          # Centralized state management (activeFilters, searchQuery, selectedBookmarks)
 ├── enrichment.js      # Enrichment pipeline & metadata fetching
-├── search.js          # FlexSearch with special filters (incl. platform filters)
+├── search.js          # FlexSearch + reactive filtering with activeFilters integration
 ├── similarity.js      # TF-IDF similarity engine (on-demand)
 ├── insights.js        # Analytics & insights (platform + 5 legacy functions)
 ├── url-parsers.js     # Platform-specific URL parsing (YouTube, GitHub, etc.)
 ├── utils.js           # Shared utilities
-├── Dashboard.svelte   # Main dashboard component
-├── Sidebar.svelte     # Filter sidebar with platforms, creators, domains
+├── Dashboard.svelte   # Main dashboard - orchestrates state, search, and filtering
+├── Sidebar.svelte     # Reactive filter UI - subscribes to activeFilters store
 ├── VisualInsights.svelte  # Interactive insights (6 tabs incl. Platforms)
 ├── CreatorExplorer.svelte # Creator/channel browsing component
 └── *.svelte           # Other UI components
 
 background-new.js      # Service worker source
 ```
+
+---
+
+## State Management
+
+### Centralized Stores (stores.js)
+
+The application uses Svelte writable stores for centralized state management, ensuring consistency across components.
+
+#### `activeFilters` Store
+
+Manages all active filters with custom methods for manipulation:
+
+```javascript
+{
+  domains: [],           // Array of domain strings
+  folders: [],           // Array of folder path strings
+  platforms: [],         // Array of platform identifiers
+  creators: [],          // Array of { key, creator, platform } objects
+  types: [],             // Array of content type strings
+  tags: [],              // Array of tag strings
+  deadLinks: false,      // Boolean filter
+  stale: false,          // Boolean filter
+  dateRange: null,       // { startDate, endDate, period }
+  readingTimeRange: null,
+  qualityScoreRange: null,
+  hasPublishedDate: null
+}
+```
+
+**Methods:**
+- `toggleFilter(category, value)` - Toggle item in array or boolean value
+- `setFilter(category, value)` - Set specific filter value
+- `clearFilters()` - Reset all filters to defaults
+- `clearCategory(category)` - Clear specific filter category
+
+#### `searchQueryStore` Store
+
+Holds the current search text input:
+
+```javascript
+writable('')  // Simple string value
+```
+
+#### `selectedBookmarksStore` Store
+
+Tracks multi-selected bookmarks (persistent across view changes):
+
+```javascript
+writable([])  // Array of bookmark IDs
+```
+
+**Methods:**
+- `toggleSelection(id)` - Add/remove bookmark ID
+- `selectAll(ids)` - Select multiple bookmarks
+- `clearSelection()` - Deselect all
+
+### Reactive Integration
+
+#### Dashboard.svelte
+
+Orchestrates state and search:
+
+```javascript
+// Subscribe to stores
+$: searchQuery = $searchQueryStore;
+$: filters = $activeFilters;
+
+// Reactive search execution
+$: {
+  const params = { limit, offset };
+  searchBookmarks(searchQuery, filters, params).then(result => {
+    bookmarks = result.results;
+    searchResultStats = computeSearchResultStats(result.results);
+  });
+}
+```
+
+#### Sidebar.svelte
+
+Reactive UI that responds to store changes:
+
+```javascript
+// Reactive display logic
+$: activeFiltersExist = $activeFilters.domains.length > 0 || 
+                        $activeFilters.platforms.length > 0 || ...;
+
+// Switch to filtered stats when any filter is active
+$: displayDomains = (isSearchActive || activeFiltersExist) && searchResultStats?.domains 
+  ? searchResultStats.domains 
+  : domainsByCount;
+
+// Filter actions update the store
+function toggleDomainFilter(domain) {
+  activeFilters.toggleFilter('domains', domain);
+}
+```
+
+### Search Integration
+
+The `searchBookmarks()` function in `search.js` accepts `activeFilters` as a parameter and applies them before text search:
+
+```javascript
+export async function searchBookmarks(query, activeFilters = null, options = {}) {
+  let filteredBookmarks = allBookmarks;
+  
+  // Apply activeFilters first
+  if (activeFilters) {
+    filteredBookmarks = filteredBookmarks.filter(b => {
+      if (activeFilters.domains.length > 0) {
+        const domain = (b.domain || '').toLowerCase();
+        if (!activeFilters.domains.some(d => domain.includes(d))) return false;
+      }
+      if (activeFilters.folders.length > 0) {
+        const folder = (b.folderPath || '').toLowerCase();
+        if (!activeFilters.folders.some(f => folder.includes(f))) return false;
+      }
+      // ... more filter checks
+      return true;
+    });
+  }
+  
+  // Then apply text search to filtered results
+  // ...
+}
+```
+
+**Key Property Mappings:**
+- Folder filter: `activeFilters.folders` → `bookmark.folderPath` (not `folder`)
+- Content type filter: `activeFilters.types` → `bookmark.contentType` (not `type`)
+- Creator filter: `activeFilters.creators` → `bookmark.creator` + `bookmark.platform`
 
 ---
 
@@ -441,6 +576,11 @@ Intelligent caching with configurable TTL and smart invalidation.
 
 ### Search System (FlexSearch)
 
+**Integration with State:**
+- Accepts `activeFilters` from centralized store
+- Applies filters before text search for consistency
+- Returns `searchResultStats` for reactive sidebar updates
+
 **Field Boosting:**
 
 - `title`: 3x weight
@@ -452,8 +592,14 @@ Intelligent caching with configurable TTL and smart invalidation.
 ```
 category:code     domain:github      accessed:yes
 stale:yes         dead:yes           enriched:no
-folder:"path"
+folder:"path"     platform:youtube   type:video
+channel:@name     repo:owner/name    creator:author
 ```
+
+**Filter Property Mappings:**
+- `folder:X` \u2192 matches `bookmark.folderPath`
+- `type:X` \u2192 matches `bookmark.contentType`
+- `creator:X` \u2192 matches `bookmark.creator`
 
 ### Similarity Detection (On-Demand)
 
@@ -474,10 +620,13 @@ Background message handler `reEnrichDeadLinks`:
 
 ### Sidebar Pagination
 
-Domain and folder lists now support "Load More" functionality:
+Domain, folder, and creator lists now support "Load More" functionality:
 
 - Domains: Initial 30, load 30 more per click
 - Folders: Initial 15, load 15 more per click
+- Creators: Initial 10, load 10 more per click
+
+**Reactive Counts:** Sidebar counts dynamically update based on active filters, not just text search. When any filter is applied (platform, domain, folder, etc.), all other sidebar sections show counts for only the matching subset of bookmarks.
 
 ---
 
@@ -539,7 +688,32 @@ invalidateMetricCaches(changeType)
 { action: 'updateSettings', settings: {...} }
 ```
 
-### Enrichment API (enrichment.js)
+### Search API (search.js)
+
+```javascript
+// Main search function with centralized filter support
+searchBookmarks(query, activeFilters, options)
+  // Returns: { results, total, hasMore, parsedQuery, specialFilters }
+
+// Parse search query for filters
+parseSearchQuery(query)
+  // Returns: { text, filters }
+
+// Parse advanced query operators
+parseAdvancedQuery(query)
+  // Returns: { positive, negative, phrases, regular, regexPatterns }
+
+// Compute stats for sidebar updates
+computeSearchResultStats(bookmarks)
+  // Returns: { domains, folders, platforms, creators, contentTypes }
+
+// FlexSearch index management
+initializeSearchIndex()
+rebuildSearchIndex()
+addToIndex(bookmark)
+removeFromIndex(bookmarkId)
+updateInIndex(bookmark)
+```
 
 ```javascript
 enrichBookmark(bookmarkId)     // Single bookmark
@@ -547,6 +721,24 @@ processEnrichmentBatch(size, callback, concurrency)
 fetchPageMetadata(url)
 checkBookmarkAlive(url)        // Returns true/false/null
 categorizeBookmark(bookmark, metadata)
+```
+
+### State Management API (stores.js)
+
+```javascript
+// activeFilters store
+activeFilters.toggleFilter(category, value)
+activeFilters.setFilter(category, value)
+activeFilters.clearFilters()
+activeFilters.clearCategory(category)
+
+// searchQueryStore
+searchQueryStore.set(query)
+searchQueryStore.update(fn)
+
+// selectedBookmarksStore
+selectedBookmarksStore.set(ids)
+selectedBookmarksStore.update(fn)
 ```
 
 ### Similarity API (similarity.js)

@@ -2,6 +2,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { getDomainsByRecency, getDomainsByCount, getUniqueFolders, getAllBookmarks } from './db.js';
   import { getPlatformDisplayName, getPlatformIcon, getContentTypeDisplayName } from './url-parsers.js';
+  import { activeFilters } from './stores.js';
   
   const dispatch = createEventDispatcher();
   
@@ -15,18 +16,7 @@
   let platforms = [];
   let creators = [];
   let contentTypes = [];
-  let selectedFilters = {
-    domains: [],
-    folders: [],
-    platforms: [],
-    creators: [],
-    contentTypes: [],
-    dateRange: null,
-    readingTimeRange: null, // { min, max }
-    qualityScoreRange: null, // { min, max }
-    hasPublishedDate: null, // true/false/null
-    smartTags: [] // array of tag strings
-  };
+  
   let domainSortMode = 'count'; // 'recency' or 'count'
   let domainDisplayLimit = 30; // Initial limit for domains
   let folderDisplayLimit = 15; // Initial limit for folders
@@ -48,7 +38,7 @@
   
   // Export clearFilters for external use
   export function clearAllFilters() {
-    clearFilters();
+    activeFilters.clearFilters();
   }
   
   onMount(async () => {
@@ -107,26 +97,41 @@
   }
 
   // Use search result stats when available, otherwise use full domain list
-  $: displayDomains = isSearchActive && searchResultStats?.domains 
+  $: displayDomains = (isSearchActive || activeFiltersExist) && searchResultStats?.domains 
     ? searchResultStats.domains 
     : (domainSortMode === 'recency' ? domainsByRecency : domainsByCount);
   
   // Use search result folders when available
-  $: displayFolders = isSearchActive && searchResultStats?.folders 
-    ? searchResultStats.folders.map(f => f.folder)
+  $: displayFolders = (isSearchActive || activeFiltersExist) && searchResultStats?.folders 
+    ? searchResultStats.folders
     : folders;
+
+  // Use search result platforms when available
+  $: displayPlatforms = (isSearchActive || activeFiltersExist) && searchResultStats?.platforms
+    ? searchResultStats.platforms
+    : platforms;
+
+  // Use search result creators when available
+  $: displayCreators = (isSearchActive || activeFiltersExist) && searchResultStats?.creators
+    ? searchResultStats.creators
+    : creators;
+
+  // Use search result content types when available
+  $: displayContentTypes = (isSearchActive || activeFiltersExist) && searchResultStats?.contentTypes
+    ? searchResultStats.contentTypes
+    : contentTypes;
   
   // Reactive computed value for active filters check
-  $: activeFiltersExist = selectedFilters.domains.length > 0 || 
-                          selectedFilters.folders.length > 0 || 
-                          selectedFilters.platforms.length > 0 ||
-                          selectedFilters.creators.length > 0 ||
-                          selectedFilters.contentTypes.length > 0 ||
-                          selectedFilters.dateRange !== null ||
-                          selectedFilters.readingTimeRange !== null ||
-                          selectedFilters.qualityScoreRange !== null ||
-                          selectedFilters.hasPublishedDate !== null ||
-                          selectedFilters.smartTags.length > 0;
+  $: activeFiltersExist = $activeFilters.domains.length > 0 || 
+                          $activeFilters.folders.length > 0 || 
+                          $activeFilters.platforms.length > 0 ||
+                          $activeFilters.creators.length > 0 ||
+                          $activeFilters.types.length > 0 ||
+                          $activeFilters.dateRange !== null ||
+                          $activeFilters.readingTimeRange !== null ||
+                          $activeFilters.qualityScoreRange !== null ||
+                          $activeFilters.hasPublishedDate !== null ||
+                          $activeFilters.tags.length > 0;
   
   function loadMoreDomains() {
     domainDisplayLimit += 30;
@@ -144,98 +149,76 @@
     sectionsExpanded[section] = !sectionsExpanded[section];
   }
   
+  function isFilterActive(category, value) {
+      if ($activeFilters[category] === undefined) return false;
+      
+      if (Array.isArray($activeFilters[category])) {
+          // Special handling for creators which are stored as objects
+          if (category === 'creators') {
+             return $activeFilters[category].some(item => item.key === value);
+          }
+
+          return $activeFilters[category].some(item => 
+              String(item).toLowerCase() === String(value).toLowerCase()
+          );
+      }
+      
+      return $activeFilters[category] === value;
+  }
+
   function toggleDomainFilter(domain) {
-    if (selectedFilters.domains.includes(domain)) {
-      selectedFilters.domains = selectedFilters.domains.filter(d => d !== domain);
-    } else {
-      selectedFilters.domains = [...selectedFilters.domains, domain];
-    }
-    dispatchFilters();
+    activeFilters.toggleFilter('domains', domain);
   }
 
   function toggleFolderFilter(folder) {
-    if (selectedFilters.folders.includes(folder)) {
-      selectedFilters.folders = selectedFilters.folders.filter(f => f !== folder);
-    } else {
-      selectedFilters.folders = [...selectedFilters.folders, folder];
-    }
-    dispatchFilters();
+    activeFilters.toggleFilter('folders', folder);
   }
   
   function togglePlatformFilter(platform) {
-    if (selectedFilters.platforms.includes(platform)) {
-      selectedFilters.platforms = selectedFilters.platforms.filter(p => p !== platform);
-    } else {
-      selectedFilters.platforms = [...selectedFilters.platforms, platform];
-    }
-    dispatchFilters();
+    activeFilters.toggleFilter('platforms', platform);
   }
   
   function toggleCreatorFilter(creator, platform) {
     const key = `${platform}:${creator}`;
-    const existing = selectedFilters.creators.find(c => c.key === key);
-    if (existing) {
-      selectedFilters.creators = selectedFilters.creators.filter(c => c.key !== key);
-    } else {
-      selectedFilters.creators = [...selectedFilters.creators, { key, creator, platform }];
-    }
-    dispatchFilters();
+    activeFilters.toggleFilter('creators', { key, creator, platform });
   }
   
   function toggleContentTypeFilter(type) {
-    if (selectedFilters.contentTypes.includes(type)) {
-      selectedFilters.contentTypes = selectedFilters.contentTypes.filter(t => t !== type);
-    } else {
-      selectedFilters.contentTypes = [...selectedFilters.contentTypes, type];
-    }
-    dispatchFilters();
+    activeFilters.toggleFilter('types', type);
   }
 
   function setDateFilter(startDate, endDate, period) {
-    selectedFilters.dateRange = { startDate, endDate, period };
-    dispatchFilters();
+    activeFilters.setFilter('dateRange', { startDate, endDate, period });
   }
   
   function clearFilters() {
-    selectedFilters = {
-      domains: [],
-      folders: [],
-      platforms: [],
-      creators: [],
-      contentTypes: [],
-      dateRange: null,
-      readingTimeRange: null,
-      qualityScoreRange: null,
-      hasPublishedDate: null,
-      smartTags: []
-    };
-    dispatchFilters();
+    activeFilters.clearFilters();
   }
   
   function setReadingTimeFilter(min, max) {
-    selectedFilters.readingTimeRange = min || max ? { min, max } : null;
-    dispatchFilters();
+    activeFilters.setFilter('readingTimeRange', min || max ? { min, max } : null);
   }
   
   function setQualityScoreFilter(min, max) {
-    selectedFilters.qualityScoreRange = min || max ? { min, max } : null;
-    dispatchFilters();
+    activeFilters.setFilter('qualityScoreRange', min || max ? { min, max } : null);
   }
   
   function togglePublishedDateFilter() {
     // Cycle through: null -> true (has date) -> false (no date) -> null
-    if (selectedFilters.hasPublishedDate === null) {
-      selectedFilters.hasPublishedDate = true;
-    } else if (selectedFilters.hasPublishedDate === true) {
-      selectedFilters.hasPublishedDate = false;
+    if ($activeFilters.hasPublishedDate === null) {
+      activeFilters.setFilter('hasPublishedDate', true);
+    } else if ($activeFilters.hasPublishedDate === true) {
+      activeFilters.setFilter('hasPublishedDate', false);
     } else {
-      selectedFilters.hasPublishedDate = null;
+      activeFilters.setFilter('hasPublishedDate', null);
     }
-    dispatchFilters();
   }
 
   function dispatchFilters() {
-    dispatch('filter', selectedFilters);
+    // No-op or dispatch if parent needs to know something changed, 
+    // but parent should subscribe to store now.
+    // Keeping it for compatibility if needed, but passing store value.
+    dispatch('filter', $activeFilters);
   }
 
   function hasActiveFilters() {
@@ -292,7 +275,7 @@
     <!-- Active Filters Display -->
     {#if activeFiltersExist}
       <div class="mb-4 space-y-2">
-        {#each selectedFilters.platforms as platform}
+        {#each $activeFilters.platforms as platform}
           <div class="flex items-center justify-between p-2 bg-indigo-50 rounded-md">
             <div class="text-xs text-indigo-800">{getPlatformIcon(platform)} {getPlatformDisplayName(platform)}</div>
             <button 
@@ -303,7 +286,7 @@
             </button>
           </div>
         {/each}
-        {#each selectedFilters.creators as creatorData}
+        {#each $activeFilters.creators as creatorData}
           <div class="flex items-center justify-between p-2 bg-pink-50 rounded-md">
             <div class="text-xs text-pink-800">{getPlatformIcon(creatorData.platform)} {creatorData.creator}</div>
             <button 
@@ -314,7 +297,7 @@
             </button>
           </div>
         {/each}
-        {#each selectedFilters.contentTypes as type}
+        {#each $activeFilters.types as type}
           <div class="flex items-center justify-between p-2 bg-orange-50 rounded-md">
             <div class="text-xs text-orange-800">Type: {getContentTypeDisplayName(type)}</div>
             <button 
@@ -325,7 +308,7 @@
             </button>
           </div>
         {/each}
-        {#each selectedFilters.domains as domain}
+        {#each $activeFilters.domains as domain}
           <div class="flex items-center justify-between p-2 bg-blue-50 rounded-md">
             <div class="text-xs text-blue-800">Domain: {domain}</div>
             <button 
@@ -336,7 +319,7 @@
             </button>
           </div>
         {/each}
-        {#each selectedFilters.folders as folder}
+        {#each $activeFilters.folders as folder}
           <div class="flex items-center justify-between p-2 bg-green-50 rounded-md">
             <div class="text-xs text-green-800">Folder: {folder}</div>
             <button 
@@ -347,14 +330,14 @@
             </button>
           </div>
         {/each}
-        {#if selectedFilters.dateRange}
+        {#if $activeFilters.dateRange}
           <div class="flex items-center justify-between p-2 bg-purple-50 rounded-md">
             <div class="text-xs text-purple-800">
-              {selectedFilters.dateRange.period === 'week' ? 'This Week' : 
-               selectedFilters.dateRange.period === 'month' ? 'This Month' : 'This Year'}
+              {$activeFilters.dateRange.period === 'week' ? 'This Week' : 
+               $activeFilters.dateRange.period === 'month' ? 'This Month' : 'This Year'}
             </div>
             <button 
-              on:click={() => { selectedFilters.dateRange = null; dispatchFilters(); }}
+              on:click={() => { activeFilters.setFilter('dateRange', null); }}
               class="text-purple-600 hover:text-purple-800"
             >
               ×
@@ -410,11 +393,11 @@
           <button
             on:click={() => toggleDomainFilter(domainData.domain)}
             class="w-full text-left px-2 py-2 text-sm hover:bg-gray-100 rounded border"
-            class:bg-blue-50={selectedFilters.domains.includes(domainData.domain)}
-            class:text-blue-700={selectedFilters.domains.includes(domainData.domain)}
-            class:border-blue-200={selectedFilters.domains.includes(domainData.domain)}
-            class:text-gray-600={!selectedFilters.domains.includes(domainData.domain)}
-            class:border-transparent={!selectedFilters.domains.includes(domainData.domain)}
+            class:bg-blue-50={isFilterActive('domains', domainData.domain)}
+            class:text-blue-700={isFilterActive('domains', domainData.domain)}
+            class:border-blue-200={isFilterActive('domains', domainData.domain)}
+            class:text-gray-600={!isFilterActive('domains', domainData.domain)}
+            class:border-transparent={!isFilterActive('domains', domainData.domain)}
             title={domainData.domain}
           >
             <div class="truncate font-medium">{domainData.domain}</div>
@@ -460,18 +443,19 @@
     </button>
     {#if sectionsExpanded.folders}
       <div class="space-y-1 max-h-64 overflow-y-auto">
-        {#each displayFolders.slice(0, folderDisplayLimit) as folder}
+        {#each displayFolders.slice(0, folderDisplayLimit) as folderData}
           <button
-            on:click={() => toggleFolderFilter(folder)}
-            class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded border"
-            class:bg-green-50={selectedFilters.folders.includes(folder)}
-            class:text-green-700={selectedFilters.folders.includes(folder)}
-            class:border-green-200={selectedFilters.folders.includes(folder)}
-            class:text-gray-600={!selectedFilters.folders.includes(folder)}
-            class:border-transparent={!selectedFilters.folders.includes(folder)}
-            title={folder}
+            on:click={() => toggleFolderFilter(folderData.folder)}
+            class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded border flex items-center justify-between"
+            class:bg-green-50={isFilterActive('folders', folderData.folder)}
+            class:text-green-700={isFilterActive('folders', folderData.folder)}
+            class:border-green-200={isFilterActive('folders', folderData.folder)}
+            class:text-gray-600={!isFilterActive('folders', folderData.folder)}
+            class:border-transparent={!isFilterActive('folders', folderData.folder)}
+            title={folderData.folder}
           >
-            <span class="truncate block">📁 {folder}</span>
+            <span class="truncate block">📁 {folderData.folder}</span>
+            <span class="text-xs text-gray-400 ml-1">{folderData.count}</span>
           </button>
         {/each}
         {#if displayFolders.length > folderDisplayLimit}
@@ -492,26 +476,26 @@
   </div>
   
   <!-- Platforms Section -->
-  {#if platforms.length > 0}
+  {#if displayPlatforms.length > 0}
     <div class="mb-4">
       <button
         on:click={() => toggleSection('platforms')}
         class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
       >
-        <span>📱 Platforms ({platforms.length})</span>
+        <span>📱 Platforms ({displayPlatforms.length})</span>
         <span class="text-gray-400">{sectionsExpanded.platforms ? '▼' : '▶'}</span>
       </button>
       {#if sectionsExpanded.platforms}
         <div class="space-y-1">
-          {#each platforms as p}
+          {#each displayPlatforms as p}
             <button
               on:click={() => togglePlatformFilter(p.platform)}
               class="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded border flex items-center justify-between"
-              class:bg-indigo-50={selectedFilters.platforms.includes(p.platform)}
-              class:text-indigo-700={selectedFilters.platforms.includes(p.platform)}
-              class:border-indigo-200={selectedFilters.platforms.includes(p.platform)}
-              class:text-gray-600={!selectedFilters.platforms.includes(p.platform)}
-              class:border-transparent={!selectedFilters.platforms.includes(p.platform)}
+              class:bg-indigo-50={isFilterActive('platforms', p.platform)}
+              class:text-indigo-700={isFilterActive('platforms', p.platform)}
+              class:border-indigo-200={isFilterActive('platforms', p.platform)}
+              class:text-gray-600={!isFilterActive('platforms', p.platform)}
+              class:border-transparent={!isFilterActive('platforms', p.platform)}
             >
               <span>{getPlatformIcon(p.platform)} {getPlatformDisplayName(p.platform)}</span>
               <span class="text-xs text-gray-400">{p.count}</span>
@@ -523,19 +507,19 @@
   {/if}
   
   <!-- Top Creators Section -->
-  {#if creators.length > 0}
+  {#if displayCreators.length > 0}
     <div class="mb-4">
       <button
         on:click={() => toggleSection('creators')}
         class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
       >
-        <span>👤 Top Creators ({creators.length})</span>
+        <span>👤 Top Creators ({displayCreators.length})</span>
         <span class="text-gray-400">{sectionsExpanded.creators ? '▼' : '▶'}</span>
       </button>
       {#if sectionsExpanded.creators}
         <div class="space-y-1 max-h-48 overflow-y-auto">
-          {#each creators.slice(0, creatorDisplayLimit) as c}
-            {@const isSelected = selectedFilters.creators.some(sc => sc.key === `${c.platform}:${c.creator}`)}
+          {#each displayCreators.slice(0, creatorDisplayLimit) as c}
+            {@const isSelected = isFilterActive('creators', `${c.platform}:${c.creator}`)}
             <button
               on:click={() => toggleCreatorFilter(c.creator, c.platform)}
               class="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded border"
@@ -551,12 +535,12 @@
               </div>
             </button>
           {/each}
-          {#if creators.length > creatorDisplayLimit}
+          {#if displayCreators.length > creatorDisplayLimit}
             <button
               on:click={loadMoreCreators}
               class="w-full text-center px-2 py-1 text-xs text-pink-600 hover:bg-pink-50 rounded"
             >
-              Show more ({creators.length - creatorDisplayLimit} more)
+              Show more ({displayCreators.length - creatorDisplayLimit} more)
             </button>
           {/if}
         </div>
@@ -565,26 +549,26 @@
   {/if}
   
   <!-- Content Types Section -->
-  {#if contentTypes.length > 0}
+  {#if displayContentTypes.length > 0}
     <div class="mb-4">
       <button
         on:click={() => toggleSection('contentTypes')}
         class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
       >
-        <span>📝 Content Types ({contentTypes.length})</span>
+        <span>📝 Content Types ({displayContentTypes.length})</span>
         <span class="text-gray-400">{sectionsExpanded.contentTypes ? '▼' : '▶'}</span>
       </button>
       {#if sectionsExpanded.contentTypes}
         <div class="space-y-1">
-          {#each contentTypes as ct}
+          {#each displayContentTypes as ct}
             <button
               on:click={() => toggleContentTypeFilter(ct.type)}
               class="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded border flex items-center justify-between"
-              class:bg-orange-50={selectedFilters.contentTypes.includes(ct.type)}
-              class:text-orange-700={selectedFilters.contentTypes.includes(ct.type)}
-              class:border-orange-200={selectedFilters.contentTypes.includes(ct.type)}
-              class:text-gray-600={!selectedFilters.contentTypes.includes(ct.type)}
-              class:border-transparent={!selectedFilters.contentTypes.includes(ct.type)}
+              class:bg-orange-50={isFilterActive('types', ct.type)}
+              class:text-orange-700={isFilterActive('types', ct.type)}
+              class:border-orange-200={isFilterActive('types', ct.type)}
+              class:text-gray-600={!isFilterActive('types', ct.type)}
+              class:border-transparent={!isFilterActive('types', ct.type)}
             >
               <span>{getContentTypeDisplayName(ct.type)}</span>
               <span class="text-xs text-gray-400">{ct.count}</span>
@@ -604,24 +588,24 @@
       <button
         on:click={() => applyDateFilter('week')}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-blue-50={selectedFilters.dateRange?.period === 'week'}
-        class:text-blue-700={selectedFilters.dateRange?.period === 'week'}
+        class:bg-blue-50={$activeFilters.dateRange?.period === 'week'}
+        class:text-blue-700={$activeFilters.dateRange?.period === 'week'}
       >
         This Week
       </button>
       <button
         on:click={() => applyDateFilter('month')}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-blue-50={selectedFilters.dateRange?.period === 'month'}
-        class:text-blue-700={selectedFilters.dateRange?.period === 'month'}
+        class:bg-blue-50={$activeFilters.dateRange?.period === 'month'}
+        class:text-blue-700={$activeFilters.dateRange?.period === 'month'}
       >
         This Month
       </button>
       <button
         on:click={() => applyDateFilter('year')}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-blue-50={selectedFilters.dateRange?.period === 'year'}
-        class:text-blue-700={selectedFilters.dateRange?.period === 'year'}
+        class:bg-blue-50={$activeFilters.dateRange?.period === 'year'}
+        class:text-blue-700={$activeFilters.dateRange?.period === 'year'}
       >
         This Year
       </button>
@@ -637,24 +621,24 @@
       <button
         on:click={() => setReadingTimeFilter(null, 5)}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-blue-50={selectedFilters.readingTimeRange?.max === 5}
-        class:text-blue-700={selectedFilters.readingTimeRange?.max === 5}
+        class:bg-blue-50={$activeFilters.readingTimeRange?.max === 5}
+        class:text-blue-700={$activeFilters.readingTimeRange?.max === 5}
       >
         Quick read (&lt; 5 min)
       </button>
       <button
         on:click={() => setReadingTimeFilter(5, 15)}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-blue-50={selectedFilters.readingTimeRange?.min === 5 && selectedFilters.readingTimeRange?.max === 15}
-        class:text-blue-700={selectedFilters.readingTimeRange?.min === 5 && selectedFilters.readingTimeRange?.max === 15}
+        class:bg-blue-50={$activeFilters.readingTimeRange?.min === 5 && $activeFilters.readingTimeRange?.max === 15}
+        class:text-blue-700={$activeFilters.readingTimeRange?.min === 5 && $activeFilters.readingTimeRange?.max === 15}
       >
         Medium (5-15 min)
       </button>
       <button
         on:click={() => setReadingTimeFilter(15, null)}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-blue-50={selectedFilters.readingTimeRange?.min === 15}
-        class:text-blue-700={selectedFilters.readingTimeRange?.min === 15}
+        class:bg-blue-50={$activeFilters.readingTimeRange?.min === 15}
+        class:text-blue-700={$activeFilters.readingTimeRange?.min === 15}
       >
         Long read (&gt; 15 min)
       </button>
@@ -670,24 +654,24 @@
       <button
         on:click={() => setQualityScoreFilter(70, 100)}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-green-50={selectedFilters.qualityScoreRange?.min === 70}
-        class:text-green-700={selectedFilters.qualityScoreRange?.min === 70}
+        class:bg-green-50={$activeFilters.qualityScoreRange?.min === 70}
+        class:text-green-700={$activeFilters.qualityScoreRange?.min === 70}
       >
         High (70-100)
       </button>
       <button
         on:click={() => setQualityScoreFilter(40, 69)}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-yellow-50={selectedFilters.qualityScoreRange?.min === 40 && selectedFilters.qualityScoreRange?.max === 69}
-        class:text-yellow-700={selectedFilters.qualityScoreRange?.min === 40 && selectedFilters.qualityScoreRange?.max === 69}
+        class:bg-yellow-50={$activeFilters.qualityScoreRange?.min === 40 && $activeFilters.qualityScoreRange?.max === 69}
+        class:text-yellow-700={$activeFilters.qualityScoreRange?.min === 40 && $activeFilters.qualityScoreRange?.max === 69}
       >
         Medium (40-69)
       </button>
       <button
         on:click={() => setQualityScoreFilter(null, 39)}
         class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
-        class:bg-orange-50={selectedFilters.qualityScoreRange?.max === 39}
-        class:text-orange-700={selectedFilters.qualityScoreRange?.max === 39}
+        class:bg-orange-50={$activeFilters.qualityScoreRange?.max === 39}
+        class:text-orange-700={$activeFilters.qualityScoreRange?.max === 39}
       >
         Low (&lt; 40)
       </button>
@@ -702,14 +686,14 @@
     <button
       on:click={togglePublishedDateFilter}
       class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded"
-      class:bg-blue-50={selectedFilters.hasPublishedDate === true}
-      class:text-blue-700={selectedFilters.hasPublishedDate === true}
-      class:bg-orange-50={selectedFilters.hasPublishedDate === false}
-      class:text-orange-700={selectedFilters.hasPublishedDate === false}
+      class:bg-blue-50={$activeFilters.hasPublishedDate === true}
+      class:text-blue-700={$activeFilters.hasPublishedDate === true}
+      class:bg-orange-50={$activeFilters.hasPublishedDate === false}
+      class:text-orange-700={$activeFilters.hasPublishedDate === false}
     >
-      {#if selectedFilters.hasPublishedDate === null}
+      {#if $activeFilters.hasPublishedDate === null}
         All content
-      {:else if selectedFilters.hasPublishedDate === true}
+      {:else if $activeFilters.hasPublishedDate === true}
         ✓ Has publish date
       {:else}
         ✗ No publish date

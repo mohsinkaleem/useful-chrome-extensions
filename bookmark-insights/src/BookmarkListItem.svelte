@@ -1,11 +1,11 @@
 <script>
   import { createEventDispatcher } from 'svelte';
   import { formatDate, getFaviconUrl, getGeneratedFavicon, getDomainLabel, copyToClipboard, highlightText } from './utils.js';
+  import { selectedBookmarks } from './stores.js';
   
   export let bookmark;
-  export let isSelected = false;
-  export let multiSelectMode = false;
   export let parsedSearchQuery = null;
+  export let multiSelectMode = false;
   
   const dispatch = createEventDispatcher();
   
@@ -21,16 +21,12 @@
   }
   
   function handleCheckboxChange(event) {
-    dispatch('toggle-select', {
-      bookmarkId: bookmark.id,
-      selected: event.target.checked
-    });
+    selectedBookmarks.toggle(bookmark.id);
   }
   
   function handleTitleClick() {
-    if (!multiSelectMode) {
-      openBookmark(bookmark.url);
-    }
+    // Always open, selection is handled by checkbox
+    openBookmark(bookmark.url);
   }
   
   function handleDeleteClick(event) {
@@ -49,7 +45,7 @@
 </script>
 
 <div class="bookmark-list-item group bg-white border-b border-gray-200 hover:bg-gray-50 transition-colors"
-     class:selected={isSelected}
+     class:selected={$selectedBookmarks.has(bookmark.id)}
      class:bg-red-50={bookmark.isAlive === false}
      class:border-red-200={bookmark.isAlive === false}>
   <div class="flex items-center px-4 py-3">
@@ -57,7 +53,7 @@
     {#if multiSelectMode}
       <input 
         type="checkbox" 
-        checked={isSelected}
+        checked={$selectedBookmarks.has(bookmark.id)}
         on:change={handleCheckboxChange}
         class="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
       />

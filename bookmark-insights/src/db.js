@@ -819,51 +819,6 @@ export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {
       bookmarks = bookmarks.filter(b => filters.contentTypes.includes(b.contentType));
     }
     
-    // Reading time filter
-    if (filters.readingTimeRange) {
-      const { min, max } = filters.readingTimeRange;
-      bookmarks = bookmarks.filter(b => {
-        if (!b.readingTime) return false;
-        if (min !== null && min !== undefined && b.readingTime < min) return false;
-        if (max !== null && max !== undefined && b.readingTime > max) return false;
-        return true;
-      });
-    }
-    
-    // Quality score filter
-    if (filters.qualityScoreRange) {
-      const { min, max } = filters.qualityScoreRange;
-      bookmarks = bookmarks.filter(b => {
-        if (b.contentQualityScore === null || b.contentQualityScore === undefined) return false;
-        if (min !== null && min !== undefined && b.contentQualityScore < min) return false;
-        if (max !== null && max !== undefined && b.contentQualityScore > max) return false;
-        return true;
-      });
-    }
-    
-    // Published date filter
-    if (filters.hasPublishedDate !== null && filters.hasPublishedDate !== undefined) {
-      if (filters.hasPublishedDate === true) {
-        // Only bookmarks with published dates
-        bookmarks = bookmarks.filter(b => b.publishedDate);
-      } else if (filters.hasPublishedDate === false) {
-        // Only bookmarks without published dates
-        bookmarks = bookmarks.filter(b => !b.publishedDate);
-      }
-      // If null, show all (no filter)
-    }
-    
-    // Smart tags filter
-    if (filters.smartTags && filters.smartTags.length > 0) {
-      bookmarks = bookmarks.filter(b => {
-        if (!b.smartTags || b.smartTags.length === 0) return false;
-        // Check if bookmark has any of the selected tags
-        return filters.smartTags.some(tag => 
-          b.smartTags.some(bTag => bTag.toLowerCase() === tag.toLowerCase())
-        );
-      });
-    }
-    
     if (filters.category) {
       bookmarks = bookmarks.filter(b => b.category === filters.category);
     }
