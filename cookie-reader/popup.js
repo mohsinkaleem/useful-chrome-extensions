@@ -3,6 +3,8 @@ let currentDomain = '';
 let currentUrl = '';
 let currentTabId = null;
 let allStats = [];
+let statsOffset = 0;
+const STATS_BATCH_SIZE = 50;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', init);
@@ -16,6 +18,9 @@ async function init() {
   
   // Set up delete all button
   document.getElementById('delete-all-btn').addEventListener('click', deleteAllCookies);
+
+  // Set up load more button
+  document.getElementById('load-more-btn').addEventListener('click', renderNextBatch);
 
   // Load current site cookies
   await loadCurrentSiteCookies();
@@ -214,8 +219,9 @@ async function deleteAllCookies() {
 async function loadStats() {
   try {
     allStats = await calculateStats();
+    statsOffset = 0;
     document.getElementById('stats-body').innerHTML = '';
-    renderStats();
+    renderNextBatch();
   } catch (error) {
     console.error('Error loading stats:', error);
     showEmptyState('stats-body', 'Error loading statistics');
@@ -237,13 +243,19 @@ async function calculateStats() {
       domainMap.set(domain, {
         domain: domain,
         count: 0,
-        size: 0
+        size: 0,
+        secure: 0,
+        httpOnly: 0,
+        session: 0
       });
     }
     
     const stats = domainMap.get(domain);
     stats.count++;
     stats.size += size;
+    if (cookie.secure) stats.secure++;
+    if (cookie.httpOnly) stats.httpOnly++;
+    if (cookie.session) stats.session++;
   });
   
   // Convert to array and sort by size descending
@@ -253,26 +265,48 @@ async function calculateStats() {
   return statsArray;
 }
 
-function renderStats() {
+function renderNextBatch() {
   const tbody = document.getElementById('stats-body');
+  const loadMoreContainer = document.getElementById('load-more-container');
   
   if (allStats.length === 0) {
     showEmptyState('stats-body', 'No cookies found');
+    loadMoreContainer.style.display = 'none';
     return;
   }
   
-  // Show top 50
-  const batch = allStats.slice(0, 50);
+  const nextBatch = allStats.slice(statsOffset, statsOffset + STATS_BATCH_SIZE);
   
-  batch.forEach(stat => {
+  nextBatch.forEach(stat => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td>${escapeHtml(stat.domain)}</td>
+      <td title="${escapeHtml(stat.domain)}">${escapeHtml(stat.domain)}</td>
       <td>${stat.count}</td>
-      <td>${stat.size}</td>
+      <td>${formatBytes(stat.size)}</td>
+      <td>${stat.secure}</td>
+      <td>${stat.httpOnly}</td>
+      <td>${stat.session}</td>
     `;
     tbody.appendChild(row);
   });
+
+  statsOffset += nextBatch.length;
+
+  // Show/hide load more button
+  if (statsOffset < allStats.length) {
+    loadMoreContainer.style.display = 'block';
+  } else {
+    loadMoreContainer.style.display = 'none';
+  }
+}
+
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
 async function exportData() {
@@ -339,7 +373,7 @@ function showEmptyState(containerId, message) {
     container.innerHTML = '';
     container.appendChild(emptyState);
   } else if (containerId === 'stats-body') {
-    container.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 40px; color: #999;">${message}</td></tr>`;
+    container.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 40px; color: #999;">${message}</td></tr>`;
   }
 }
 

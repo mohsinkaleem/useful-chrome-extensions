@@ -267,3 +267,17 @@ header h1 {
   font-size: 48px;
   margin-bottom: 8px;
 }
+.btn-secondary {
+  background: #667eea;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.3s;
+}
+
+.btn-secondary:hover {
+  background: #5a6fd6;
+}
