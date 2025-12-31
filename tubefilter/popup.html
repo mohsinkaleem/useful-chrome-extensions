@@ -134,7 +134,13 @@
       <h3>🔍 Title Keyword Filter</h3>
       <div class="filter-group">
         <textarea id="titleKeywords" placeholder="Enter keywords separated by commas (e.g., music, tutorial, gaming)" rows="2"></textarea>
-        <div class="keyword-logic-group">
+        
+        <label class="regex-option">
+          <input type="checkbox" id="useRegex">
+          Use Regular Expression (Regex)
+        </label>
+
+        <div class="keyword-logic-group" id="keywordLogicGroup">
           <label>
             <input type="radio" name="keywordLogic" value="AND" checked>
             AND (video must contain ALL keywords)
@@ -154,7 +160,7 @@
             Exclude videos with keywords
           </label>
         </div>
-        <small>Leave empty to disable keyword filtering. Use commas to separate multiple keywords.</small>
+        <small id="keywordHelp">Leave empty to disable keyword filtering. Use commas to separate multiple keywords.</small>
       </div>
     </div>
 

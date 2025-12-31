@@ -19,22 +19,47 @@
     
     // Set up mutation observer to handle dynamically loaded content
     setupMutationObserver();
+
+    // Optimize for background tabs
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     console.log('TubeFilter: Content script initialized (tab-specific mode)');
+  }
+
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      // Tab is hidden, disconnect observer to save resources
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+    } else {
+      // Tab is visible, re-enable observer and re-apply filters
+      if (!observer && isFilteringActive) {
+        setupMutationObserver();
+        applyFilters();
+      }
+    }
   }
   
   function handleMessage(request, sender, sendResponse) {
     if (request.action === 'applyFilters') {
       currentFilters = request.filters;
+      // Clear processed cache when filters change
+      processedElements = new WeakSet(); 
       const hiddenCount = applyFilters();
       sendResponse({success: true, hiddenCount: hiddenCount});
     } else if (request.action === 'clearFilters') {
       currentFilters = null;
+      processedElements = new WeakSet();
       clearFilters();
       sendResponse({success: true});
     }
   }
   
+  let processedElements = new WeakSet();
+  let filterTimeout = null;
+
   function setupMutationObserver() {
     // Disconnect existing observer if any
     if (observer) {
@@ -42,27 +67,28 @@
     }
     
     observer = new MutationObserver(function(mutations) {
-      if (!isFilteringActive || !currentFilters) return;
+      if (!isFilteringActive || !currentFilters || document.hidden) return;
       
       let shouldFilter = false;
-      mutations.forEach(function(mutation) {
+      for (const mutation of mutations) {
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-          // Check if new video elements were added
-          mutation.addedNodes.forEach(function(node) {
+          for (const node of mutation.addedNodes) {
             if (node.nodeType === Node.ELEMENT_NODE) {
-              if (node.matches && node.matches('ytd-rich-item-renderer')) {
+              if (node.nodeName === 'YTD-RICH-ITEM-RENDERER' || 
+                  (node.querySelector && node.querySelector('ytd-rich-item-renderer'))) {
                 shouldFilter = true;
-              } else if (node.querySelector && node.querySelector('ytd-rich-item-renderer')) {
-                shouldFilter = true;
+                break;
               }
             }
-          });
+          }
         }
-      });
+        if (shouldFilter) break;
+      }
       
       if (shouldFilter) {
         // Debounce the filtering to avoid excessive processing
-        setTimeout(applyFilters, 100);
+        if (filterTimeout) clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(applyFilters, 500);
       }
     });
     
@@ -80,17 +106,43 @@
     
     // Find all video elements
     const videoElements = document.querySelectorAll('ytd-rich-item-renderer');
+    const updates = [];
     
+    // Phase 1: Read and Decide
     videoElements.forEach(function(element) {
+      // Optimization: Check if we already processed this element for the current filter set
+      if (processedElements.has(element)) {
+         if (element.getAttribute('data-tubefilter-hidden') === 'true') {
+           hiddenCount++;
+         }
+         return;
+      }
+
       const videoData = extractVideoData(element);
       
-      if (videoData && shouldHideVideo(videoData, currentFilters)) {
-        hideVideoElement(element);
-        hiddenCount++;
-      } else {
-        showVideoElement(element);
+      if (videoData) {
+        const shouldHide = shouldHideVideo(videoData, currentFilters);
+        updates.push({element, shouldHide});
+        
+        if (shouldHide) {
+          hiddenCount++;
+        }
+        processedElements.add(element);
       }
     });
+    
+    // Phase 2: Write (Batch DOM updates)
+    if (updates.length > 0) {
+      requestAnimationFrame(() => {
+        updates.forEach(({element, shouldHide}) => {
+          if (shouldHide) {
+            hideVideoElement(element);
+          } else {
+            showVideoElement(element);
+          }
+        });
+      });
+    }
     
     console.log(`TubeFilter: Filtered ${hiddenCount} videos`);
     return hiddenCount;
@@ -150,20 +202,40 @@
   }
   
   function shouldHideVideo(videoData, filters) {
-    // Check title keyword filter (enhanced for multiple keywords)
+    // Check title keyword filter (enhanced for multiple keywords and regex)
     if (filters.titleKeywords && Array.isArray(filters.titleKeywords) && filters.titleKeywords.length > 0) {
-      const titleLower = videoData.title.toLowerCase();
-      const keywordLogic = filters.keywordLogic || 'AND';
+      const title = videoData.title;
+      const titleLower = title.toLowerCase();
       const keywordMode = filters.keywordMode || 'include';
       
       let keywordMatch = false;
       
-      if (keywordLogic === 'AND') {
-        // ALL keywords must be present
-        keywordMatch = filters.titleKeywords.every(keyword => titleLower.includes(keyword.toLowerCase()));
+      if (filters.useRegex) {
+        try {
+          const pattern = filters.titleKeywords[0];
+          // Check if pattern looks like /pattern/flags
+          const match = pattern.match(/^\/(.*?)\/([gimsuy]*)$/);
+          let regex;
+          if (match) {
+            regex = new RegExp(match[1], match[2]);
+          } else {
+            // Default to case-insensitive search if no flags provided
+            regex = new RegExp(pattern, 'i');
+          }
+          keywordMatch = regex.test(title);
+        } catch (e) {
+          console.error('TubeFilter: Invalid Regex', e);
+          keywordMatch = false;
+        }
       } else {
-        // ANY keyword must be present (OR logic)
-        keywordMatch = filters.titleKeywords.some(keyword => titleLower.includes(keyword.toLowerCase()));
+        const keywordLogic = filters.keywordLogic || 'AND';
+        if (keywordLogic === 'AND') {
+          // ALL keywords must be present
+          keywordMatch = filters.titleKeywords.every(keyword => titleLower.includes(keyword.toLowerCase()));
+        } else {
+          // ANY keyword must be present (OR logic)
+          keywordMatch = filters.titleKeywords.some(keyword => titleLower.includes(keyword.toLowerCase()));
+        }
       }
       
       if (keywordMode === 'include') {
@@ -222,20 +294,20 @@
     
     // Check duration filter
     if (filters.durationFilter.type !== 'none') {
-      const durationSeconds = parseDurationToSeconds(videoData.duration);
+      const durationSeconds = parseTime(videoData.duration);
       if (durationSeconds !== -1) {
         switch (filters.durationFilter.type) {
           case 'less':
-            const maxSeconds = parseTimeToSeconds(filters.durationFilter.lessValue);
+            const maxSeconds = parseTime(filters.durationFilter.lessValue);
             if (maxSeconds !== -1 && durationSeconds >= maxSeconds) return true;
             break;
           case 'greater':
-            const minSeconds = parseTimeToSeconds(filters.durationFilter.greaterValue);
+            const minSeconds = parseTime(filters.durationFilter.greaterValue);
             if (minSeconds !== -1 && durationSeconds <= minSeconds) return true;
             break;
           case 'custom':
-            const customMinSeconds = parseTimeToSeconds(filters.durationFilter.customMin);
-            const customMaxSeconds = parseTimeToSeconds(filters.durationFilter.customMax);
+            const customMinSeconds = parseTime(filters.durationFilter.customMin);
+            const customMaxSeconds = parseTime(filters.durationFilter.customMax);
             if (customMinSeconds !== -1 && customMaxSeconds !== -1) {
               if (durationSeconds < customMinSeconds || durationSeconds > customMaxSeconds) {
                 return true;
@@ -299,10 +371,10 @@
     return Math.floor(number);
   }
   
-  function parseDurationToSeconds(durationText) {
-    if (!durationText) return -1;
+  function parseTime(timeText) {
+    if (!timeText) return -1;
     
-    const parts = durationText.split(':');
+    const parts = timeText.split(':');
     let seconds = 0;
     
     try {
@@ -320,20 +392,6 @@
     } catch (error) {
       return -1;
     }
-  }
-  
-  function parseTimeToSeconds(timeStr) {
-    if (!timeStr) return -1;
-    
-    const parts = timeStr.split(':');
-    if (parts.length !== 2) return -1;
-    
-    const minutes = parseInt(parts[0]);
-    const seconds = parseInt(parts[1]);
-    
-    if (isNaN(minutes) || isNaN(seconds) || seconds >= 60) return -1;
-    
-    return minutes * 60 + seconds;
   }
   
   function parseUploadTimeToHours(uploadText) {

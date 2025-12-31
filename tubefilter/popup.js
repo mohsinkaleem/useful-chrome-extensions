@@ -49,122 +49,80 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   });
+
+  // Regex checkbox listener
+  document.getElementById('useRegex').addEventListener('change', function() {
+    const isRegex = this.checked;
+    const logicGroup = document.getElementById('keywordLogicGroup');
+    const helpText = document.getElementById('keywordHelp');
+    const input = document.getElementById('titleKeywords');
+    
+    if (isRegex) {
+      logicGroup.style.display = 'none';
+      helpText.textContent = 'Enter a valid Regular Expression (e.g., /pattern/i or just pattern)';
+      input.placeholder = 'Enter regex pattern (e.g., ^[A-Z].*tutorial)';
+      hideKeywordPreview();
+    } else {
+      logicGroup.style.display = 'block';
+      helpText.textContent = 'Leave empty to disable keyword filtering. Use commas to separate multiple keywords.';
+      input.placeholder = 'Enter keywords separated by commas (e.g., music, tutorial, gaming)';
+      // Trigger preview update
+      input.dispatchEvent(new Event('input'));
+    }
+  });
   
   // Optional: Clean up old tab filter data periodically
   cleanupOldTabFilters();
 });
 
 function setupRadioButtonListeners() {
-  // View filter radio buttons
-  const viewRadios = document.querySelectorAll('input[name="viewFilter"]');
-  viewRadios.forEach(radio => {
-    radio.addEventListener('change', function() {
-      updateViewInputs(this.value);
-    });
-  });
-  
-  // Duration filter radio buttons
-  const durationRadios = document.querySelectorAll('input[name="durationFilter"]');
-  durationRadios.forEach(radio => {
-    radio.addEventListener('change', function() {
-      updateDurationInputs(this.value);
-    });
-  });
-  
-  // Time filter radio buttons
-  const timeRadios = document.querySelectorAll('input[name="timeFilter"]');
-  timeRadios.forEach(radio => {
-    radio.addEventListener('change', function() {
-      updateTimeInputs(this.value);
+  ['viewFilter', 'durationFilter', 'timeFilter'].forEach(filterName => {
+    const radios = document.querySelectorAll(`input[name="${filterName}"]`);
+    radios.forEach(radio => {
+      radio.addEventListener('change', function() {
+        updateInputs(filterName, this.value);
+      });
     });
   });
 }
 
-function updateViewInputs(selectedValue) {
-  const viewMin = document.getElementById('viewMin');
-  const viewMax = document.getElementById('viewMax');
-  const viewBetweenMin = document.getElementById('viewBetweenMin');
-  const viewBetweenMax = document.getElementById('viewBetweenMax');
-  
-  // Disable all inputs first
-  [viewMin, viewMax, viewBetweenMin, viewBetweenMax].forEach(input => {
-    input.disabled = true;
-  });
-  
-  // Enable relevant inputs based on selection
-  switch(selectedValue) {
-    case 'greater':
-      viewMin.disabled = false;
-      break;
-    case 'less':
-      viewMax.disabled = false;
-      break;
-    case 'between':
-      viewBetweenMin.disabled = false;
-      viewBetweenMax.disabled = false;
-      break;
-  }
-}
+function updateInputs(groupName, selectedValue) {
+  const config = {
+    viewFilter: {
+      all: ['viewMin', 'viewMax', 'viewBetweenMin', 'viewBetweenMax'],
+      greater: ['viewMin'],
+      less: ['viewMax'],
+      between: ['viewBetweenMin', 'viewBetweenMax']
+    },
+    durationFilter: {
+      all: ['durationLess', 'durationGreater', 'durationMin', 'durationMax'],
+      less: ['durationLess'],
+      greater: ['durationGreater'],
+      custom: ['durationMin', 'durationMax']
+    },
+    timeFilter: {
+      all: ['timeLess', 'timeLessUnit', 'timeGreater', 'timeGreaterUnit', 'timeBetweenMin', 'timeBetweenMinUnit', 'timeBetweenMax', 'timeBetweenMaxUnit'],
+      less: ['timeLess', 'timeLessUnit'],
+      greater: ['timeGreater', 'timeGreaterUnit'],
+      between: ['timeBetweenMin', 'timeBetweenMinUnit', 'timeBetweenMax', 'timeBetweenMaxUnit']
+    }
+  };
 
-function updateDurationInputs(selectedValue) {
-  const durationLess = document.getElementById('durationLess');
-  const durationGreater = document.getElementById('durationGreater');
-  const durationMin = document.getElementById('durationMin');
-  const durationMax = document.getElementById('durationMax');
-  
-  // Disable all inputs first
-  [durationLess, durationGreater, durationMin, durationMax].forEach(input => {
-    if (input) input.disabled = true;
-  });
-  
-  // Enable relevant inputs based on selection
-  switch(selectedValue) {
-    case 'less':
-      if (durationLess) durationLess.disabled = false;
-      break;
-    case 'greater':
-      if (durationGreater) durationGreater.disabled = false;
-      break;
-    case 'custom':
-      if (durationMin) durationMin.disabled = false;
-      if (durationMax) durationMax.disabled = false;
-      break;
-  }
-}
+  const groupConfig = config[groupName];
+  if (!groupConfig) return;
 
-function updateTimeInputs(selectedValue) {
-  const timeLess = document.getElementById('timeLess');
-  const timeLessUnit = document.getElementById('timeLessUnit');
-  const timeGreater = document.getElementById('timeGreater');
-  const timeGreaterUnit = document.getElementById('timeGreaterUnit');
-  const timeBetweenMin = document.getElementById('timeBetweenMin');
-  const timeBetweenMinUnit = document.getElementById('timeBetweenMinUnit');
-  const timeBetweenMax = document.getElementById('timeBetweenMax');
-  const timeBetweenMaxUnit = document.getElementById('timeBetweenMaxUnit');
-  
-  // Disable all inputs first
-  [timeLess, timeLessUnit, timeGreater, timeGreaterUnit, 
-   timeBetweenMin, timeBetweenMinUnit, timeBetweenMax, timeBetweenMaxUnit].forEach(input => {
-    if (input) input.disabled = true;
+  // Disable all
+  groupConfig.all.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
   });
-  
-  // Enable relevant inputs based on selection
-  switch(selectedValue) {
-    case 'less':
-      if (timeLess) timeLess.disabled = false;
-      if (timeLessUnit) timeLessUnit.disabled = false;
-      break;
-    case 'greater':
-      if (timeGreater) timeGreater.disabled = false;
-      if (timeGreaterUnit) timeGreaterUnit.disabled = false;
-      break;
-    case 'between':
-      if (timeBetweenMin) timeBetweenMin.disabled = false;
-      if (timeBetweenMinUnit) timeBetweenMinUnit.disabled = false;
-      if (timeBetweenMax) timeBetweenMax.disabled = false;
-      if (timeBetweenMaxUnit) timeBetweenMaxUnit.disabled = false;
-      break;
-  }
+
+  // Enable selected
+  const toEnable = groupConfig[selectedValue] || [];
+  toEnable.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
 }
 
 function applyFilters() {
@@ -216,13 +174,18 @@ function clearFilters() {
   document.querySelector('input[name="keywordLogic"][value="AND"]').checked = true;
   document.querySelector('input[name="keywordMode"][value="include"]').checked = true;
   
+  // Reset regex
+  const regexCheckbox = document.getElementById('useRegex');
+  regexCheckbox.checked = false;
+  regexCheckbox.dispatchEvent(new Event('change'));
+
   // Hide keyword preview
   hideKeywordPreview();
   
   // Update inputs
-  updateViewInputs('none');
-  updateDurationInputs('none');
-  updateTimeInputs('none');
+  updateInputs('viewFilter', 'none');
+  updateInputs('durationFilter', 'none');
+  updateInputs('timeFilter', 'none');
   
   // Get current tab to clear filters for this specific tab
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
@@ -246,7 +209,13 @@ function clearFilters() {
 }
 
 function collectFilters() {
-  const keywords = parseKeywords(document.getElementById('titleKeywords').value);
+  const rawKeywords = document.getElementById('titleKeywords').value;
+  const useRegex = document.getElementById('useRegex').checked;
+  
+  // If regex is enabled, we don't parse keywords, we just pass the raw string
+  // But to keep the structure consistent, we can put it in the array or use a separate field.
+  // Let's use the array but with a single element if regex is on.
+  const keywords = useRegex ? [rawKeywords] : parseKeywords(rawKeywords);
   
   const filters = {
     viewFilter: {
@@ -276,6 +245,7 @@ function collectFilters() {
     },
     // Updated for multiple keywords support
     titleKeywords: keywords,
+    useRegex: useRegex,
     keywordLogic: document.querySelector('input[name="keywordLogic"]:checked').value,
     keywordMode: document.querySelector('input[name="keywordMode"]:checked').value,
     
@@ -398,15 +368,19 @@ function convertToHours(value, unit) {
 }
 
 function parseTimeToSeconds(timeStr) {
+  if (!timeStr) return -1;
   const parts = timeStr.split(':');
-  if (parts.length !== 2) return -1;
+  let seconds = 0;
   
-  const minutes = parseInt(parts[0]);
-  const seconds = parseInt(parts[1]);
+  if (parts.length === 2) {
+    seconds = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  } else if (parts.length === 3) {
+    seconds = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
+  } else {
+    return -1;
+  }
   
-  if (isNaN(minutes) || isNaN(seconds) || seconds >= 60) return -1;
-  
-  return minutes * 60 + seconds;
+  return (isNaN(seconds) || seconds < 0) ? -1 : seconds;
 }
 
 function loadSavedFilters() {
@@ -454,12 +428,25 @@ function loadSavedFilters() {
           // Restore title keywords (handle both old and new format)
           if (filters.titleKeywords && Array.isArray(filters.titleKeywords)) {
             // New format with array of keywords
-            document.getElementById('titleKeywords').value = filters.titleKeywords.join(', ');
+            // If regex was used, the array has one element which is the raw pattern
+            if (filters.useRegex) {
+               document.getElementById('titleKeywords').value = filters.titleKeywords[0] || '';
+            } else {
+               document.getElementById('titleKeywords').value = filters.titleKeywords.join(', ');
+            }
           } else if (filters.titleKeyword) {
             // Old format with single keyword - convert to new format
             document.getElementById('titleKeywords').value = filters.titleKeyword;
           }
           
+          // Restore regex setting
+          if (filters.useRegex) {
+            const regexCheckbox = document.getElementById('useRegex');
+            regexCheckbox.checked = true;
+            // Trigger change event to update UI
+            regexCheckbox.dispatchEvent(new Event('change'));
+          }
+
           // Restore keyword logic (default to 'AND' if not set)
           const keywordLogic = filters.keywordLogic || 'AND';
           document.querySelector(`input[name="keywordLogic"][value="${keywordLogic}"]`).checked = true;
@@ -469,16 +456,18 @@ function loadSavedFilters() {
           document.querySelector(`input[name="keywordMode"][value="${keywordMode}"]`).checked = true;
           
           // Update input states
-          updateViewInputs(filters.viewFilter.type);
-          updateDurationInputs(filters.durationFilter.type);
+          updateInputs('viewFilter', filters.viewFilter.type);
+          updateInputs('durationFilter', filters.durationFilter.type);
           if (filters.timeFilter) {
-            updateTimeInputs(filters.timeFilter.type);
+            updateInputs('timeFilter', filters.timeFilter.type);
           }
           
-          // Show keyword preview if multiple keywords are present
-          const keywords = parseKeywords(document.getElementById('titleKeywords').value);
-          if (keywords.length > 1) {
-            showKeywordPreview(keywords);
+          // Show keyword preview if multiple keywords are present and not in regex mode
+          if (!filters.useRegex) {
+            const keywords = parseKeywords(document.getElementById('titleKeywords').value);
+            if (keywords.length > 1) {
+              showKeywordPreview(keywords);
+            }
           }
         }
         // If no saved filters for this tab, form will remain in default state

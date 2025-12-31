@@ -226,8 +226,16 @@ body {
 }
 
 /* Radio button styling */
-input[type="radio"] {
+input[type="radio"],
+input[type="checkbox"] {
   accent-color: #ff0000;
+}
+
+.regex-option {
+  margin-top: 6px;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #495057;
 }
 
 /* Focus styles */

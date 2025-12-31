@@ -20,6 +20,7 @@ A simple and fast Chrome extension to filter YouTube videos by view count, durat
 - **Title Keyword Filter**: Show only videos containing specific keywords OR exclude videos containing specific keywords
   - **Multiple Keywords**: Enter multiple keywords separated by commas
   - **AND/OR Logic**: Choose whether videos must contain ALL keywords (AND) or ANY keywords (OR)
+  - **Regex Support**: Use regular expressions for advanced pattern matching (e.g., `^\[.*?\]` to match titles starting with brackets)
   - Include mode: Show only videos matching the keyword criteria
   - Exclude mode: Hide videos matching the keyword criteria
   - **Smart Preview**: See a preview of your keyword logic before applying
@@ -93,8 +94,24 @@ Filter Examples
 
 - **Include + AND**: `"python, programming"` → Show only Python programming videos
 - **Exclude + OR**: `"clickbait, reaction"` → Hide videos that are clickbait OR reactions
-Extracts upload time (e.g., "2 hours ago", "3 days ago")
-  - 
+
+**Regex Filter Examples:**
+
+Enable the "Use Regular Expression (Regex)" checkbox to use these patterns:
+
+- **Case-insensitive search**: `python` or `/python/i`
+  - Matches "Python", "PYTHON", "python"
+- **Starts with**: `^\[Official\]`
+  - Matches titles starting with "[Official]"
+- **Ends with**: `tutorial$`
+  - Matches titles ending with "tutorial"
+- **Wildcards**: `react.*hook`
+  - Matches "React Hooks", "React custom hooks", etc.
+- **Alternatives**: `(react|vue|angular)`
+  - Matches any title containing "react", "vue", or "angular"
+- **Exact Match**: `^My Exact Title$`
+  - Matches only the exact title "My Exact Title"
+
 **Combined Filters:**
 
 - **Duration < 10 minutes + Less than 7 days ago** → Show recent short videos
