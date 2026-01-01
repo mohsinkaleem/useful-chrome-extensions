@@ -4,18 +4,18 @@
 
 import { getAllBookmarks, getCache, setCache, getCachedMetric, CACHE_DURATIONS, getBookmark, getBookmarksByDomain, getBookmarksByCategory, storeSimilarities, getStoredSimilarities } from './db.js';
 import { STOP_WORDS } from './utils.js';
-import { allBookmarks as bookmarksStore } from './stores.js';
+// import { allBookmarks as bookmarksStore } from './stores.js';
 
 /**
  * Get bookmarks using cached store when possible
  * Falls back to direct db call if store not available
  */
 async function getBookmarksCached() {
-  try {
-    return await bookmarksStore.getCached();
-  } catch (error) {
-    return await getBookmarksCached();
-  }
+  // try {
+  //   return await bookmarksStore.getCached();
+  // } catch (error) {
+    return await getAllBookmarks();
+  // }
 }
 
 // Calculate TF-IDF scores for a document

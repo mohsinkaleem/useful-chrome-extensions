@@ -903,8 +903,17 @@ export async function getConsolidatedDomainAnalytics() {
 export async function getUniqueFolders() {
   try {
     const bookmarks = await getAllBookmarks();
-    const folders = [...new Set(bookmarks.map(b => b.folderPath).filter(f => f))];
-    return folders.sort();
+    const folderCounts = {};
+    
+    bookmarks.forEach(b => {
+      if (b.folderPath) {
+        folderCounts[b.folderPath] = (folderCounts[b.folderPath] || 0) + 1;
+      }
+    });
+    
+    return Object.entries(folderCounts)
+      .map(([folder, count]) => ({ folder, count }))
+      .sort((a, b) => b.count - a.count);
   } catch (error) {
     console.error('Error getting unique folders:', error);
     return [];

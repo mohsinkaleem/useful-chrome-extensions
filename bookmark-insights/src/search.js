@@ -3,7 +3,8 @@
 
 import { Document } from 'flexsearch';
 import { db, getAllBookmarks, setCache, getCache } from './db.js';
-import { allBookmarks as bookmarksStore } from './stores.js';
+import { getSortFunction } from './utils.js';
+// import { allBookmarks as bookmarksStore } from './stores.js';
 
 // FlexSearch index instance
 let searchIndex = null;
@@ -14,13 +15,13 @@ let indexInitialized = false;
  * Falls back to direct db call if store not available
  */
 async function getBookmarksCached() {
-  try {
-    // Try to use the cached store first
-    return await bookmarksStore.getCached();
-  } catch (error) {
-    // Fallback to direct db call
+  // try {
+  //   // Try to use the cached store first
+  //   return await bookmarksStore.getCached();
+  // } catch (error) {
+  //   // Fallback to direct db call
     return await getAllBookmarks();
-  }
+  // }
 }
 
 /**
@@ -657,7 +658,7 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
           if (activeFilters.folders && activeFilters.folders.length > 0) {
               // Fixed: Only check folderPath, don't fall back to category
               const folder = (b.folderPath || '').toLowerCase();
-              if (!activeFilters.folders.some(f => folder.includes(f))) return false;
+              if (!activeFilters.folders.some(f => folder.includes(f.toLowerCase()))) return false;
           }
           if (activeFilters.platforms && activeFilters.platforms.length > 0) {
               if (!activeFilters.platforms.includes(b.platform)) return false;
@@ -684,14 +685,20 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
               if (!(isOld && neverAccessed && isAlive)) return false;
           }
           
+          if (activeFilters.dateRange) {
+              const { startDate, endDate } = activeFilters.dateRange;
+              if (b.dateAdded < startDate || b.dateAdded > endDate) return false;
+          }
+
           return true;
       });
   }
 
   if (!query || !query.trim()) {
+    const sortFn = getSortFunction(options.sortBy || 'date_desc');
     return {
       results: filteredBookmarks
-        .sort((a, b) => b.dateAdded - a.dateAdded)
+        .sort(sortFn)
         .slice(offset, offset + limit),
       total: filteredBookmarks.length,
       hasMore: offset + limit < filteredBookmarks.length,
@@ -761,17 +768,19 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
       );
     }
     
-    // Calculate relevance scores and sort
+    // Calculate relevance scores
     filteredBookmarks = filteredBookmarks.map(bookmark => ({
       ...bookmark,
       _searchScore: calculateRelevanceScore(bookmark, parsedQuery)
     }));
     
-    // Sort by relevance score (highest first)
-    filteredBookmarks.sort((a, b) => b._searchScore - a._searchScore);
+    // Sort using requested sort option
+    const sortFn = getSortFunction(options.sortBy || 'relevance');
+    filteredBookmarks.sort(sortFn);
   } else {
-    // No text query, just use filtered results sorted by date
-    filteredBookmarks = filteredBookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
+    // No text query
+    const sortFn = getSortFunction(options.sortBy || 'date_desc');
+    filteredBookmarks.sort(sortFn);
   }
   
   const total = filteredBookmarks.length;

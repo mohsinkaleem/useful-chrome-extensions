@@ -7,7 +7,7 @@
   import Sidebar from './Sidebar.svelte';
   import DataExplorer from './DataExplorer.svelte';
   import VisualInsights from './VisualInsights.svelte';
-  import { SORT_OPTIONS, debounce } from './utils.js';
+  import { SORT_OPTIONS } from './utils.js';
   import { searchBookmarks } from './search.js';
   import { 
     getBookmarksPaginated, 
@@ -65,6 +65,7 @@
 
   import { activeFilters, searchQuery as searchQueryStore, allBookmarks, selectedBookmarks } from './stores.js';
   import { parseSearchQuery } from './search.js';
+  import { debounce } from './utils.js';
   
   Chart.register(...registerables);
   
@@ -82,6 +83,7 @@
   // Sorting state
   let currentSortBy = 'date_desc';
   
+  let sidebarRef;
   let parsedSearchQuery = null;
   
   // Chart variables
@@ -184,13 +186,14 @@
   let multiSelectMode = false;
   let viewMode = 'list'; // 'list' or 'card'
   
-  // Reference to Sidebar component for clearing filters
-  let sidebarRef;
-  
   onMount(async () => {
     try {
       // Initial load handled by reactive statement or explicit call
-      // loadBookmarks(0, false); 
+      loadBookmarks(0, false); 
+      
+      // Ensure we have fresh data on mount
+      allBookmarks.invalidate();
+      
       if (currentView === 'insights') {
         await loadInsights();
       } else if (currentView === 'health') {
@@ -202,7 +205,7 @@
       loading = false;
     }
 
-    // Listen for enrichment progress updates
+    // Listen for enrichment progress updates and bookmark changes
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.action === 'enrichmentProgress' && message.progress) {
         enrichmentProgress = message.progress;
@@ -218,6 +221,14 @@
         if (enrichmentLogs.length > 100) {
           enrichmentLogs = enrichmentLogs.slice(-100);
         }
+      } else if (message.action === 'bookmarksChanged') {
+        // Refresh bookmarks and stats when background script notifies of changes
+        allBookmarks.invalidate(); // Invalidate cache to ensure fresh data
+        loadBookmarks(0, false);
+        getQuickStats().then(s => stats = s);
+        if (sidebarRef && sidebarRef.refresh) {
+          sidebarRef.refresh();
+        }
       }
     });
   });
@@ -228,18 +239,43 @@
   }, 300);
   
   // Reactive search trigger with debouncing
+  let previousSearchQuery = $searchQueryStore;
+  let previousFilters = JSON.stringify($activeFilters);
+  let previousSort = currentSortBy;
+
   $: {
-      $searchQueryStore;
-      $activeFilters;
-      currentSortBy;
-      currentPage = 0;
-      debouncedLoadBookmarks();
+      const filtersChanged = JSON.stringify($activeFilters) !== previousFilters;
+      const searchChanged = $searchQueryStore !== previousSearchQuery;
+      
+      // Auto-switch sort mode based on search state
+      if (searchChanged) {
+          if ($searchQueryStore && $searchQueryStore.trim().length > 0) {
+              if (currentSortBy === 'date_desc') {
+                  currentSortBy = 'relevance';
+              }
+          } else {
+              if (currentSortBy === 'relevance') {
+                  currentSortBy = 'date_desc';
+              }
+          }
+      }
+      
+      const sortChanged = currentSortBy !== previousSort;
+
+      if (filtersChanged || searchChanged || sortChanged) {
+          previousSearchQuery = $searchQueryStore;
+          previousFilters = JSON.stringify($activeFilters);
+          previousSort = currentSortBy;
+          
+          currentPage = 0;
+          debouncedLoadBookmarks();
+      }
   }
   
   // Removed resetPagination - now handled inline with debouncing
 
   async function loadBookmarks(page, append) {
-      loading = true;
+      if (!append) loading = true; // Only show loading state for full reloads
       try {
           // Compute stats in single pass when filters are active
           const needsStats = $searchQueryStore || hasActiveFilters($activeFilters);
@@ -251,6 +287,9 @@
               computeStats: needsStats  // Single-pass stats computation
           };
           
+          // Use requestAnimationFrame to prevent blocking UI
+          await new Promise(resolve => requestAnimationFrame(resolve));
+
           const result = await searchBookmarks($searchQueryStore, $activeFilters, options);
           
           if (append) {
@@ -1617,7 +1656,7 @@
     </div>
   </header>
   
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
     {#if currentView === 'bookmarks'}
       <div class="mb-4">
         <SearchBar value={$searchQueryStore} on:search={handleSearch} />
@@ -1790,7 +1829,9 @@
                   <!-- Date Range Chip -->
                   {#if $activeFilters.dateRange}
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      Date: {$activeFilters.dateRange}
+                      Date: {$activeFilters.dateRange.period === 'week' ? 'This Week' : 
+                             $activeFilters.dateRange.period === 'month' ? 'This Month' : 
+                             $activeFilters.dateRange.period === 'year' ? 'This Year' : 'Custom Range'}
                       <button type="button" class="ml-1.5 inline-flex items-center justify-center text-blue-400 hover:text-blue-600 focus:outline-none" on:click={() => activeFilters.setFilter('dateRange', null)}>
                         <span class="sr-only">Remove date filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>

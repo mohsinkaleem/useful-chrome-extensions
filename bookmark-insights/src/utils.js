@@ -185,14 +185,32 @@ export function debounce(func, wait = 300) {
 }
 
 /**
+ * Throttle a function
+ * @param {Function} func - Function to throttle
+ * @param {number} limit - Limit in milliseconds
+ * @returns {Function} Throttled function
+ */
+export function throttle(func, limit) {
+  let inThrottle;
+  return function(...args) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, limit);
+    }
+  }
+}
+
+/**
  * Sort options for bookmarks
  */
 export const SORT_OPTIONS = {
+  RELEVANCE: { key: 'relevance', label: 'Best Match', sort: (a, b) => (b._searchScore || 0) - (a._searchScore || 0) },
   DATE_DESC: { key: 'date_desc', label: 'Newest First', sort: (a, b) => b.dateAdded - a.dateAdded },
   DATE_ASC: { key: 'date_asc', label: 'Oldest First', sort: (a, b) => a.dateAdded - b.dateAdded },
-  TITLE_ASC: { key: 'title_asc', label: 'Title A-Z', sort: (a, b) => a.title.localeCompare(b.title) },
-  TITLE_DESC: { key: 'title_desc', label: 'Title Z-A', sort: (a, b) => b.title.localeCompare(a.title) },
-  DOMAIN_ASC: { key: 'domain_asc', label: 'Domain A-Z', sort: (a, b) => a.domain.localeCompare(b.domain) },
+  TITLE_ASC: { key: 'title_asc', label: 'Title A-Z', sort: (a, b) => (a.title || '').localeCompare(b.title || '') },
+  TITLE_DESC: { key: 'title_desc', label: 'Title Z-A', sort: (a, b) => (b.title || '').localeCompare(a.title || '') },
+  DOMAIN_ASC: { key: 'domain_asc', label: 'Domain A-Z', sort: (a, b) => (a.domain || '').localeCompare(b.domain || '') },
 };
 
 /**

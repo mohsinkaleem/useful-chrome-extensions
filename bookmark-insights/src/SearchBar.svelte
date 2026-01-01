@@ -9,47 +9,15 @@
   let debounceTimer;
   let inputElement;
   let showHelp = false;
-  let showHistory = false;
-  let searchHistory = [];
   
   // Parse query to show visual feedback
   $: parsedQuery = parseQueryForDisplay(value);
   
   onMount(() => {
-    loadSearchHistory();
-    
-    // Close history when clicking outside
-    const handleClickOutside = (event) => {
-      if (showHistory && !event.target.closest('.search-container')) {
-        showHistory = false;
-      }
-    };
-    
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    // No initialization needed
   });
   
-  function loadSearchHistory() {
-    try {
-      const history = localStorage.getItem('bookmark_search_history');
-      if (history) {
-        searchHistory = JSON.parse(history);
-      }
-    } catch (e) {
-      console.error('Failed to load search history', e);
-    }
-  }
-  
-  function saveSearchHistory(query) {
-    if (!query || !query.trim()) return;
-    
-    const trimmedQuery = query.trim();
-    // Remove if already exists to move to top
-    const newHistory = [trimmedQuery, ...searchHistory.filter(h => h !== trimmedQuery)].slice(0, 10);
-    
-    searchHistory = newHistory;
-    localStorage.setItem('bookmark_search_history', JSON.stringify(newHistory));
-  }
+
   
   function parseQueryForDisplay(query) {
     if (!query) return { positive: [], negative: [], phrases: [], regular: [], regexPatterns: [] };
@@ -92,7 +60,6 @@
   
   function handleInput(event) {
     value = event.target.value;
-    showHistory = false;
     
     // Debounce search to avoid too many queries
     clearTimeout(debounceTimer);
@@ -102,39 +69,15 @@
   }
   
   function handleFocus() {
-    if (searchHistory.length > 0) {
-      showHistory = true;
-    }
-  }
-  
-  function handleHistoryClick(query) {
-    value = query;
-    showHistory = false;
-    dispatch('search', { query });
-    inputElement?.focus();
-  }
-  
-  function deleteHistoryItem(event, query) {
-    event.stopPropagation();
-    searchHistory = searchHistory.filter(h => h !== query);
-    localStorage.setItem('bookmark_search_history', JSON.stringify(searchHistory));
-    if (searchHistory.length === 0) {
-      showHistory = false;
-    }
+    // No history to show
   }
   
   function handleKeyDown(event) {
     if (event.key === 'Escape') {
-      if (showHistory) {
-        showHistory = false;
-      } else {
-        clearSearch();
-      }
+      clearSearch();
     } else if (event.key === 'Enter') {
       // Immediate search on Enter
       clearTimeout(debounceTimer);
-      saveSearchHistory(value);
-      showHistory = false;
       dispatch('search', { query: value });
     }
   }
@@ -195,41 +138,7 @@
     </button>
   </div>
   
-  <!-- Search History Dropdown -->
-  {#if showHistory && searchHistory.length > 0}
-    <div class="absolute z-20 w-full mt-1 bg-white rounded-md shadow-lg border border-gray-200 max-h-60 overflow-auto">
-      <div class="py-1">
-        <div class="px-3 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider bg-gray-50">
-          Recent Searches
-        </div>
-        {#each searchHistory as item}
-          <div 
-            class="flex items-center justify-between px-3 py-2 hover:bg-blue-50 cursor-pointer group"
-            on:click={() => handleHistoryClick(item)}
-            on:keydown={(e) => e.key === 'Enter' && handleHistoryClick(item)}
-            role="button"
-            tabindex="0"
-          >
-            <div class="flex items-center gap-2 overflow-hidden">
-              <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-              <span class="text-sm text-gray-700 truncate">{item}</span>
-            </div>
-            <button 
-              class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-              on:click={(e) => deleteHistoryItem(e, item)}
-              title="Remove from history"
-            >
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-              </svg>
-            </button>
-          </div>
-        {/each}
-      </div>
-    </div>
-  {/if}
+
   
   <!-- Active search terms display -->
   {#if value && (parsedQuery.positive.length > 0 || parsedQuery.negative.length > 0 || parsedQuery.phrases.length > 0 || parsedQuery.regexPatterns.length > 0)}

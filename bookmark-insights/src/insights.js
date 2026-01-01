@@ -1,12 +1,13 @@
 // Advanced insights and analytics module for bookmark data
 // Provides domain hierarchy visualization, behavioral analytics, and data insights
 
-import { db } from './db.js';
-import { allBookmarks } from './stores.js';
+import { db, getAllBookmarks } from './db.js';
+// import { allBookmarks } from './stores.js';
 
 // Use cached bookmarks to avoid redundant DB calls across insight functions
 async function getBookmarksCached() {
-  return await allBookmarks.getCached();
+  // return await allBookmarks.getCached();
+  return await getAllBookmarks();
 }
 
 /**
