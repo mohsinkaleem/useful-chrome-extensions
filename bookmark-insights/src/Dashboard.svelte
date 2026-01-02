@@ -8,7 +8,7 @@
   import DataExplorer from './DataExplorer.svelte';
   import VisualInsights from './VisualInsights.svelte';
   import { SORT_OPTIONS } from './utils.js';
-  import { searchBookmarks } from './search.js';
+  import { searchBookmarks, invalidateSearchIndex } from './search.js';
   import { 
     getBookmarksPaginated, 
     getBookmarksByDomain, 
@@ -247,6 +247,9 @@
         }
       } else if (message.action === 'bookmarksChanged') {
         if (isBulkDeleting) return;
+
+        // Invalidate search index so it gets rebuilt/reloaded
+        invalidateSearchIndex();
 
         // Invalidate cache to ensure fresh data on next load
         allBookmarks.invalidate();

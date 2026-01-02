@@ -289,7 +289,7 @@ export async function rebuildSearchIndex() {
   
   // Add all bookmarks to index
   for (const bookmark of bookmarks) {
-    await addToIndex(bookmark);
+    await addToIndex(bookmark, false);
   }
 
   indexInitialized = true;
@@ -310,7 +310,7 @@ export async function rebuildSearchIndex() {
 }
 
 // Add a bookmark to the search index
-export async function addToIndex(bookmark) {
+export async function addToIndex(bookmark, saveCache = true) {
   if (!searchIndex) {
     await initializeSearchIndex();
   }
@@ -327,21 +327,47 @@ export async function addToIndex(bookmark) {
   };
 
   await searchIndex.add(doc);
+  if (saveCache) {
+    await saveIndexToCache();
+  }
 }
 
 // Remove a bookmark from the search index
-export async function removeFromIndex(bookmarkId) {
+export async function removeFromIndex(bookmarkId, saveCache = true) {
   if (!searchIndex) {
     return;
   }
 
   await searchIndex.remove(bookmarkId);
+  if (saveCache) {
+    await saveIndexToCache();
+  }
 }
 
 // Update a bookmark in the search index
 export async function updateInIndex(bookmark) {
-  await removeFromIndex(bookmark.id);
-  await addToIndex(bookmark);
+  await removeFromIndex(bookmark.id, false);
+  await addToIndex(bookmark, true);
+}
+
+// Helper to save index to cache
+async function saveIndexToCache() {
+  if (!searchIndex) return;
+  try {
+    const serialized = {};
+    await searchIndex.export((key, data) => {
+      serialized[key] = data;
+    });
+    await setCache('flexsearch_index', { serialized, timestamp: Date.now() });
+  } catch (error) {
+    console.error('Error caching index:', error);
+  }
+}
+
+// Invalidate the in-memory index to force reload/rebuild
+export function invalidateSearchIndex() {
+  searchIndex = null;
+  indexInitialized = false;
 }
 
 /**
