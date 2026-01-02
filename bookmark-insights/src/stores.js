@@ -326,7 +326,7 @@ export async function updateSetting(key, value) {
 function createBookmarksStore() {
     const { subscribe, set, update } = writable([]);
     let lastFetchTime = 0;
-    let isFetching = false;
+    let fetchPromise = null;
     const CACHE_TTL = 30000; // 30 seconds cache
     
     return {
@@ -350,46 +350,48 @@ function createBookmarksStore() {
                 return currentData;
             }
             
-            // Prevent concurrent fetches
-            if (isFetching) {
-                // Wait for ongoing fetch
-                return new Promise(resolve => {
-                    const unsub = subscribe(value => {
-                        if (value.length > 0 || !isFetching) {
-                            unsub();
-                            resolve(value);
-                        }
-                    });
-                });
+            // Return existing promise if fetching
+            if (fetchPromise) {
+                const result = await fetchPromise;
+                return result !== null ? result : currentData;
             }
             
             // Fetch fresh data
-            isFetching = true;
-            try {
-                const bookmarks = await getAllBookmarks();
-                set(bookmarks);
-                lastFetchTime = Date.now();
-                return bookmarks;
-            } catch (error) {
-                console.error('Error fetching bookmarks:', error);
-                return currentData;
-            } finally {
-                isFetching = false;
-            }
+            fetchPromise = (async () => {
+                try {
+                    const bookmarks = await getAllBookmarks();
+                    set(bookmarks);
+                    lastFetchTime = Date.now();
+                    return bookmarks;
+                } catch (error) {
+                    console.error('Error fetching bookmarks:', error);
+                    return null;
+                } finally {
+                    fetchPromise = null;
+                }
+            })();
+            
+            const result = await fetchPromise;
+            return result !== null ? result : currentData;
         },
         refresh: async () => {
-            try {
-                isFetching = true;
-                const bookmarks = await getAllBookmarks();
-                set(bookmarks);
-                lastFetchTime = Date.now();
-                return bookmarks;
-            } catch (error) {
-                console.error('Error refreshing bookmarks:', error);
-                return [];
-            } finally {
-                isFetching = false;
-            }
+            // Force new fetch
+            fetchPromise = (async () => {
+                try {
+                    const bookmarks = await getAllBookmarks();
+                    set(bookmarks);
+                    lastFetchTime = Date.now();
+                    return bookmarks;
+                } catch (error) {
+                    console.error('Error refreshing bookmarks:', error);
+                    return null;
+                } finally {
+                    fetchPromise = null;
+                }
+            })();
+            
+            const result = await fetchPromise;
+            return result !== null ? result : [];
         },
         invalidate: () => {
             lastFetchTime = 0;

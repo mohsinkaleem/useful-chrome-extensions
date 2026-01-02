@@ -814,6 +814,21 @@ export function computeSearchResultStats(bookmarks) {
   const creatorCounts = new Map();
   const typeCounts = new Map();
   
+  // Date period calculations
+  const now = Date.now();
+  const oneDay = 24 * 60 * 60 * 1000;
+  const oneWeek = 7 * oneDay;
+  const twoWeeks = 14 * oneDay;
+  const threeMonths = 90 * oneDay;
+  const sixMonths = 180 * oneDay;
+  
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const startOfMonth = new Date(currentYear, today.getMonth(), 1).getTime();
+  const startOfYear = new Date(currentYear, 0, 1).getTime();
+  
+  let week = 0, twoWeek = 0, month = 0, threeMonth = 0, sixMonth = 0, year = 0, older = 0;
+  
   for (const bookmark of bookmarks) {
     // Count domains
     if (bookmark.domain) {
@@ -852,6 +867,16 @@ export function computeSearchResultStats(bookmarks) {
     if (bookmark.contentType) {
       typeCounts.set(bookmark.contentType, (typeCounts.get(bookmark.contentType) || 0) + 1);
     }
+    
+    // Count date periods
+    const dateAdded = bookmark.dateAdded;
+    if (now - dateAdded < oneWeek) week++;
+    if (now - dateAdded < twoWeeks) twoWeek++;
+    if (dateAdded >= startOfMonth) month++;
+    if (now - dateAdded < threeMonths) threeMonth++;
+    if (now - dateAdded < sixMonths) sixMonth++;
+    if (dateAdded >= startOfYear) year++;
+    if (dateAdded < startOfYear) older++;
   }
   
   // Convert to sorted arrays
@@ -874,7 +899,9 @@ export function computeSearchResultStats(bookmarks) {
     .map(([type, count]) => ({ type, count }))
     .sort((a, b) => b.count - a.count);
   
-  return { domains, folders, platforms, creators, contentTypes };
+  const dateCounts = { week, twoWeek, month, threeMonth, sixMonth, year, older };
+  
+  return { domains, folders, platforms, creators, contentTypes, dateCounts };
 }
 
 // Note: advancedSearch function removed - use searchBookmarks() with activeFilters parameter instead

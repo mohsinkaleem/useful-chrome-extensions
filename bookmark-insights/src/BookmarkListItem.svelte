@@ -16,17 +16,18 @@
     event.target.src = getGeneratedFavicon(bookmark);
   }
 
-  function openBookmark(url) {
-    chrome.tabs.create({ url });
+  function openBookmark(url, active = true) {
+    chrome.tabs.create({ url, active });
   }
   
   function handleCheckboxChange(event) {
     selectedBookmarks.toggle(bookmark.id);
   }
   
-  function handleTitleClick() {
-    // Always open, selection is handled by checkbox
-    openBookmark(bookmark.url);
+  function handleTitleClick(event) {
+    // Open in background if Shift, Cmd (Mac), or Ctrl (Windows/Linux) is pressed
+    const active = !(event && (event.shiftKey || event.metaKey || event.ctrlKey));
+    openBookmark(bookmark.url, active);
   }
   
   function handleDeleteClick(event) {
@@ -72,7 +73,7 @@
          role="button" 
          tabindex="0"
          on:click={handleTitleClick}
-         on:keydown={(e) => e.key === 'Enter' && handleTitleClick()}>
+         on:keydown={(e) => e.key === 'Enter' && handleTitleClick(e)}>
       <div class="flex items-center justify-between gap-2">
         
         <!-- Left Side: Title, URL, Folder -->
@@ -111,7 +112,7 @@
           
           <!-- Row 2: URL + Folder + Reading Time -->
           <div class="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-            <span class="flex text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded" title={bookmark.url}>
+            <span class="flex text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded truncate max-w-5xl" title={bookmark.url}>
               {bookmark.url}
             </span>
 

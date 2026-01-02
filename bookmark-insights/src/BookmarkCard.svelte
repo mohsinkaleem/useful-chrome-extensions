@@ -10,8 +10,14 @@
   
   let showCopied = false;
   
-  function openBookmark(url) {
-    chrome.tabs.create({ url });
+  function openBookmark(url, active = true) {
+    chrome.tabs.create({ url, active });
+  }
+
+  function handleBookmarkClick(event) {
+    // Open in background if Shift, Cmd (Mac), or Ctrl (Windows/Linux) is pressed
+    const active = !(event && (event.shiftKey || event.metaKey || event.ctrlKey));
+    openBookmark(bookmark.url, active);
   }
   
   async function handleCopyUrl(event) {
@@ -36,8 +42,8 @@
      class:ring-blue-500={$selectedBookmarks.has(bookmark.id)}
      role="button"
      tabindex="0"
-     on:click={() => openBookmark(bookmark.url)}
-     on:keydown={(e) => e.key === 'Enter' && openBookmark(bookmark.url)}>
+     on:click={handleBookmarkClick}
+     on:keydown={(e) => e.key === 'Enter' && handleBookmarkClick(e)}>
   
   <!-- Selection Checkbox -->
   <div class="absolute top-2 right-2 z-10"
@@ -86,7 +92,7 @@
           {/if}
         </div>
       </div>
-      <p class="text-xs text-gray-500 truncate mt-1" title={bookmark.url}>
+      <p class="text-xs text-gray-500 truncate mt-1 max-w-full" title={bookmark.url}>
         {@html highlightText(bookmark.url, parsedSearchQuery)}
       </p>
       <div class="flex items-center justify-between mt-2 gap-2 flex-wrap">

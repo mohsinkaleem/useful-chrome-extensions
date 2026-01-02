@@ -72,7 +72,14 @@
   let bookmarks = [];
   let loading = true;
   let error = null;
-  let currentView = 'bookmarks'; // bookmarks, insights, health, dataExplorer
+  
+  // Initialize currentView from URL hash for persistence across refreshes
+  function getViewFromHash() {
+    const hash = window.location.hash.replace('#', '');
+    const validViews = ['bookmarks', 'insights', 'health', 'dataExplorer'];
+    return validViews.includes(hash) ? hash : 'bookmarks';
+  }
+  let currentView = typeof window !== 'undefined' ? getViewFromHash() : 'bookmarks';
   
   // Pagination variables
   let currentPage = 0;
@@ -85,6 +92,7 @@
   
   let sidebarRef;
   let parsedSearchQuery = null;
+  let isBulkDeleting = false;
   
   // Chart variables
   let domainChart = null;
@@ -152,6 +160,9 @@
   let similarDisplayLimit = 10;
   let deadLinksDisplayLimit = 10;
   
+  // Multi-select for duplicates
+  let selectedDuplicates = new Set();
+  
   // Enhanced similarity detection
   let enhancedSimilarPairs = [];
   let enhancedSimilarStats = null;
@@ -188,6 +199,19 @@
   
   onMount(async () => {
     try {
+      // Handle hash changes for navigation
+      window.addEventListener('hashchange', () => {
+        const newView = getViewFromHash();
+        if (newView !== currentView) {
+          switchView(newView, false); // Don't update hash since it's already changed
+        }
+      });
+      
+      // Set initial hash if not present
+      if (!window.location.hash) {
+        window.location.hash = currentView;
+      }
+      
       // Initial load handled by reactive statement or explicit call
       loadBookmarks(0, false); 
       
@@ -222,10 +246,21 @@
           enrichmentLogs = enrichmentLogs.slice(-100);
         }
       } else if (message.action === 'bookmarksChanged') {
-        // Refresh bookmarks and stats when background script notifies of changes
-        allBookmarks.invalidate(); // Invalidate cache to ensure fresh data
-        loadBookmarks(0, false);
-        getQuickStats().then(s => stats = s);
+        if (isBulkDeleting) return;
+
+        // Invalidate cache to ensure fresh data on next load
+        allBookmarks.invalidate();
+        
+        // Only reload bookmarks if we're on the bookmarks view
+        // Health and Insights views manage their own state after deletions
+        if (currentView === 'bookmarks') {
+          loadBookmarks(0, false);
+        }
+        
+        // Always update quick stats
+        getQuickStats().then(s => quickStats = s);
+        
+        // Refresh sidebar stats
         if (sidebarRef && sidebarRef.refresh) {
           sidebarRef.refresh();
         }
@@ -346,9 +381,14 @@
     // Reactive statement will trigger reload
   }
   
-  async function switchView(view) {
+  async function switchView(view, updateHash = true) {
     currentView = view;
     loading = true;
+    
+    // Update URL hash for persistence across refreshes
+    if (updateHash && typeof window !== 'undefined') {
+      window.location.hash = view;
+    }
     
     try {
       if (view === 'bookmarks') {
@@ -916,12 +956,15 @@
     
     if (confirm(`Are you sure you want to delete ${ids.length} bookmark(s)?`)) {
       try {
+        isBulkDeleting = true;
         await deleteBookmarks(ids);
         // Refresh the current view
         await loadBookmarks(0, false);
       } catch (err) {
         console.error('Error deleting bookmarks:', err);
         alert('Failed to delete some bookmarks. Please try again.');
+      } finally {
+        setTimeout(() => { isBulkDeleting = false; }, 500);
       }
     }
   }
@@ -1108,6 +1151,7 @@
     if (!confirmed) return;
     
     deletingDeadLinks = true;
+    isBulkDeleting = true;
     
     try {
       const bookmarkIds = deadLinks.map(b => b.id);
@@ -1132,6 +1176,7 @@
       });
     } finally {
       deletingDeadLinks = false;
+      setTimeout(() => { isBulkDeleting = false; }, 500);
     }
   }
   
@@ -1196,6 +1241,53 @@
       chrome.runtime.onMessage.removeListener(progressListener);
     }
   }
+  
+  // Delete a single malformed/invalid URL bookmark
+  async function deleteMalformedUrl(bookmarkId) {
+    try {
+      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
+      if (existingBookmarks && existingBookmarks.length > 0) {
+        await chrome.bookmarks.remove(bookmarkId);
+        console.log(`Deleted malformed URL: ${bookmarkId}`);
+      }
+      
+      // Update local state
+      malformedUrls = malformedUrls.filter(b => b.id !== bookmarkId);
+      
+      // Remove from IndexedDB
+      await deleteBookmark(bookmarkId);
+      
+    } catch (err) {
+      console.error('Error deleting malformed URL:', err);
+    }
+  }
+  
+  // Delete all malformed/invalid URL bookmarks
+  async function deleteAllMalformedUrls() {
+    if (malformedUrls.length === 0) return;
+    
+    const confirmed = confirm(`Are you sure you want to delete all ${malformedUrls.length} invalid URL bookmarks? This action cannot be undone.`);
+    if (!confirmed) return;
+    
+    let deletedCount = 0;
+    
+    for (const bookmark of malformedUrls) {
+      try {
+        const existingBookmarks = await chrome.bookmarks.get([bookmark.id]);
+        if (existingBookmarks && existingBookmarks.length > 0) {
+          await chrome.bookmarks.remove(bookmark.id);
+          deletedCount++;
+        }
+        await deleteBookmark(bookmark.id);
+      } catch (err) {
+        console.error(`Error deleting malformed URL ${bookmark.id}:`, err);
+      }
+    }
+    
+    // Clear local state
+    malformedUrls = [];
+    console.log(`Deleted ${deletedCount} invalid URL bookmarks`);
+  }
 
   async function deleteDuplicate(bookmarkId, groupIndex) {
     try {
@@ -1208,6 +1300,9 @@
         console.log(`Bookmark ${bookmarkId} no longer exists`);
       }
       
+      // Remove from IndexedDB as well
+      await deleteBookmark(bookmarkId);
+      
       // Update the duplicates list without full reload
       duplicates = duplicates.map((group, idx) => {
         if (idx === groupIndex) {
@@ -1215,6 +1310,13 @@
         }
         return group;
       }).filter(group => group.length > 1); // Remove groups that no longer have duplicates
+      
+      // Remove from selection if selected
+      selectedDuplicates.delete(bookmarkId);
+      selectedDuplicates = selectedDuplicates;
+      
+      // Invalidate cache but don't reload the page
+      allBookmarks.invalidate();
       
     } catch (err) {
       console.error('Error deleting bookmark:', err);
@@ -1225,6 +1327,91 @@
         loadingDuplicates = false;
       });
     }
+  }
+  
+  // Toggle duplicate selection for multi-select
+  function toggleDuplicateSelection(bookmarkId) {
+    if (selectedDuplicates.has(bookmarkId)) {
+      selectedDuplicates.delete(bookmarkId);
+    } else {
+      selectedDuplicates.add(bookmarkId);
+    }
+    selectedDuplicates = selectedDuplicates; // Trigger reactivity
+  }
+  
+  // Select all duplicates (keeps first in each group, selects rest)
+  function selectAllDuplicates() {
+    selectedDuplicates.clear();
+    duplicates.forEach(group => {
+      // Keep the first bookmark in each group, select the rest for deletion
+      group.slice(1).forEach(bookmark => {
+        selectedDuplicates.add(bookmark.id);
+      });
+    });
+    selectedDuplicates = selectedDuplicates;
+  }
+  
+  // Clear all duplicate selections
+  function clearDuplicateSelection() {
+    selectedDuplicates.clear();
+    selectedDuplicates = selectedDuplicates;
+  }
+  
+  // Delete all selected duplicates
+  async function deleteSelectedDuplicates() {
+    if (selectedDuplicates.size === 0) return;
+    
+    const toDelete = Array.from(selectedDuplicates);
+    let deletedCount = 0;
+    
+    for (const bookmarkId of toDelete) {
+      try {
+        const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
+        if (existingBookmarks && existingBookmarks.length > 0) {
+          await chrome.bookmarks.remove(bookmarkId);
+          deletedCount++;
+        }
+      } catch (err) {
+        console.error(`Error deleting bookmark ${bookmarkId}:`, err);
+      }
+    }
+    
+    // Update local state
+    duplicates = duplicates.map(group => 
+      group.filter(b => !selectedDuplicates.has(b.id))
+    ).filter(group => group.length > 1);
+    
+    selectedDuplicates.clear();
+    selectedDuplicates = selectedDuplicates;
+    
+    console.log(`Deleted ${deletedCount} duplicate bookmarks`);
+  }
+  
+  // Delete all duplicates (keeps first in each group)
+  async function deleteAllDuplicates() {
+    let deletedCount = 0;
+    
+    for (const group of duplicates) {
+      // Keep the first, delete the rest
+      for (const bookmark of group.slice(1)) {
+        try {
+          const existingBookmarks = await chrome.bookmarks.get([bookmark.id]);
+          if (existingBookmarks && existingBookmarks.length > 0) {
+            await chrome.bookmarks.remove(bookmark.id);
+            deletedCount++;
+          }
+        } catch (err) {
+          console.error(`Error deleting bookmark ${bookmark.id}:`, err);
+        }
+      }
+    }
+    
+    // Clear duplicates list since all duplicates are removed
+    duplicates = [];
+    selectedDuplicates.clear();
+    selectedDuplicates = selectedDuplicates;
+    
+    console.log(`Deleted ${deletedCount} duplicate bookmarks`);
   }
   
   // Run smart similar detection on demand
@@ -1292,12 +1479,23 @@
         p => p.bookmark1.id !== bookmarkId && p.bookmark2.id !== bookmarkId
       );
       
+      // Update stats
+      if (enhancedSimilarStats) {
+        enhancedSimilarStats = {
+          ...enhancedSimilarStats,
+          total: enhancedSimilarPairs.length
+        };
+      }
+      
       // Close modal if the deleted bookmark was in comparison
       if (selectedComparisonPair && 
           (selectedComparisonPair.bookmark1.id === bookmarkId || 
            selectedComparisonPair.bookmark2.id === bookmarkId)) {
         closeComparisonModal();
       }
+      
+      // Invalidate cache but don't reload the page
+      allBookmarks.invalidate();
       
     } catch (err) {
       console.error('Error deleting bookmark from comparison:', err);
@@ -1350,6 +1548,7 @@
     if (!confirmed) return;
     
     deletingUseless = true;
+    isBulkDeleting = true;
     
     try {
       const bookmarkIds = uselessBookmarks[category].map(b => b.id);
@@ -1373,6 +1572,7 @@
       console.error('Error deleting useless bookmarks:', err);
     } finally {
       deletingUseless = false;
+      setTimeout(() => { isBulkDeleting = false; }, 500);
     }
   }
 
@@ -1391,6 +1591,30 @@
     selectedBookmarks.clear();
   }
   
+  function openSelectedBookmarks() {
+    if ($selectedBookmarks.size === 0) return;
+    
+    const bookmarkIds = Array.from($selectedBookmarks);
+    const selectedBookmarkObjects = bookmarks.filter(b => bookmarkIds.includes(b.id));
+    
+    // Warn if opening too many URLs
+    if (selectedBookmarkObjects.length > 20) {
+      if (!confirm(`You are about to open ${selectedBookmarkObjects.length} URLs. This may slow down your browser. Continue?`)) {
+        return;
+      }
+    }
+    
+    // Open all selected bookmarks
+    selectedBookmarkObjects.forEach((bookmark, index) => {
+      // Open the first one in a new active tab, rest in background
+      const active = index === 0;
+      chrome.tabs.create({ url: bookmark.url, active });
+    });
+    
+    // Optionally clear selection after opening
+    // selectedBookmarks.clear();
+  }
+  
   async function deleteSelectedBookmarks() {
     if ($selectedBookmarks.size === 0) return;
     
@@ -1398,30 +1622,39 @@
       return;
     }
     
+    isBulkDeleting = true;
     try {
-      loading = true;
       const bookmarkIds = Array.from($selectedBookmarks);
       const result = await deleteBookmarks(bookmarkIds);
       
-      if (result.errors.length > 0) {
+      if (result.errors && result.errors.length > 0) {
         console.error('Some bookmarks could not be deleted:', result.errors);
-        alert(`${result.success} bookmarks deleted successfully. ${result.errors.length} failed.`);
-      } else {
-        alert(`${result.success} bookmarks deleted successfully.`);
       }
       
-      // Clear selections and reload
+      // Update local state immediately without full page reload
+      bookmarks = bookmarks.filter(b => !bookmarkIds.includes(b.id));
+      const deletedCount = result.success ? bookmarkIds.length : 0;
+      totalCount = Math.max(0, totalCount - deletedCount);
+      
+      // Invalidate cache for fresh data on next load
+      allBookmarks.invalidate();
+      
+      // Clear selections
       selectedBookmarks.clear();
       multiSelectMode = false;
       
-      // Reload bookmarks
-      currentPage = 0;
-      await loadBookmarks();
+      // Refresh sidebar stats
+      if (sidebarRef && sidebarRef.refresh) {
+        sidebarRef.refresh();
+      }
+      
+      // Update quick stats
+      getQuickStats().then(s => quickStats = s);
     } catch (err) {
       console.error('Error deleting bookmarks:', err);
       alert('Error deleting bookmarks. Please try again.');
     } finally {
-      loading = false;
+      setTimeout(() => { isBulkDeleting = false; }, 500);
     }
   }
   
@@ -1434,9 +1667,18 @@
     
     try {
       await deleteBookmark(bookmarkId);
-      // Reload bookmarks to refresh the list
-      currentPage = 0;
-      await loadBookmarks();
+      
+      // Update local state immediately without full page reload
+      bookmarks = bookmarks.filter(b => b.id !== bookmarkId);
+      totalCount = Math.max(0, totalCount - 1);
+      
+      // Invalidate cache for fresh data on next load
+      allBookmarks.invalidate();
+      
+      // Refresh sidebar stats
+      if (sidebarRef && sidebarRef.refresh) {
+        sidebarRef.refresh();
+      }
     } catch (err) {
       console.error('Error deleting bookmark:', err);
       alert('Error deleting bookmark. Please try again.');
@@ -1656,7 +1898,7 @@
     </div>
   </header>
   
-  <div class="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="max-w-[96rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
     {#if currentView === 'bookmarks'}
       <div class="mb-4">
         <SearchBar value={$searchQueryStore} on:search={handleSearch} />
@@ -1830,8 +2072,12 @@
                   {#if $activeFilters.dateRange}
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       Date: {$activeFilters.dateRange.period === 'week' ? 'This Week' : 
+                             $activeFilters.dateRange.period === 'twoWeek' ? 'This 2-Week' : 
                              $activeFilters.dateRange.period === 'month' ? 'This Month' : 
-                             $activeFilters.dateRange.period === 'year' ? 'This Year' : 'Custom Range'}
+                             $activeFilters.dateRange.period === 'threeMonth' ? 'This 3-Month' :
+                             $activeFilters.dateRange.period === 'sixMonth' ? 'This 6-Month' :
+                             $activeFilters.dateRange.period === 'year' ? 'This Year' : 
+                             $activeFilters.dateRange.period === 'older' ? 'Older' : 'Custom Range'}
                       <button type="button" class="ml-1.5 inline-flex items-center justify-center text-blue-400 hover:text-blue-600 focus:outline-none" on:click={() => activeFilters.setFilter('dateRange', null)}>
                         <span class="sr-only">Remove date filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
@@ -1926,7 +2172,7 @@
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div class="flex flex-wrap items-center gap-2 sm:gap-4">
                     <span class="text-sm text-blue-700">
-                      {selectedBookmarks.size} selected
+                      {$selectedBookmarks.size} selected
                     </span>
                     <button
                       on:click={selectAllBookmarks}
@@ -1941,13 +2187,22 @@
                       Deselect All
                     </button>
                   </div>
-                  <button
-                    on:click={deleteSelectedBookmarks}
-                    disabled={selectedBookmarks.size === 0}
-                    class="px-4 py-2 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed self-start sm:self-auto"
-                  >
-                    Delete Selected
-                  </button>
+                  <div class="flex gap-2 self-start sm:self-auto">
+                    <button
+                      on:click={openSelectedBookmarks}
+                      disabled={$selectedBookmarks.size === 0}
+                      class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Open Selected
+                    </button>
+                    <button
+                      on:click={deleteSelectedBookmarks}
+                      disabled={$selectedBookmarks.size === 0}
+                      class="px-4 py-2 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Delete Selected
+                    </button>
+                  </div>
                 </div>
               </div>
             {/if}
@@ -2858,6 +3113,45 @@
                     <p class="text-gray-500">No exact duplicate bookmarks found. Great job!</p>
                   </div>
                 {:else}
+                  <!-- Selection Toolbar -->
+                  <div class="mb-4 p-3 bg-blue-50 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-3">
+                      <span class="text-sm text-gray-600">
+                        {selectedDuplicates.size} selected
+                      </span>
+                      <button
+                        on:click={selectAllDuplicates}
+                        class="text-xs px-2 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded"
+                      >
+                        Select All Duplicates
+                      </button>
+                      {#if selectedDuplicates.size > 0}
+                        <button
+                          on:click={clearDuplicateSelection}
+                          class="text-xs px-2 py-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                        >
+                          Clear Selection
+                        </button>
+                      {/if}
+                    </div>
+                    <div class="flex items-center gap-2">
+                      {#if selectedDuplicates.size > 0}
+                        <button
+                          on:click={deleteSelectedDuplicates}
+                          class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                        >
+                          Delete Selected ({selectedDuplicates.size})
+                        </button>
+                      {/if}
+                      <button
+                        on:click={deleteAllDuplicates}
+                        class="px-3 py-1.5 text-sm bg-red-700 text-white rounded hover:bg-red-800"
+                      >
+                        Delete All Duplicates
+                      </button>
+                    </div>
+                  </div>
+                  
                   <div class="space-y-6 max-h-[32rem] overflow-y-auto">
                     {#each duplicates.slice(0, duplicatesDisplayLimit) as group, groupIndex}
                       <div class="border border-gray-200 rounded-lg p-4">
@@ -2866,21 +3160,27 @@
                         </h4>
                         <div class="space-y-2">
                           {#each group as bookmark, index}
-                            <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
-                              <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium truncate">{bookmark.title}</div>
-                                <div class="text-xs text-gray-500">
-                                  {bookmark.folderPath || 'No folder'}
+                            <div class="flex items-center justify-between p-2 bg-gray-50 rounded {selectedDuplicates.has(bookmark.id) ? 'ring-2 ring-blue-400 bg-blue-50' : ''}">
+                              <div class="flex items-center gap-3 flex-1 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedDuplicates.has(bookmark.id)}
+                                  on:change={() => toggleDuplicateSelection(bookmark.id)}
+                                  class="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                />
+                                <div class="flex-1 min-w-0">
+                                  <div class="text-sm font-medium truncate">{bookmark.title}</div>
+                                  <div class="text-xs text-gray-500">
+                                    {bookmark.folderPath || 'No folder'} {#if index === 0}<span class="text-green-600">(oldest)</span>{/if}
+                                  </div>
                                 </div>
                               </div>
-                              {#if index > 0}
-                                <button
-                                  on:click={() => deleteDuplicate(bookmark.id, groupIndex)}
-                                  class="ml-4 px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 flex-shrink-0"
-                                >
-                                  Delete
-                                </button>
-                              {/if}
+                              <button
+                                on:click={() => deleteDuplicate(bookmark.id, groupIndex)}
+                                class="ml-4 px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 flex-shrink-0"
+                              >
+                                Delete
+                              </button>
                             </div>
                           {/each}
                         </div>
@@ -3069,6 +3369,54 @@
                   </div>
                 </div>
                 
+                <!-- Dead Links Section -->
+                {#if uselessBookmarks.deadLinks.length > 0}
+                  <div class="mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                      <h4 class="text-sm font-semibold text-red-700">🔗 Dead Links ({uselessBookmarks.deadLinks.length})</h4>
+                      <button
+                        on:click={() => deleteAllUselessInCategory('deadLinks')}
+                        disabled={deletingUseless}
+                        class="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Delete All
+                      </button>
+                    </div>
+                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                      {#each uselessBookmarks.deadLinks.slice(0, uselessDisplayLimits.deadLinks) as bookmark}
+                        <div class="p-2 bg-red-50 rounded border border-red-200 flex items-center justify-between">
+                          <div class="flex-1 min-w-0">
+                            <div class="text-sm truncate">{bookmark.title}</div>
+                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
+                            <div class="text-xs text-red-600 mt-1">
+                              Last checked: {bookmark.lastChecked ? new Date(bookmark.lastChecked).toLocaleDateString() : 'Unknown'}
+                            </div>
+                          </div>
+                          <div class="flex gap-1 ml-2 flex-shrink-0">
+                            <a 
+                              href={bookmark.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              class="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                            >
+                              Try
+                            </a>
+                            <button
+                              on:click={() => deleteUselessBookmark(bookmark.id, 'deadLinks')}
+                              class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                            >Delete</button>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                    {#if uselessBookmarks.deadLinks.length > uselessDisplayLimits.deadLinks}
+                      <button on:click={() => loadMoreUseless('deadLinks')} class="mt-2 text-xs text-red-600 hover:underline">
+                        Show more ({uselessDisplayLimits.deadLinks} of {uselessBookmarks.deadLinks.length})
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+                
                 <!-- Old & Unused Section -->
                 {#if uselessBookmarks.oldUnused.length > 0}
                   <div class="mb-6">
@@ -3220,11 +3568,21 @@
           
           <!-- Malformed URLs -->
           <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
-                Invalid URLs {#if !loadingMalformed}({malformedUrls.length}){/if}
-              </h3>
-              <p class="text-xs text-gray-500 mt-1">Bookmarks with unrecognized URL schemes</p>
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h3 class="text-lg font-medium text-gray-900">
+                  Invalid URLs {#if !loadingMalformed}({malformedUrls.length}){/if}
+                </h3>
+                <p class="text-xs text-gray-500 mt-1">Bookmarks with unrecognized URL schemes</p>
+              </div>
+              {#if malformedUrls.length > 0}
+                <button
+                  on:click={deleteAllMalformedUrls}
+                  class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                  Delete All ({malformedUrls.length})
+                </button>
+              {/if}
             </div>
             <div class="p-6">
               {#if loadingMalformed}
@@ -3237,7 +3595,21 @@
               {:else}
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {#each malformedUrls as bookmark}
-                    <BookmarkCard {bookmark} />
+                    <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                      <div class="flex justify-between items-start gap-2">
+                        <div class="flex-1 min-w-0">
+                          <div class="text-sm font-medium truncate" title={bookmark.title}>{bookmark.title}</div>
+                          <div class="text-xs text-red-600 truncate mt-1" title={bookmark.url}>{bookmark.url}</div>
+                          <div class="text-xs text-gray-500 mt-1">{bookmark.folderPath || 'No folder'}</div>
+                        </div>
+                        <button
+                          on:click={() => deleteMalformedUrl(bookmark.id)}
+                          class="flex-shrink-0 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
                   {/each}
                 </div>
               {/if}
