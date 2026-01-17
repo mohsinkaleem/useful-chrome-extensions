@@ -70,6 +70,16 @@ A powerful, lightweight Chrome extension for managing tabs, windows, and browser
 - Dynamic bookmark bar detection (no hardcoded folder IDs)
 - Context menu integration
 
+### 📌 Side Panel Support
+- **Chrome 114+** persistent side panel for tab management
+- Two viewing modes: **By Window** (default) or **By Domain**
+- Same powerful search and filtering capabilities as popup
+- Highlight duplicates with visual indicators
+- Smart auto-grouping via ✨ button
+- Dark mode support with theme toggle
+- Stays open while browsing for quick tab access
+- Automatically syncs with tab changes across all windows
+
 ### 🖱️ Context Menu
 - Close duplicate tabs
 - Bookmark current tab
@@ -125,6 +135,7 @@ npm run clean    # Remove build artifacts
 tab-manager/
 ├── manifest.json              # Extension manifest (MV3)
 ├── popup.html                 # Main popup UI
+├── sidepanel.html             # Side panel UI (Chrome 114+)
 ├── resource-monitor.html      # Dedicated resource monitor page
 ├── styles.css                 # All styles (~23KB)
 ├── package.json               # npm scripts and dependencies
@@ -145,6 +156,8 @@ tab-manager/
 │   │       ├── ResourceMonitor.ts  # Full resource monitor
 │   │       ├── MediaControls.ts    # Media tab controls
 │   │       └── SessionManager.ts   # Session save/restore
+│   ├── sidepanel/
+│   │   └── sidepanel.ts       # Side panel controller (shares components)
 │   ├── content/
 │   │   └── content-script.ts  # Media control (YouTube, Spotify, etc.)
 │   └── shared/

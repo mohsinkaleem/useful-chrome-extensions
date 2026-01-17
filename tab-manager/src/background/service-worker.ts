@@ -34,6 +34,11 @@ chrome.runtime.onInstalled.addListener(() => {
 
   // Initialize badge
   updateTabCountBadge();
+  
+  // Ensure action click opens popup, not side panel
+  // @ts-ignore - sidePanel API types might not be fully available
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
+    .catch((error: unknown) => console.error('Failed to set panel behavior:', error));
 });
 
 // Context menu click handler

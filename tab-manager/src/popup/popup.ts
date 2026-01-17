@@ -61,6 +61,15 @@ class TabManagerApp {
     });
 
     // View mode buttons
+    document.getElementById('open-sidepanel')?.addEventListener('click', async () => {
+       const win = await chrome.windows.getCurrent();
+       if (win.id) {
+           // @ts-ignore
+           await chrome.sidePanel.open({ windowId: win.id });
+           window.close();
+       }
+    });
+
     document.getElementById('view-list')?.addEventListener('click', () => {
       this.setViewMode('list');
     });

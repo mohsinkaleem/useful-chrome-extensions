@@ -14,6 +14,7 @@ The extension follows a modular architecture with clear separation of concerns:
 ├─────────────────────────────────────────────────────────────┤
 │  Popup / Side Panel                                         │
 │  ├── popup.ts             Main controller                   │
+│  ├── sidepanel.ts         Side panel controller (Chrome 114+)│
 │  ├── resource-monitor-page.ts  Resource page controller    │
 │  └── components/          UI components (8 modules)         │
 ├─────────────────────────────────────────────────────────────┤
@@ -51,6 +52,15 @@ The extension follows a modular architecture with clear separation of concerns:
 - Manages view modes (list/compact/grid)
 - Handles tab selection state
 - Orchestrates search, filtering, and duplicate detection
+
+#### sidepanel.ts (Side Panel Controller)
+- Persistent side panel interface (Chrome 114+)
+- Two view modes: **By Window** or **By Domain**
+- Shares components with popup (TabList, SearchBar)
+- Real-time duplicate highlighting
+- Auto-grouping integration via ✨ button
+- Dark mode with persistent theme storage
+- Automatically updates on tab changes
 
 #### Components
 

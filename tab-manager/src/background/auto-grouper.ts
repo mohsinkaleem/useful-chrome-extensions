@@ -204,47 +204,134 @@ export class AutoGrouper {
 
   // Manual grouping by domain for all tabs
   async groupAllByDomain() {
-    const tabs = await chrome.tabs.query({});
-    const domainGroups = new Map<string, chrome.tabs.Tab[]>();
+    await this.groupAllByStrategy('domain');
+  }
+
+  async groupAllBySimilarity() {
+    await this.groupAllByStrategy('similarity');
+  }
+
+  private async groupAllByStrategy(strategy: 'domain' | 'similarity') {
+    const windows = await chrome.windows.getAll({ populate: true });
     
-    // Group tabs by domain
-    for (const tab of tabs) {
-      if (!tab.url) continue;
-      try {
-        const domain = new URL(tab.url).hostname;
-        if (!domainGroups.has(domain)) {
-          domainGroups.set(domain, []);
+    for (const win of windows) {
+        if (!win.tabs || win.tabs.length < 2) continue;
+        
+        const ungroupedTabs = win.tabs.filter(t => t.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE);
+        if (ungroupedTabs.length < 2) continue;
+
+        if (strategy === 'domain') {
+            await this.groupByDomainInWindow(ungroupedTabs);
+        } else {
+            await this.groupBySimilarityInWindow(ungroupedTabs);
         }
-        domainGroups.get(domain)!.push(tab);
-      } catch {
-        continue;
-      }
     }
-    
-    // Create groups for domains with multiple tabs
-    for (const [domain, domainTabs] of domainGroups.entries()) {
-      if (domainTabs.length > 1) {
-        const ids = domainTabs.map(t => t.id).filter(Boolean) as number[];
-        const windowId = domainTabs[0].windowId;
-        
-        // Only group tabs in the same window
-        const windowTabs = ids.filter(id => {
-          const tab = domainTabs.find(t => t.id === id);
-          return tab?.windowId === windowId;
-        });
-        
-        if (windowTabs.length > 1) {
+  }
+
+  private async groupByDomainInWindow(tabs: chrome.tabs.Tab[]) {
+      const domainGroups = new Map<string, number[]>();
+      
+      for (const tab of tabs) {
+          if (!tab.url || !tab.id) continue;
           try {
-            const groupId = await chrome.tabs.group({ tabIds: windowTabs });
-            await chrome.tabGroups.update(groupId, {
-              title: domain,
-              collapsed: false
-            });
-          } catch (error) {
-            console.error(`Failed to group ${domain}:`, error);
-          }
-        }
+              const url = new URL(tab.url);
+              // Use base domain? e.g. docs.google.com -> google.com logic could be better but let's stick to hostname
+              const domain = url.hostname.replace(/^www\./, '');
+              if (!domainGroups.has(domain)) {
+                  domainGroups.set(domain, []);
+              }
+              domainGroups.get(domain)?.push(tab.id);
+          } catch {}
       }
-    }
+
+      for (const [domain, ids] of domainGroups.entries()) {
+          if (ids.length >= 2) {
+             const groupId = await chrome.tabs.group({ tabIds: ids });
+             await chrome.tabGroups.update(groupId, { title: domain });
+          }
+      }
+  }
+
+  private async groupBySimilarityInWindow(tabs: chrome.tabs.Tab[]) {
+      // 1. Group by Exact Domain first (strongest signal)
+      // We will remove grouped tabs from further consideration
+      await this.groupByDomainInWindow(tabs);
+      
+      // Re-fetch tabs to see what's left ungrouped? 
+      // Or just assume `groupByDomainInWindow` handles the obvious ones.
+      // Let's look for Title clusters in the remaining ungrouped tabs.
+      // But we need "live" status. 
+      // Simplified: Just run title clustering on remaining tabs.
+      
+      const win = await chrome.windows.get(tabs[0].windowId, { populate: true });
+      const remainingTabs = win.tabs?.filter(t => t.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE);
+      
+      if (!remainingTabs || remainingTabs.length < 2) return;
+
+      const clusters = this.findTitleClusters(remainingTabs);
+      
+      for (const [name, ids] of clusters.entries()) {
+          if (ids.length >= 2) {
+              const groupId = await chrome.tabs.group({ tabIds: ids });
+              await chrome.tabGroups.update(groupId, { title: name, color: 'blue' });
+          }
+      }
+  }
+
+  private findTitleClusters(tabs: chrome.tabs.Tab[]): Map<string, number[]> {
+      const clusters = new Map<string, number[]>();
+      const processedIds = new Set<number>();
+      
+      // Simple algorithm: Look for common prefixes >= 10 chars or 3 words
+      // sorting by title helps finding neighbors
+      const sortedTabs = [...tabs].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      
+      for (let i = 0; i < sortedTabs.length; i++) {
+          const tab = sortedTabs[i];
+          if (!tab.id || !tab.title || processedIds.has(tab.id)) continue;
+          
+          const currentCluster = [tab.id];
+          const titleWords = this.tokenize(tab.title);
+          
+          for (let j = i + 1; j < sortedTabs.length; j++) {
+              const other = sortedTabs[j];
+              if (!other.id || !other.title || processedIds.has(other.id)) continue;
+
+              if (this.calculateSimilarity(titleWords, this.tokenize(other.title)) > 0.6) {
+                   currentCluster.push(other.id);
+                   processedIds.add(other.id);
+              }
+          }
+          
+          if (currentCluster.length >= 2) {
+              processedIds.add(tab.id);
+              // Generate name from common words
+              const name = this.generateClusterName(currentCluster.map(id => sortedTabs.find(t => t.id === id)?.title || ''));
+              clusters.set(name, currentCluster);
+          }
+      }
+      return clusters;
+  }
+  
+  private tokenize(str: string): string[] {
+      return str.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+  }
+  
+  private calculateSimilarity(words1: string[], words2: string[]): number {
+      if (!words1.length || !words2.length) return 0;
+      const set1 = new Set(words1);
+      const set2 = new Set(words2);
+      const intersection = [...set1].filter(x => set2.has(x)).length;
+      const union = new Set([...words1, ...words2]).size;
+      return intersection / union;
+  }
+
+  private generateClusterName(titles: string[]): string {
+      // Find common words
+      if (titles.length === 0) return 'Group';
+      const words = titles.map(t => this.tokenize(t));
+      const common = words[0].filter(w => words.slice(1).every(wa => wa.includes(w)));
+      if (common.length > 0) return common.join(' ');
+      return 'Group'; // Fallback
   }
 }
