@@ -3,10 +3,7 @@
 document.addEventListener('DOMContentLoaded', function() {
   const statusElement = document.getElementById('status');
   
-  // Clean up old tab filters
-  cleanupOldTabFilters();
-  
-  // Load saved filters from storage for the current tab
+  // Load saved filters from global storage
   loadSavedFilters();
   
   // Add event listeners for radio buttons to enable/disable inputs
@@ -70,9 +67,6 @@ document.addEventListener('DOMContentLoaded', function() {
       input.dispatchEvent(new Event('input'));
     }
   });
-  
-  // Optional: Clean up old tab filter data periodically
-  cleanupOldTabFilters();
 });
 
 function setupRadioButtonListeners() {
@@ -132,36 +126,26 @@ function applyFilters() {
     return;
   }
 
-  // Get current tab to save filters per tab
-  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-    if (tabs[0] && tabs[0].url && tabs[0].url.includes('youtube.com')) {
-      const tabId = tabs[0].id;
-      const storageKey = `tubeFilters_${tabId}`;
-      
-      // Save filters to storage with tab-specific key
-      chrome.storage.local.set({[storageKey]: filters}, function() {
-        if (chrome.runtime.lastError) {
-          showStatus('Error saving filters', 'error');
-          return;
-        }
-        
-        // Send filters to content script
-        chrome.tabs.sendMessage(tabId, {
+  const storageKey = 'tubeFilters';
+  
+  // Save filters GLOBAL storage
+  chrome.storage.local.set({[storageKey]: filters}, function() {
+    if (chrome.runtime.lastError) {
+      showStatus('Error saving filters', 'error');
+      return;
+    }
+    
+    // Notify current tab only
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (tabs[0]) {
+         chrome.tabs.sendMessage(tabs[0].id, {
           action: 'applyFilters',
           filters: filters
-        }, function(response) {
-          if (chrome.runtime.lastError) {
-            showStatus('Error: Make sure you\'re on YouTube', 'error');
-          } else if (response && response.success) {
-            showStatus(`Filters applied! ${response.hiddenCount} videos hidden.`, 'success');
-          } else {
-            showStatus('Error applying filters', 'error');
-          }
         });
-      });
-    } else {
-      showStatus('Please navigate to YouTube first', 'error');
-    }
+      }
+    });
+
+    showStatus('Filters saved and applied!', 'success');
   });
 }
 
@@ -187,24 +171,20 @@ function clearFilters() {
   updateInputs('durationFilter', 'none');
   updateInputs('timeFilter', 'none');
   
-  // Get current tab to clear filters for this specific tab
-  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-    if (tabs[0] && tabs[0].url && tabs[0].url.includes('youtube.com')) {
-      const tabId = tabs[0].id;
-      const storageKey = `tubeFilters_${tabId}`;
-      
-      // Clear storage for this tab
-      chrome.storage.local.remove(storageKey, function() {
-        // Send clear message to content script
-        chrome.tabs.sendMessage(tabId, {
+  const storageKey = 'tubeFilters';
+  
+  // Clear storage
+  chrome.storage.local.remove(storageKey, function() {
+    // Send clear message
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (tabs[0]) {
+         chrome.tabs.sendMessage(tabs[0].id, {
           action: 'clearFilters'
-        }, function(response) {
-          if (!chrome.runtime.lastError && response && response.success) {
-            showStatus('All filters cleared', 'success');
-          }
         });
-      });
-    }
+      }
+    });
+    
+    showStatus('Filters cleared for this tab', 'success');
   });
 }
 
@@ -212,9 +192,6 @@ function collectFilters() {
   const rawKeywords = document.getElementById('titleKeywords').value;
   const useRegex = document.getElementById('useRegex').checked;
   
-  // If regex is enabled, we don't parse keywords, we just pass the raw string
-  // But to keep the structure consistent, we can put it in the array or use a separate field.
-  // Let's use the array but with a single element if regex is on.
   const keywords = useRegex ? [rawKeywords] : parseKeywords(rawKeywords);
   
   const filters = {
@@ -243,13 +220,12 @@ function collectFilters() {
       betweenMax: parseInt(document.getElementById('timeBetweenMax').value) || 0,
       betweenMaxUnit: document.getElementById('timeBetweenMaxUnit').value || 'days'
     },
-    // Updated for multiple keywords support
     titleKeywords: keywords,
     useRegex: useRegex,
     keywordLogic: document.querySelector('input[name="keywordLogic"]:checked').value,
     keywordMode: document.querySelector('input[name="keywordMode"]:checked').value,
     
-    // Keep old property for backward compatibility
+    // Backward compatibility if needed
     titleKeyword: keywords.length > 0 ? keywords.join(', ') : ''
   };
   
@@ -384,94 +360,82 @@ function parseTimeToSeconds(timeStr) {
 }
 
 function loadSavedFilters() {
-  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-    if (tabs[0] && tabs[0].url && tabs[0].url.includes('youtube.com')) {
-      const tabId = tabs[0].id;
-      const storageKey = `tubeFilters_${tabId}`;
+  const storageKey = 'tubeFilters';
+  
+  chrome.storage.local.get(storageKey, function(data) {
+    if (data[storageKey]) {
+      const filters = data[storageKey];
       
-      chrome.storage.local.get(storageKey, function(data) {
-        if (data[storageKey]) {
-          const filters = data[storageKey];
-          
-          // Restore view filter
-          document.querySelector(`input[name="viewFilter"][value="${filters.viewFilter.type}"]`).checked = true;
-          document.getElementById('viewMin').value = filters.viewFilter.min || '';
-          document.getElementById('viewMax').value = filters.viewFilter.max || '';
-          document.getElementById('viewBetweenMin').value = filters.viewFilter.betweenMin || '';
-          document.getElementById('viewBetweenMax').value = filters.viewFilter.betweenMax || '';
-          
-          // Restore duration filter
-          document.querySelector(`input[name="durationFilter"][value="${filters.durationFilter.type}"]`).checked = true;
-          if (document.getElementById('durationLess')) {
-            document.getElementById('durationLess').value = filters.durationFilter.lessValue || '';
-          }
-          if (document.getElementById('durationGreater')) {
-            document.getElementById('durationGreater').value = filters.durationFilter.greaterValue || '';
-          }
-          document.getElementById('durationMin').value = filters.durationFilter.customMin || '';
-          document.getElementById('durationMax').value = filters.durationFilter.customMax || '';
-          
-          // Restore time filter
-          if (filters.timeFilter) {
-            document.querySelector(`input[name="timeFilter"][value="${filters.timeFilter.type}"]`).checked = true;
-            document.getElementById('timeLess').value = filters.timeFilter.lessValue || '';
-            document.getElementById('timeLessUnit').value = filters.timeFilter.lessUnit || 'days';
-            document.getElementById('timeGreater').value = filters.timeFilter.greaterValue || '';
-            document.getElementById('timeGreaterUnit').value = filters.timeFilter.greaterUnit || 'days';
-            document.getElementById('timeBetweenMin').value = filters.timeFilter.betweenMin || '';
-            document.getElementById('timeBetweenMinUnit').value = filters.timeFilter.betweenMinUnit || 'days';
-            document.getElementById('timeBetweenMax').value = filters.timeFilter.betweenMax || '';
-            document.getElementById('timeBetweenMaxUnit').value = filters.timeFilter.betweenMaxUnit || 'days';
-            updateTimeInputs(filters.timeFilter.type);
-          }
-          
-          // Restore title keywords (handle both old and new format)
-          if (filters.titleKeywords && Array.isArray(filters.titleKeywords)) {
-            // New format with array of keywords
-            // If regex was used, the array has one element which is the raw pattern
-            if (filters.useRegex) {
-               document.getElementById('titleKeywords').value = filters.titleKeywords[0] || '';
-            } else {
-               document.getElementById('titleKeywords').value = filters.titleKeywords.join(', ');
-            }
-          } else if (filters.titleKeyword) {
-            // Old format with single keyword - convert to new format
-            document.getElementById('titleKeywords').value = filters.titleKeyword;
-          }
-          
-          // Restore regex setting
-          if (filters.useRegex) {
-            const regexCheckbox = document.getElementById('useRegex');
-            regexCheckbox.checked = true;
-            // Trigger change event to update UI
-            regexCheckbox.dispatchEvent(new Event('change'));
-          }
-
-          // Restore keyword logic (default to 'AND' if not set)
-          const keywordLogic = filters.keywordLogic || 'AND';
-          document.querySelector(`input[name="keywordLogic"][value="${keywordLogic}"]`).checked = true;
-          
-          // Restore keyword mode (default to 'include' if not set for backward compatibility)
-          const keywordMode = filters.keywordMode || 'include';
-          document.querySelector(`input[name="keywordMode"][value="${keywordMode}"]`).checked = true;
-          
-          // Update input states
-          updateInputs('viewFilter', filters.viewFilter.type);
-          updateInputs('durationFilter', filters.durationFilter.type);
-          if (filters.timeFilter) {
-            updateInputs('timeFilter', filters.timeFilter.type);
-          }
-          
-          // Show keyword preview if multiple keywords are present and not in regex mode
-          if (!filters.useRegex) {
-            const keywords = parseKeywords(document.getElementById('titleKeywords').value);
-            if (keywords.length > 1) {
-              showKeywordPreview(keywords);
-            }
-          }
+      // Restore view filter
+      document.querySelector(`input[name="viewFilter"][value="${filters.viewFilter.type}"]`).checked = true;
+      document.getElementById('viewMin').value = filters.viewFilter.min || '';
+      document.getElementById('viewMax').value = filters.viewFilter.max || '';
+      document.getElementById('viewBetweenMin').value = filters.viewFilter.betweenMin || '';
+      document.getElementById('viewBetweenMax').value = filters.viewFilter.betweenMax || '';
+      
+      // Restore duration filter
+      document.querySelector(`input[name="durationFilter"][value="${filters.durationFilter.type}"]`).checked = true;
+      if (document.getElementById('durationLess')) {
+        document.getElementById('durationLess').value = filters.durationFilter.lessValue || '';
+      }
+      if (document.getElementById('durationGreater')) {
+        document.getElementById('durationGreater').value = filters.durationFilter.greaterValue || '';
+      }
+      document.getElementById('durationMin').value = filters.durationFilter.customMin || '';
+      document.getElementById('durationMax').value = filters.durationFilter.customMax || '';
+      
+      // Restore time filter
+      if (filters.timeFilter) {
+        document.querySelector(`input[name="timeFilter"][value="${filters.timeFilter.type}"]`).checked = true;
+        document.getElementById('timeLess').value = filters.timeFilter.lessValue || '';
+        document.getElementById('timeLessUnit').value = filters.timeFilter.lessUnit || 'days';
+        document.getElementById('timeGreater').value = filters.timeFilter.greaterValue || '';
+        document.getElementById('timeGreaterUnit').value = filters.timeFilter.greaterValue || 'days';
+        document.getElementById('timeBetweenMin').value = filters.timeFilter.betweenMin || '';
+        document.getElementById('timeBetweenMinUnit').value = filters.timeFilter.betweenMinUnit || 'days';
+        document.getElementById('timeBetweenMax').value = filters.timeFilter.betweenMax || '';
+        document.getElementById('timeBetweenMaxUnit').value = filters.timeFilter.betweenMaxUnit || 'days';
+      }
+      
+      // Restore title keywords
+      if (filters.titleKeywords && Array.isArray(filters.titleKeywords)) {
+        if (filters.useRegex) {
+            document.getElementById('titleKeywords').value = filters.titleKeywords[0] || '';
+        } else {
+            document.getElementById('titleKeywords').value = filters.titleKeywords.join(', ');
         }
-        // If no saved filters for this tab, form will remain in default state
-      });
+      } else if (filters.titleKeyword) {
+        document.getElementById('titleKeywords').value = filters.titleKeyword;
+      }
+      
+      // Restore regex setting
+      if (filters.useRegex) {
+        const regexCheckbox = document.getElementById('useRegex');
+        regexCheckbox.checked = true;
+        regexCheckbox.dispatchEvent(new Event('change'));
+      }
+
+      // Restore keyword logic & mode
+      const keywordLogic = filters.keywordLogic || 'AND';
+      document.querySelector(`input[name="keywordLogic"][value="${keywordLogic}"]`).checked = true;
+      
+      const keywordMode = filters.keywordMode || 'include';
+      document.querySelector(`input[name="keywordMode"][value="${keywordMode}"]`).checked = true;
+      
+      // Update input states (Enable disabled inputs correctly)
+      updateInputs('viewFilter', filters.viewFilter.type);
+      updateInputs('durationFilter', filters.durationFilter.type);
+      if (filters.timeFilter) {
+        updateInputs('timeFilter', filters.timeFilter.type);
+      }
+      
+      // Show keyword preview
+      if (!filters.useRegex) {
+        const keywords = parseKeywords(document.getElementById('titleKeywords').value);
+        if (keywords.length > 1) {
+          showKeywordPreview(keywords);
+        }
+      }
     }
   });
 }
@@ -481,14 +445,12 @@ function showStatus(message, type) {
   statusElement.textContent = message;
   statusElement.className = `status ${type}`;
   
-  // Clear status after 3 seconds
   setTimeout(() => {
     statusElement.textContent = '';
     statusElement.className = 'status';
   }, 3000);
 }
 
-// Helper function to parse multiple keywords from input
 function parseKeywords(input) {
   if (!input || !input.trim()) {
     return [];
@@ -501,7 +463,6 @@ function parseKeywords(input) {
     .map(keyword => keyword.toLowerCase());
 }
 
-// Show preview of parsed keywords
 function showKeywordPreview(keywords) {
   let previewElement = document.getElementById('keyword-preview');
   
@@ -526,34 +487,9 @@ function showKeywordPreview(keywords) {
   `;
 }
 
-// Hide keyword preview
 function hideKeywordPreview() {
   const previewElement = document.getElementById('keyword-preview');
   if (previewElement) {
     previewElement.remove();
   }
-}
-
-// Optional: Clean up old tab filter data periodically
-function cleanupOldTabFilters() {
-  chrome.storage.local.get(null, function(items) {
-    const filterKeys = Object.keys(items).filter(key => key.startsWith('tubeFilters_'));
-    
-    // Get all current tab IDs
-    chrome.tabs.query({}, function(tabs) {
-      const currentTabIds = new Set(tabs.map(tab => tab.id.toString()));
-      
-      // Remove filters for tabs that no longer exist
-      const keysToRemove = filterKeys.filter(key => {
-        const tabId = key.replace('tubeFilters_', '');
-        return !currentTabIds.has(tabId);
-      });
-      
-      if (keysToRemove.length > 0) {
-        chrome.storage.local.remove(keysToRemove, function() {
-          console.log('TubeFilter: Cleaned up', keysToRemove.length, 'old tab filters');
-        });
-      }
-    });
-  });
 }

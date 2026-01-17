@@ -112,7 +112,7 @@
           
           <!-- Row 2: URL + Folder + Reading Time -->
           <div class="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-            <span class="flex text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded truncate max-w-5xl" title={bookmark.url}>
+            <span class="flex px-1.5 py-0.5 rounded truncate max-w-5xl" title={bookmark.url}>
               {bookmark.url}
             </span>
 

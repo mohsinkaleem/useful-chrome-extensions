@@ -7,7 +7,8 @@ A lightweight Chrome extension that applies dark mode on a per-site basis with f
 - 🌐 **Per-Site Settings** - Enable dark mode only on sites you choose
 - 🌙 **Dual Modes** - Choose between Dark Mode (with inversion) or Filter Mode (filters only)
 - 🎨 **Full Control** - Adjust brightness, contrast, saturation, and hue rotation per site
-- 🚀 **Performance Optimized** - Only active tabs for the current domain respond to changes
+- �️ **Smart Image Handling** - Automatically detects and corrects background images and semantic images
+- 🚀 **Performance Optimized** - Uses idle-time processing and batching to ensure smooth browsing
 - 💾 **Synced Settings** - Settings saved per domain and synced across devices
 - 🔄 **Per-Site Clear** - Remove settings for individual sites
 
@@ -63,6 +64,9 @@ Settings are stored per domain:
 
 ### Performance Optimizations
 
+- **Idle-Time Processing** - Heavy tasks run only when the browser is idle using `requestIdleCallback`
+- **Batched DOM Updates** - Processes elements in chunks to prevent UI freezing
+- **Smart Mutation Observer** - Efficiently tracks dynamic content changes without performance penalties
 - **Per-domain storage listeners** - Only tabs matching the changed domain react
 - **Settings hash cache** - Skips DOM updates when nothing actually changed
 - **500ms debounce** - Prevents Chrome storage quota errors on rapid slider changes
@@ -81,7 +85,7 @@ filter: invert(1) hue-rotate(180deg) brightness() contrast() saturate();
 filter: brightness() contrast() saturate() hue-rotate();
 ```
 
-Images and videos are counter-inverted in Dark Mode to preserve original appearance.
+Images, videos, and elements with background images are counter-inverted in Dark Mode to preserve original appearance.
 
 ## Technical Stack
 

@@ -510,9 +510,9 @@
             </button>
           </div>
           
-          <div class="space-y-3">
+          <div class="space-y-2">
             {#each actionableInsights.rediscoveryFeed as bookmark}
-              <div class="flex items-start gap-3 p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-100">
+              <div class="flex items-start gap-2 p-2 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-100">
                 <div class="flex-1 min-w-0">
                   <a 
                     href={bookmark.url}

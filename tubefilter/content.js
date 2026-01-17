@@ -7,58 +7,62 @@
   let currentFilters = null;
   let observer = null;
   let isFilteringActive = false;
+  let processedElements = new WeakSet();
+  let filterTimeout = null;
   
   // Initialize the content script
   initialize();
   
   function initialize() {
-    // Don't load saved filters automatically - wait for user to apply them
-    
     // Listen for messages from popup
     chrome.runtime.onMessage.addListener(handleMessage);
     
-    // Set up mutation observer to handle dynamically loaded content
-    setupMutationObserver();
-
-    // Optimize for background tabs
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    console.log('TubeFilter: Content script initialized (tab-specific mode)');
-  }
-
-  function handleVisibilityChange() {
-    if (document.hidden) {
-      // Tab is hidden, disconnect observer to save resources
-      if (observer) {
-        observer.disconnect();
-        observer = null;
-      }
-    } else {
-      // Tab is visible, re-enable observer and re-apply filters
-      if (!observer && isFilteringActive) {
+    // Check session storage for tab-specific persistence
+    try {
+      const savedSettings = sessionStorage.getItem('tubeFilterSettings');
+      if (savedSettings) {
+        currentFilters = JSON.parse(savedSettings);
+        isFilteringActive = true;
+        console.log('TubeFilter: Restored filters from session');
+        // Start observing immediately
         setupMutationObserver();
-        applyFilters();
+        // Applies filters to initial content
+        applyFilters(); 
       }
+    } catch (e) {
+      console.error('TubeFilter: Error restoring session', e);
     }
+    
+    console.log('TubeFilter: Content script initialized');
   }
-  
+
   function handleMessage(request, sender, sendResponse) {
     if (request.action === 'applyFilters') {
       currentFilters = request.filters;
-      // Clear processed cache when filters change
+      isFilteringActive = true;
+      // Save to session storage for this tab
+      try { sessionStorage.setItem('tubeFilterSettings', JSON.stringify(currentFilters)); } catch(e) {}
+      
+      // Reset processed cache when filters change to re-evaluate everything
       processedElements = new WeakSet(); 
+      setupMutationObserver();
       const hiddenCount = applyFilters();
       sendResponse({success: true, hiddenCount: hiddenCount});
     } else if (request.action === 'clearFilters') {
       currentFilters = null;
+      isFilteringActive = false;
+      // Remove from session storage
+      try { sessionStorage.removeItem('tubeFilterSettings'); } catch(e) {}
+      
       processedElements = new WeakSet();
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
       clearFilters();
       sendResponse({success: true});
     }
   }
-  
-  let processedElements = new WeakSet();
-  let filterTimeout = null;
 
   function setupMutationObserver() {
     // Disconnect existing observer if any
@@ -67,26 +71,22 @@
     }
     
     observer = new MutationObserver(function(mutations) {
-      if (!isFilteringActive || !currentFilters || document.hidden) return;
+      if (!isFilteringActive || !currentFilters) return;
       
       let shouldFilter = false;
       for (const mutation of mutations) {
-        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-          for (const node of mutation.addedNodes) {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              if (node.nodeName === 'YTD-RICH-ITEM-RENDERER' || 
-                  (node.querySelector && node.querySelector('ytd-rich-item-renderer'))) {
-                shouldFilter = true;
-                break;
-              }
-            }
+        if (mutation.type === 'childList') {
+          // Check added nodes
+          if (mutation.addedNodes.length > 0) {
+             shouldFilter = true;
+             break;
           }
+          // Also check for attribute changes if needed, but childList usually covers scrolling
         }
-        if (shouldFilter) break;
       }
       
       if (shouldFilter) {
-        // Debounce the filtering to avoid excessive processing
+        // Debounce the filtering
         if (filterTimeout) clearTimeout(filterTimeout);
         filterTimeout = setTimeout(applyFilters, 500);
       }
@@ -99,18 +99,30 @@
   }
   
   function applyFilters() {
-    if (!currentFilters) return 0;
+    if (!currentFilters || !isFilteringActive) return 0;
     
-    isFilteringActive = true;
     let hiddenCount = 0;
     
-    // Find all video elements
-    const videoElements = document.querySelectorAll('ytd-rich-item-renderer');
+    // Find all potential video containers
+    // Targeting main grid, sidebar, and search results
+    const videoSelectors = [
+      'ytd-rich-item-renderer', // Home feed
+      'ytd-compact-video-renderer', // Sidebar
+      'ytd-video-renderer', // Search results
+      'ytd-grid-video-renderer' // Channel videos
+    ];
+    
+    const videoElements = document.querySelectorAll(videoSelectors.join(','));
     const updates = [];
     
     // Phase 1: Read and Decide
     videoElements.forEach(function(element) {
-      // Optimization: Check if we already processed this element for the current filter set
+      // Optimization: Check if we already processed this element
+      // However, if element content changes (AJAX), we might need to re-check.
+      // YouTube re-uses elements sometimes. 
+      // Safe bet: if it's already hidden by us, count it and skip. 
+      // If it's visible, check it again just in case content changed (though rare for same element reference).
+      
       if (processedElements.has(element)) {
          if (element.getAttribute('data-tubefilter-hidden') === 'true') {
            hiddenCount++;
@@ -144,19 +156,14 @@
       });
     }
     
-    console.log(`TubeFilter: Filtered ${hiddenCount} videos`);
     return hiddenCount;
   }
   
   function clearFilters() {
-    isFilteringActive = false;
-    currentFilters = null;
-    
-    const videoElements = document.querySelectorAll('ytd-rich-item-renderer');
+    const videoElements = document.querySelectorAll('[data-tubefilter-hidden="true"]');
     videoElements.forEach(function(element) {
       showVideoElement(element);
     });
-    
     console.log('TubeFilter: All filters cleared');
   }
   
@@ -167,8 +174,11 @@
       const title = titleElement ? titleElement.textContent.trim() : '';
       
       // Extract duration
+      // different renderers have different duration locations
       const durationElement = element.querySelector('.badge-shape-wiz__text') || 
-                             element.querySelector('#text[aria-label*="minute"], #text[aria-label*="second"]');
+                             element.querySelector('#text[aria-label*="minute"], #text[aria-label*="second"]') ||
+                             element.querySelector('ytd-thumbnail-overlay-time-status-renderer');
+                             
       const duration = durationElement ? durationElement.textContent.trim() : '';
       
       // Extract view count and upload time
@@ -184,8 +194,20 @@
         }
       });
       
+      // Fallback for short view/time text in some views
+      if (!viewCount || !uploadTime) {
+          const metadata = element.querySelector('#metadata-line');
+          if (metadata) {
+              const items = metadata.textContent.split('\n').map(t => t.trim()).filter(t => t);
+              items.forEach(text => {
+                   if (text.includes('view')) viewCount = text;
+                   else if (text.includes('ago') || text.includes('Streamed')) uploadTime = text;
+              });
+          }
+      }
+      
       if (!title && !duration && !viewCount) {
-        return null; // Skip if we can't extract any meaningful data
+        return null;
       }
       
       return {
@@ -196,7 +218,8 @@
         element: element
       };
     } catch (error) {
-      console.log('TubeFilter: Error extracting video data:', error);
+      // creating noise in console? comment out if needed
+      // console.log('TubeFilter: Error extracting video data:', error);
       return null;
     }
   }

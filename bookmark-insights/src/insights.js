@@ -962,7 +962,7 @@ export async function getActionableInsights() {
     
     // Shuffle and pick 5
     const shuffled = [...rediscoveryCandidates].sort(() => Math.random() - 0.5);
-    const rediscoveryFeed = shuffled.slice(0, 5).map(b => ({
+    const rediscoveryFeed = shuffled.slice(0, 10).map(b => ({
       id: b.id,
       title: b.title,
       url: b.url,

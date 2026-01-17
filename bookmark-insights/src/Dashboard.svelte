@@ -126,8 +126,8 @@
   let enrichmentLogs = []; // Detailed progress logs
   
   // Enrichment configuration
-  let enrichmentBatchSize = 20;
-  let enrichmentConcurrency = 3;
+  let enrichmentBatchSize = 50;
+  let enrichmentConcurrency = 5;
   let forceReenrich = false; // Force re-enrichment even for recently enriched bookmarks
   
   // Platform backfill state
@@ -894,8 +894,8 @@
       // Load enrichment settings - getSettings is already imported at the top
       const settings = await getSettings();
       if (settings) {
-        enrichmentBatchSize = settings.enrichmentBatchSize || 20;
-        enrichmentConcurrency = settings.enrichmentConcurrency || 3;
+        enrichmentBatchSize = settings.enrichmentBatchSize || 50;
+        enrichmentConcurrency = settings.enrichmentConcurrency || 5;
       }
     } catch (err) {
       console.error('Error loading enrichment status:', err);
