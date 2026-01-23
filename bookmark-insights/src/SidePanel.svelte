@@ -329,16 +329,19 @@
                   <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={bookmark.title}>
                     {bookmark.title || 'Untitled'}
                   </h3>
-                  <p class="text-xs text-gray-500 dark:text-gray-400 truncate" title={bookmark.url}>
-                    {bookmark.domain}
-                  </p>
-                  <div class="flex items-center gap-2 mt-0.5">
-                    {#if bookmark.isAlive === false}
-                      <span class="text-xs text-red-500 dark:text-red-400">Dead link</span>
+                  <div class="flex items-center gap-2 mt-0.5 text-xs">
+                    {#if bookmark.domain}
+                      <span class="text-gray-500 dark:text-gray-400 truncate" title={bookmark.url}>
+                        {bookmark.domain}
+                      </span>
+                      <span class="text-gray-300 dark:text-gray-600">•</span>
                     {/if}
-                    <span class="text-xs text-gray-400 dark:text-gray-500">
+                    <span class="text-gray-400 dark:text-gray-500 whitespace-nowrap">
                       {formatDate(bookmark.dateAdded)}
                     </span>
+                    {#if bookmark.isAlive === false}
+                      <span class="ml-1 text-red-500 dark:text-red-400">Dead link</span>
+                    {/if}
                   </div>
                 </div>
               </div>
