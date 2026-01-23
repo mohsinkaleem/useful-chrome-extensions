@@ -183,11 +183,11 @@
   $: hasMore = bookmarks.length > displayLimit;
 </script>
 
-<div class="w-full h-screen overflow-hidden flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
+<div class="w-full h-screen overflow-hidden flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-300 transition-colors">
   <!-- Header -->
   <div class="flex-shrink-0 p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
     <div class="flex items-center justify-between mb-2">
-      <h1 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+      <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-300 flex items-center gap-2">
         <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 20 20">
           <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z"/>
         </svg>
@@ -326,7 +326,7 @@
                   class="w-4 h-4 mt-0.5 flex-shrink-0 rounded"
                 />
                 <div class="flex-1 min-w-0">
-                  <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={bookmark.title}>
+                  <h3 class="text-sm font-medium text-gray-900 dark:text-gray-300 truncate" title={bookmark.title}>
                     {bookmark.title || 'Untitled'}
                   </h3>
                   <div class="flex items-center gap-2 mt-0.5 text-xs">
@@ -364,7 +364,7 @@
     {:else if viewMode === 'recent'}
       <!-- Recent Time Filters -->
       <div class="p-3 space-y-2">
-        <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Quick Filters</h3>
+        <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-200 uppercase tracking-wider mb-3">Quick Filters</h3>
         {#each [
           { days: 1, label: 'Today' },
           { days: 7, label: 'Last 7 days' },
@@ -387,7 +387,7 @@
     {:else if viewMode === 'domains'}
       <!-- Domain List -->
       <div class="p-3 space-y-1">
-        <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Top Domains</h3>
+        <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-200 uppercase tracking-wider mb-3">Top Domains</h3>
         {#each topDomains as { domain, count }}
           <button
             on:click={() => filterByDomain(domain)}
@@ -402,7 +402,7 @@
     {:else if viewMode === 'folders'}
       <!-- Folder List -->
       <div class="p-3 space-y-1">
-        <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Folders</h3>
+        <h3 class="text-xs font-semibold text-gray-500 dark:text-gray-200 uppercase tracking-wider mb-3">Folders</h3>
         {#each topFolders as { folder, count }}
           <button
             on:click={() => filterByFolder(folder)}

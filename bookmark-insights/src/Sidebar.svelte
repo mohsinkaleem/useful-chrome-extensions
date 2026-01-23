@@ -342,7 +342,7 @@
 <div class="w-[24rem] bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-shrink-0">
   <div class="mb-6">
     <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">Filters</h3>
+      <h3 class="text-sm font-medium text-gray-900 dark:text-gray-300">Filters</h3>
       {#if activeFiltersExist}
         <button
           on:click={clearFilters}

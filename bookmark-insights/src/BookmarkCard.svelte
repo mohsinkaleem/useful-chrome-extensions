@@ -67,7 +67,7 @@
     />
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-1.5">
-        <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex-1" title={bookmark.title}>
+        <h3 class="text-sm font-medium text-gray-900 dark:text-gray-200 truncate flex-1" title={bookmark.title}>
           {@html highlightText(bookmark.title, parsedSearchQuery)}
         </h3>
         <!-- Status Icons -->

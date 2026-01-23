@@ -77,7 +77,7 @@
         <div class="flex-1 min-w-0 flex flex-col">
           <!-- Row 1: Title + Status Icons -->
           <div class="flex items-center gap-2">
-            <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate hover:text-blue-600 dark:hover:text-blue-400" title={bookmark.title}>
+            <h3 class="text-sm font-medium text-gray-900 dark:text-gray-200 truncate hover:text-blue-600 dark:hover:text-blue-400" title={bookmark.title}>
               {@html highlightText(bookmark.title, parsedSearchQuery)}
             </h3>
             <!-- Status Icons -->

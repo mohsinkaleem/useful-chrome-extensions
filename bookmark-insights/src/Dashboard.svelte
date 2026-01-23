@@ -1833,7 +1833,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center py-4">
         <div class="flex items-center space-x-4">
-          <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Bookmark Insight</h1>
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-200">Bookmark Insight</h1>
           <button
             on:click={handleExportBookmarks}
             class="px-3 py-1 text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -1934,7 +1934,7 @@
             <div class="mb-4 flex flex-col gap-4">
               <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div class="flex items-center gap-3">
-                  <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                  <h2 class="text-lg font-medium text-gray-900 dark:text-gray-300">
                     {totalCount} bookmark{totalCount !== 1 ? 's' : ''}
                   </h2>
                 </div>
@@ -1947,7 +1947,7 @@
                   <select
                     bind:value={currentSortBy}
                     on:change={(e) => handleSortChange(e.target.value)}
-                    class="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-blue-500 focus:border-blue-500"
+                    class="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-300 focus:ring-blue-500 focus:border-blue-500"
                   >
                     {#each Object.values(SORT_OPTIONS) as option}
                       <option value={option.key}>{option.label}</option>
@@ -2054,7 +2054,7 @@
 
                   <!-- Tag Chips -->
                   {#each $activeFilters.tags as tag}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-600">
                       Tag: {tag}
                       <button type="button" class="ml-1.5 inline-flex items-center justify-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('tags', tag)}>
                         <span class="sr-only">Remove tag filter</span>
@@ -2302,7 +2302,7 @@
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow transition-colors">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
                   <svg class="w-5 h-5 inline-block mr-2 text-purple-500 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
                   </svg>
@@ -2396,7 +2396,7 @@
                       min="5" 
                       max="200" 
                       bind:value={enrichmentBatchSize}
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      class="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-400"
                       disabled={runningEnrichment}
                     />
                   </label>
@@ -2410,7 +2410,7 @@
                       min="1" 
                       max="20" 
                       bind:value={enrichmentConcurrency}
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      class="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-400"
                       disabled={runningEnrichment}
                     />
                   </label>
@@ -2522,7 +2522,7 @@
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
                   <span class="inline-block mr-2">🔍</span>
                   Deep Content Analysis
                 </h3>
@@ -2555,7 +2555,7 @@
                   <div class="flex items-start gap-2">
                     <span class="text-lg">⏱️</span>
                     <div>
-                      <div class="font-medium text-gray-800 dark:text-gray-100">Reading Time</div>
+                      <div class="font-medium text-gray-800 dark:text-gray-300">Reading Time</div>
                       <div class="text-xs text-gray-500 dark:text-gray-400">Estimated time to read/watch content</div>
                     </div>
                   </div>
@@ -2667,7 +2667,7 @@
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
                   Dead Links {#if !loadingDeadLinks}({deadLinks.length}){/if}
                 </h3>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Bookmarks detected as unreachable during enrichment</p>
@@ -2897,7 +2897,7 @@
                     <div class="p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800">
                       <div class="flex items-start justify-between">
                         <div class="flex-1 min-w-0">
-                          <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{bookmark.title}</div>
+                          <div class="text-sm font-medium text-gray-800 dark:text-gray-400 truncate">{bookmark.title}</div>
                           <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{bookmark.url}</div>
                           <div class="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-3">
                             <span>Last checked: {bookmark.lastChecked ? new Date(bookmark.lastChecked).toLocaleDateString() : 'Unknown'}</span>
@@ -2948,7 +2948,7 @@
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                  <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                  <h3 class="text-lg font-medium text-gray-900 dark:text-gray-200">
                     Duplicates & Similarities
                   </h3>
                   <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Manage exact duplicates and find similar content</p>
@@ -3049,7 +3049,7 @@
                   <div class="space-y-6 max-h-[32rem] overflow-y-auto">
                     {#each duplicates.slice(0, duplicatesDisplayLimit) as group, groupIndex}
                       <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                        <h4 class="font-medium text-gray-900 dark:text-white mb-3 truncate" title={group[0].url}>
+                        <h4 class="font-medium text-gray-900 dark:text-gray-200 mb-3 truncate" title={group[0].url}>
                           {group[0].url}
                         </h4>
                         <div class="space-y-2">
@@ -3063,7 +3063,7 @@
                                   class="h-4 w-4 text-blue-600 dark:text-blue-500 rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-blue-500"
                                 />
                                 <div class="flex-1 min-w-0">
-                                  <div class="text-sm font-medium truncate dark:text-gray-200">{bookmark.title}</div>
+                                  <div class="text-sm font-medium truncate dark:text-gray-400">{bookmark.title}</div>
                                   <div class="text-xs text-gray-500 dark:text-gray-400">
                                     {bookmark.folderPath || 'No folder'} {#if index === 0}<span class="text-green-600 dark:text-green-400 font-medium">(oldest)</span>{/if}
                                   </div>
@@ -3142,7 +3142,7 @@
                           </div>
                           <button
                             on:click={() => openComparisonModal(pair)}
-                            class="text-xs px-3 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                            class="text-xs px-3 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-400 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                           >
                             Compare Details
                           </button>
@@ -3153,7 +3153,7 @@
                           <div class="p-3 bg-white dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
                             <div class="flex justify-between items-start mb-2">
                               <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate" title={pair.bookmark1.title}>
+                                <div class="text-sm font-medium text-gray-800 dark:text-gray-400 truncate" title={pair.bookmark1.title}>
                                   {pair.bookmark1.title}
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400 truncate" title={pair.bookmark1.url}>
@@ -3180,7 +3180,7 @@
                           <div class="p-3 bg-white dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
                             <div class="flex justify-between items-start mb-2">
                               <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate" title={pair.bookmark2.title}>
+                                <div class="text-sm font-medium text-gray-800 dark:text-gray-400 truncate" title={pair.bookmark2.title}>
                                   {pair.bookmark2.title}
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400 truncate" title={pair.bookmark2.url}>
@@ -3225,7 +3225,7 @@
           <!-- Useless Bookmarks Detection -->
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
                 🗑️ Cleanup Candidates {#if uselessBookmarks}({uselessBookmarks.summary.total} found){/if}
               </h3>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Bookmarks that may be candidates for removal based on various criteria</p>
@@ -3464,7 +3464,7 @@
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
               <div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
                   Invalid URLs {#if !loadingMalformed}({malformedUrls.length}){/if}
                 </h3>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Bookmarks with unrecognized URL schemes</p>
@@ -3492,7 +3492,7 @@
                     <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-900/50">
                       <div class="flex justify-between items-start gap-2">
                         <div class="flex-1 min-w-0">
-                          <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={bookmark.title}>{bookmark.title}</div>
+                          <div class="text-sm font-medium text-gray-900 dark:text-gray-300 truncate" title={bookmark.title}>{bookmark.title}</div>
                           <div class="text-xs text-red-600 dark:text-red-400 truncate mt-1" title={bookmark.url}>{bookmark.url}</div>
                           <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">{bookmark.folderPath || 'No folder'}</div>
                         </div>
@@ -3513,7 +3513,7 @@
           <!-- Backup & Restore Panel -->
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
                 <svg class="w-5 h-5 inline-block mr-2 text-green-500 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
                 </svg>
@@ -3527,7 +3527,7 @@
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <!-- Backup Section -->
                 <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/30">
-                  <h4 class="font-medium text-gray-900 dark:text-gray-100 mb-3">Create Backup</h4>
+                  <h4 class="font-medium text-gray-900 dark:text-gray-300 mb-3">Create Backup</h4>
                   <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                     Download a complete backup of your bookmarks including all enrichment data, categories, and metadata.
                   </p>
@@ -3553,7 +3553,7 @@
                 
                 <!-- Restore Section -->
                 <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/30">
-                  <h4 class="font-medium text-gray-900 dark:text-gray-100 mb-3">Restore Backup</h4>
+                  <h4 class="font-medium text-gray-900 dark:text-gray-300 mb-3">Restore Backup</h4>
                   <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                     Restore from a backup file. Your current data will be auto-backed up first.
                   </p>
@@ -3656,7 +3656,7 @@
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in duration-200" on:click|stopPropagation>
       <div class="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center z-10">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Compare Similar Bookmarks</h3>
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-300">Compare Similar Bookmarks</h3>
         <button on:click={closeComparisonModal} class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -3706,7 +3706,7 @@
             <div class="p-4 space-y-3">
               <div>
                 <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">Title</div>
-                <div class="text-sm font-medium text-gray-900 dark:text-gray-100">{selectedComparisonPair.bookmark1.title}</div>
+                <div class="text-sm font-medium text-gray-900 dark:text-gray-300">{selectedComparisonPair.bookmark1.title}</div>
               </div>
               <div>
                 <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">URL</div>

@@ -104,7 +104,7 @@
   <!-- Header -->
   <div class="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
     <div class="flex items-center justify-between mb-3">
-      <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Bookmark Insight</h1>
+      <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-200">Bookmark Insight</h1>
       <div class="flex space-x-2">
         <button
           on:click={toggleDarkMode}
