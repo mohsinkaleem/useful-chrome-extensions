@@ -3,3 +3,9 @@ dist/
 extension/
 *.log
 .DS_Store
+node_modules
+.vscode/
+.env
+coverage/
+.idea/
+*.iml

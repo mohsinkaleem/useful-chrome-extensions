@@ -1,4 +1,5 @@
 // Main popup script
+import { TabBalancer } from '../shared/tab-balancer.js';
 import { TabEventManager, getAllTabs, getTabsByWindow, estimateTabMemory } from '../shared/tab-utils.js';
 import { findDuplicatesByUrl, getDuplicateGroups, normalizeUrl } from '../shared/url-utils.js';
 import { TabList } from './components/TabList.js';
@@ -124,6 +125,63 @@ class TabManagerApp {
       } catch (e) {
         console.error('Failed to switch tab:', e);
         alert('Failed to switch to tab. The window may have been closed.');
+      }
+    });
+
+    // Balance Windows
+    document.getElementById('action-balance-windows')?.addEventListener('click', async () => {
+      const msg = "Start balancing windows?\n\nThis will rearrange tabs to respect <10 and >50 limits, consolidating small windows.";
+      
+      if (!confirm(msg)) return;
+       
+      const btn = document.getElementById('action-balance-windows');
+      const originalText = btn?.textContent || '⚖️';
+      if (btn) {
+          btn.textContent = '...';
+          (btn as HTMLButtonElement).disabled = true;
+      }
+
+      try {
+        const balancer = new TabBalancer({ autoGroup: false });
+        await balancer.balanceWindows();
+      } catch (e) {
+        console.error("Balance error:", e);
+        alert("An error occurred while balancing windows.");
+      } finally {
+        if (btn) {
+            btn.textContent = originalText;
+            (btn as HTMLButtonElement).disabled = false;
+        }
+      }
+    });
+
+    // Group All
+    document.getElementById('action-group-all')?.addEventListener('click', async () => {
+      const btn = document.getElementById('action-group-all');
+      if (btn) (btn as HTMLButtonElement).disabled = true;
+      try {
+        const balancer = new TabBalancer();
+        await balancer.groupAll();
+      } catch (e) {
+        console.error("Grouping error:", e);
+      } finally {
+        if (btn) (btn as HTMLButtonElement).disabled = false;
+      }
+    });
+
+    // Ungroup All
+    document.getElementById('action-ungroup-all')?.addEventListener('click', async () => {
+      if (!confirm("Ungroup ALL tabs in all windows?")) return;
+      
+      const btn = document.getElementById('action-ungroup-all');
+      if (btn) (btn as HTMLButtonElement).disabled = true;
+      try {
+        const balancer = new TabBalancer();
+        await balancer.ungroupAll();
+      } catch (e) {
+        console.error("Ungrouping error:", e);
+      } finally {
+        if (btn) (btn as HTMLButtonElement).disabled = false;
       }
     });
 

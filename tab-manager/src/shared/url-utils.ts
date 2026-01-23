@@ -17,11 +17,22 @@ export function extractDomain(url: string): string | null {
   }
 }
 
-// Extract base domain (without subdomains)
+// Extract base domain (without subdomains, except for common hosting platforms)
 export function extractBaseDomain(url: string): string | null {
   const domain = extractDomain(url);
   if (!domain) return null;
   
+  const hostingDomains = ['github.io', 'gitlab.io', 'vercel.app', 'netlify.app', 'herokuapp.com'];
+  
+  // Check if it matches a known hosting domain
+  for (const host of hostingDomains) {
+      if (domain.endsWith(host)) {
+          // Return the full domain for these (e.g. user.github.io)
+          // or at least one level deeper
+          return domain;
+      }
+  }
+
   const parts = domain.split('.');
   if (parts.length >= 2) {
     return parts.slice(-2).join('.');
