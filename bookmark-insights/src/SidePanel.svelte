@@ -183,7 +183,7 @@
   $: hasMore = bookmarks.length > displayLimit;
 </script>
 
-<div class="w-full h-full flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
+<div class="w-full h-screen overflow-hidden flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
   <!-- Header -->
   <div class="flex-shrink-0 p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
     <div class="flex items-center justify-between mb-2">
@@ -228,17 +228,7 @@
     <SearchBar on:search={handleSearch} placeholder="Search bookmarks..." value={searchQuery} />
     
     <!-- Quick Stats -->
-    {#if quickStats}
-      <div class="flex items-center gap-3 mt-2 text-xs text-gray-500 dark:text-gray-400">
-        <span>{quickStats.totalBookmarks} bookmarks</span>
-        <span>•</span>
-        <span>{quickStats.totalDomains} domains</span>
-        {#if quickStats.deadLinks > 0}
-          <span>•</span>
-          <span class="text-red-500 dark:text-red-400">{quickStats.deadLinks} dead</span>
-        {/if}
-      </div>
-    {/if}
+    <!-- Removed as per user request -->
   </div>
   
   <!-- Navigation Tabs -->

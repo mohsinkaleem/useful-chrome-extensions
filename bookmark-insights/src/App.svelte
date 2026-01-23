@@ -139,7 +139,9 @@
       </div>
     </div>
     
-    <SearchBar on:search={handleSearch} />
+    <div class="mb-4">
+      <SearchBar on:search={handleSearch} />
+    </div>
     
     <div class="text-xs text-gray-500 dark:text-gray-400">
       {bookmarks.length} bookmark{bookmarks.length !== 1 ? 's' : ''}
