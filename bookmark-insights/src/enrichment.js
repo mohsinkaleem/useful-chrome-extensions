@@ -3,6 +3,7 @@
 
 import { getSettings, getNextEnrichmentBatch, removeFromEnrichmentQueue, upsertBookmark, getBookmark, logEvent } from './db.js';
 import { parseBookmarkUrl } from './url-parsers.js';
+import { detectTopics } from './topics.js';
 
 // Domain-based categorization rules
 const CATEGORY_RULES = {
@@ -118,8 +119,10 @@ export async function enrichBookmark(bookmarkId, options = {}) {
         bookmark.contentType = platformData.type;
         bookmark.platformData = platformData;
       }
+      // Detect topics from available metadata even for dead links
+      bookmark.topics = detectTopics(bookmark);
       await upsertBookmark(bookmark);
-      await logEvent(bookmarkId, 'enrichment', { isAlive: false });
+      await logEvent(bookmarkId, 'enrichment', { isAlive: false, topics: bookmark.topics });
       return { success: true, isAlive: false, skipped: true };
     }
 
@@ -150,11 +153,15 @@ export async function enrichBookmark(bookmarkId, options = {}) {
       bookmark.platformData = enrichedPlatformData;
     }
 
+    // Detect and assign topics based on all available metadata
+    bookmark.topics = detectTopics(bookmark);
+
     await upsertBookmark(bookmark);
     await logEvent(bookmarkId, 'enrichment', { 
       success: true, 
       category,
       platform: enrichedPlatformData?.platform,
+      topics: bookmark.topics,
       hasDescription: !!metadata.description 
     });
 

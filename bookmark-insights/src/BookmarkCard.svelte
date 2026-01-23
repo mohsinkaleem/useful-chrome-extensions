@@ -150,6 +150,18 @@
             {/if}
           </div>
         {/if}
+        {#if bookmark.topics && bookmark.topics.length > 0}
+          <div class="flex items-center gap-1 mt-2 flex-wrap">
+            {#each bookmark.topics.slice(0, 4) as topic}
+              <span class="text-xs text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded" title="Topic: {topic}">
+                🏷️ {topic}
+              </span>
+            {/each}
+            {#if bookmark.topics.length > 4}
+              <span class="text-xs text-gray-500">+{bookmark.topics.length - 4} more</span>
+            {/if}
+          </div>
+        {/if}
         <div class="flex items-center space-x-2">
           <button
             on:click={handleCopyUrl}

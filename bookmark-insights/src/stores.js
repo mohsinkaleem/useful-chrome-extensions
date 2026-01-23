@@ -405,7 +405,7 @@ function createActiveFiltersStore() {
     const { subscribe, set, update } = writable({
         domains: [],
         folders: [],
-        platforms: [],
+        topics: [],
         types: [],
         creators: [],
         tags: [],
@@ -488,7 +488,7 @@ function createActiveFiltersStore() {
         clearFilters: () => set({
             domains: [],
             folders: [],
-            platforms: [],
+            topics: [],
             types: [],
             creators: [],
             tags: [],
@@ -502,7 +502,7 @@ function createActiveFiltersStore() {
         reset: () => set({
             domains: [],
             folders: [],
-            platforms: [],
+            topics: [],
             types: [],
             creators: [],
             tags: [],

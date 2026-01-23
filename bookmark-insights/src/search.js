@@ -610,7 +610,7 @@ export function parseSearchQuery(query) {
   const filters = {
     domains: [],
     folders: [],
-    platforms: [],
+    topics: [],
     types: [],
     tags: [],
     deadLinks: false,
@@ -633,7 +633,7 @@ export function parseSearchQuery(query) {
   extract('domain', filters.domains);
   extract('site', filters.domains); // Alias
   extract('folder', filters.folders);
-  extract('platform', filters.platforms);
+  extract('topic', filters.topics);
   extract('type', filters.types);
   extract('tag', filters.tags);
   
@@ -686,9 +686,12 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
               const folder = (b.folderPath || '').toLowerCase();
               if (!activeFilters.folders.some(f => folder.includes(f.toLowerCase()))) return false;
           }
-          if (activeFilters.platforms && activeFilters.platforms.length > 0) {
-              const platform = (b.platform || '').toLowerCase();
-              if (!activeFilters.platforms.some(p => platform === p.toLowerCase())) return false;
+          if (activeFilters.topics && activeFilters.topics.length > 0) {
+              // Check if bookmark has any of the selected topics
+              const bookmarkTopics = b.topics || [];
+              if (!activeFilters.topics.some(t => 
+                  bookmarkTopics.some(bt => bt.toLowerCase() === t.toLowerCase() || bt.toLowerCase().startsWith(t.toLowerCase() + '/'))
+              )) return false;
           }
           if (activeFilters.types && activeFilters.types.length > 0) {
               const contentType = (b.contentType || '').toLowerCase();
@@ -862,12 +865,12 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 /**
  * Compute stats from search results for sidebar updates
  * @param {Array} bookmarks - Array of bookmark results
- * @returns {Object} Stats for sidebar (domains, folders)
+ * @returns {Object} Stats for sidebar (domains, folders, topics, etc.)
  */
 export function computeSearchResultStats(bookmarks) {
   const domainCounts = new Map();
   const folderCounts = new Map();
-  const platformCounts = new Map();
+  const topicCounts = new Map();
   const creatorCounts = new Map();
   const typeCounts = new Map();
   
@@ -903,9 +906,11 @@ export function computeSearchResultStats(bookmarks) {
       folderCounts.set(bookmark.folderPath, current + 1);
     }
 
-    // Count platforms
-    const platform = bookmark.platform || 'other';
-    platformCounts.set(platform, (platformCounts.get(platform) || 0) + 1);
+    // Count topics
+    const bookmarkTopics = bookmark.topics || [];
+    for (const topic of bookmarkTopics) {
+      topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
+    }
 
     // Count creators
     if (bookmark.creator) {
@@ -945,8 +950,8 @@ export function computeSearchResultStats(bookmarks) {
     .map(([folder, count]) => ({ folder, count }))
     .sort((a, b) => b.count - a.count);
 
-  const platforms = Array.from(platformCounts.entries())
-    .map(([platform, count]) => ({ platform, count }))
+  const topics = Array.from(topicCounts.entries())
+    .map(([topic, count]) => ({ topic, count }))
     .sort((a, b) => b.count - a.count);
 
   const creators = Array.from(creatorCounts.values())
@@ -958,7 +963,7 @@ export function computeSearchResultStats(bookmarks) {
   
   const dateCounts = { week, twoWeek, month, threeMonth, sixMonth, year, older };
   
-  return { domains, folders, platforms, creators, contentTypes, dateCounts };
+  return { domains, folders, topics, creators, contentTypes, dateCounts };
 }
 
 // Note: advancedSearch function removed - use searchBookmarks() with activeFilters parameter instead

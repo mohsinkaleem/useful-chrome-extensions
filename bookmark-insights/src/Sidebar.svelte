@@ -1,7 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import { getDomainsByRecency, getDomainsByCount, getUniqueFolders } from './db.js';
-  import { getPlatformDisplayName, getPlatformIcon, getContentTypeDisplayName } from './url-parsers.js';
+  import { getContentTypeDisplayName } from './url-parsers.js';
+  import { getTopicDisplayName, getTopicIcon } from './topics.js';
   import { activeFilters, allBookmarks } from './stores.js';
   
   // Props for search result stats
@@ -11,7 +12,7 @@
   let domainsByRecency = [];
   let domainsByCount = [];
   let folders = [];
-  let platforms = [];
+  let topics = [];
   let creators = [];
   let contentTypes = [];
   let dateCounts = { week: 0, twoWeek: 0, month: 0, threeMonth: 0, sixMonth: 0, year: 0, older: 0 };
@@ -21,10 +22,11 @@
   let folderDisplayLimit = 10; // Initial limit for folders
   let creatorDisplayLimit = 10; // Initial limit for creators
   let contentTypeDisplayLimit = 10; // Initial limit for content types
+  let topicDisplayLimit = 15; // Initial limit for topics
   
   // Collapsible section states
   let sectionsExpanded = {
-    platforms: true,
+    topics: true,
     creators: true,
     contentTypes: true,
     domains: true,
@@ -45,7 +47,7 @@
   export async function refresh() {
     try {
       await loadDomains();
-      await loadPlatformData();
+      await loadTopicData();
       await loadDateCounts();
       folders = await getUniqueFolders();
     } catch (error) {
@@ -56,7 +58,7 @@
   onMount(async () => {
     try {
       await loadDomains();
-      await loadPlatformData();
+      await loadTopicData();
       await loadDateCounts();
       folders = await getUniqueFolders();
     } catch (error) {
@@ -99,19 +101,21 @@
     domainsByCount = await getDomainsByCount();
   }
   
-  async function loadPlatformData() {
+  async function loadTopicData() {
     // Use cached bookmarks from store instead of fetching again
     const bookmarks = await allBookmarks.getCached();
     
-    // Count platforms
-    const platformCounts = {};
+    // Count topics
+    const topicCounts = {};
     const creatorCounts = {};
     const typeCounts = {};
     
     bookmarks.forEach(b => {
-      // Platforms
-      const platform = b.platform || 'other';
-      platformCounts[platform] = (platformCounts[platform] || 0) + 1;
+      // Topics (each bookmark can have multiple)
+      const bookmarkTopics = b.topics || [];
+      for (const topic of bookmarkTopics) {
+        topicCounts[topic] = (topicCounts[topic] || 0) + 1;
+      }
       
       // Creators (with platform prefix)
       if (b.creator) {
@@ -128,8 +132,8 @@
       }
     });
     
-    platforms = Object.entries(platformCounts)
-      .map(([platform, count]) => ({ platform, count }))
+    topics = Object.entries(topicCounts)
+      .map(([topic, count]) => ({ topic, count }))
       .sort((a, b) => b.count - a.count);
     
     creators = Object.values(creatorCounts)
@@ -143,7 +147,7 @@
   // Reactive computed value for active filters check - MUST be defined before useFilteredStats
   $: activeFiltersExist = $activeFilters.domains.length > 0 || 
                           $activeFilters.folders.length > 0 || 
-                          $activeFilters.platforms.length > 0 ||
+                          $activeFilters.topics.length > 0 ||
                           $activeFilters.creators.length > 0 ||
                           $activeFilters.types.length > 0 ||
                           ($activeFilters.tags && $activeFilters.tags.length > 0) ||
@@ -168,10 +172,10 @@
     ? searchResultStats.folders
     : folders;
 
-  // Use search result platforms when available
-  $: displayPlatforms = useFilteredStats && searchResultStats?.platforms
-    ? searchResultStats.platforms
-    : platforms;
+  // Use search result topics when available
+  $: displayTopics = useFilteredStats && searchResultStats?.topics
+    ? searchResultStats.topics
+    : topics;
 
   // Use search result creators when available
   $: displayCreators = useFilteredStats && searchResultStats?.creators
@@ -204,6 +208,10 @@
     contentTypeDisplayLimit += 10;
   }
   
+  function loadMoreTopics() {
+    topicDisplayLimit += 10;
+  }
+  
   function toggleSection(section) {
     sectionsExpanded[section] = !sectionsExpanded[section];
   }
@@ -233,8 +241,8 @@
     activeFilters.toggleFilter('folders', folder);
   }
   
-  function togglePlatformFilter(platform) {
-    activeFilters.toggleFilter('platforms', platform);
+  function toggleTopicFilter(topic) {
+    activeFilters.toggleFilter('topics', topic);
   }
   
   function toggleCreatorFilter(creator, platform) {
@@ -348,11 +356,11 @@
     <!-- Active Filters Display -->
     {#if activeFiltersExist}
       <div class="mb-4 flex flex-wrap gap-2">
-        {#each $activeFilters.platforms as platform}
+        {#each $activeFilters.topics as topic}
           <div class="flex items-center space-x-1 p-1.5 bg-indigo-50 rounded-md border border-indigo-100">
-            <div class="text-[10px] text-indigo-800">{getPlatformIcon(platform)} {getPlatformDisplayName(platform)}</div>
+            <div class="text-[10px] text-indigo-800">{getTopicDisplayName(topic)}</div>
             <button 
-              on:click={() => togglePlatformFilter(platform)}
+              on:click={() => toggleTopicFilter(topic)}
               class="text-indigo-600 hover:text-indigo-800 font-bold"
             >
               ×
@@ -361,7 +369,7 @@
         {/each}
         {#each $activeFilters.creators as creatorData}
           <div class="flex items-center space-x-1 p-1.5 bg-pink-50 rounded-md border border-pink-100">
-            <div class="text-[10px] text-pink-800">{getPlatformIcon(creatorData.platform)} {creatorData.creator}</div>
+            <div class="text-[10px] text-pink-800">{creatorData.creator}</div>
             <button 
               on:click={() => toggleCreatorFilter(creatorData.creator, creatorData.platform)}
               class="text-pink-600 hover:text-pink-800 font-bold"
@@ -540,32 +548,40 @@
       {/if}
     </div>
     
-    <!-- Platforms Section -->
-    {#if displayPlatforms.length > 0}
+    <!-- Topics Section -->
+    {#if displayTopics.length > 0}
       <div class="mb-0">
         <button
-          on:click={() => toggleSection('platforms')}
+          on:click={() => toggleSection('topics')}
           class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
         >
-          <span>📱 Platforms ({displayPlatforms.length})</span>
-          <span class="text-gray-400">{sectionsExpanded.platforms ? '▼' : '▶'}</span>
+          <span>🏷️ Topics ({displayTopics.length})</span>
+          <span class="text-gray-400">{sectionsExpanded.topics ? '▼' : '▶'}</span>
         </button>
-        {#if sectionsExpanded.platforms}
-          <div class="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto pr-1">
-            {#each displayPlatforms as p}
+        {#if sectionsExpanded.topics}
+          <div class="grid grid-cols-1 gap-1 max-h-64 overflow-y-auto pr-1">
+            {#each displayTopics.slice(0, topicDisplayLimit) as t}
               <button
-                on:click={() => togglePlatformFilter(p.platform)}
+                on:click={() => toggleTopicFilter(t.topic)}
                 class="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded border flex items-center justify-between"
-                class:bg-indigo-50={isFilterActive('platforms', p.platform)}
-                class:text-indigo-700={isFilterActive('platforms', p.platform)}
-                class:border-indigo-200={isFilterActive('platforms', p.platform)}
-                class:text-gray-600={!isFilterActive('platforms', p.platform)}
-                class:border-transparent={!isFilterActive('platforms', p.platform)}
+                class:bg-indigo-50={isFilterActive('topics', t.topic)}
+                class:text-indigo-700={isFilterActive('topics', t.topic)}
+                class:border-indigo-200={isFilterActive('topics', t.topic)}
+                class:text-gray-600={!isFilterActive('topics', t.topic)}
+                class:border-transparent={!isFilterActive('topics', t.topic)}
               >
-                <span class="text-xs">{getPlatformIcon(p.platform)} {getPlatformDisplayName(p.platform)}</span>
-                <span class="text-[10px] text-gray-400">{p.count}</span>
+                <span class="text-xs">{getTopicDisplayName(t.topic)}</span>
+                <span class="text-[10px] text-gray-400">{t.count}</span>
               </button>
             {/each}
+            {#if displayTopics.length > topicDisplayLimit}
+              <button
+                on:click={loadMoreTopics}
+                class="w-full text-center px-2 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 mt-2"
+              >
+                Show more
+              </button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -595,7 +611,7 @@
                 class:border-transparent={!isSelected}
               >
                 <div class="flex items-center justify-between">
-                  <span class="truncate text-xs">{getPlatformIcon(c.platform)} {c.creator}</span>
+                  <span class="truncate text-xs">👤 {c.creator}</span>
                   <span class="text-[10px] text-gray-400 ml-1">{c.count}</span>
                 </div>
               </button>

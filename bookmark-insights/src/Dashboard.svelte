@@ -368,7 +368,7 @@
   function hasActiveFilters(filters) {
       return filters.domains.length > 0 || 
              filters.folders.length > 0 || 
-             filters.platforms.length > 0 || 
+             filters.topics.length > 0 || 
              filters.types.length > 0 || 
              filters.creators.length > 0 ||
              (filters.tags && filters.tags.length > 0) ||
@@ -1991,7 +1991,7 @@
               </div>
 
               <!-- Active Filters Chips -->
-              {#if $activeFilters.domains.length > 0 || $activeFilters.folders.length > 0 || $activeFilters.dateRange || $searchQueryStore || $activeFilters.tags.length > 0 || $activeFilters.platforms.length > 0 || $activeFilters.types.length > 0 || $activeFilters.creators.length > 0 || $activeFilters.deadLinks || $activeFilters.stale}
+              {#if $activeFilters.domains.length > 0 || $activeFilters.folders.length > 0 || $activeFilters.dateRange || $searchQueryStore || $activeFilters.tags.length > 0 || $activeFilters.topics.length > 0 || $activeFilters.types.length > 0 || $activeFilters.creators.length > 0 || $activeFilters.deadLinks || $activeFilters.stale}
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="text-sm text-gray-500 mr-1">Filters:</span>
                   
@@ -2028,12 +2028,12 @@
                     </span>
                   {/each}
 
-                  <!-- Platform Chips -->
-                  {#each $activeFilters.platforms as platform}
+                  <!-- Topic Chips -->
+                  {#each $activeFilters.topics as topic}
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                      Platform: {platform}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-indigo-400 hover:text-indigo-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('platforms', platform)}>
-                        <span class="sr-only">Remove platform filter</span>
+                      Topic: {topic}
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-indigo-400 hover:text-indigo-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('topics', topic)}>
+                        <span class="sr-only">Remove topic filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
                     </span>
