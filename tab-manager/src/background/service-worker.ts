@@ -101,6 +101,17 @@ chrome.tabs.onCreated.addListener((tab) => {
   debouncedUpdateTabCountBadge();
 });
 
+// Command listener for keyboard shortcuts
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === 'open_side_panel') {
+    if (tab?.windowId) {
+      // @ts-ignore
+      chrome.sidePanel.open({ windowId: tab.windowId })
+        .catch((error: unknown) => console.error('Failed to open side panel:', error));
+    }
+  }
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.url) {
     autoGrouper.onTabUpdated(tab);

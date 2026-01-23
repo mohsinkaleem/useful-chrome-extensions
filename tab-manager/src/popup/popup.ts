@@ -40,6 +40,13 @@ class TabManagerApp {
   }
 
   private async init() {
+    // Load Theme
+    if (localStorage.getItem('theme') === 'dark') {
+      document.body.classList.add('dark-theme');
+      const btn = document.getElementById('theme-toggle');
+      if (btn) btn.textContent = '☀️';
+    }
+
     // Setup event listeners
     this.setupEventListeners();
     
@@ -79,6 +86,19 @@ class TabManagerApp {
     });
     document.getElementById('view-grid')?.addEventListener('click', () => {
       this.setViewMode('grid');
+    });
+
+    // Theme Toggle
+    document.getElementById('theme-toggle')?.addEventListener('click', () => {
+      document.body.classList.toggle('dark-theme');
+      const isDark = document.body.classList.contains('dark-theme');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      
+      // Update icon
+      const btn = document.getElementById('theme-toggle');
+      if (btn) {
+        btn.textContent = isDark ? '☀️' : '🌙';
+      }
     });
 
     // Quick actions

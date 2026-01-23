@@ -335,6 +335,21 @@ body.dark-theme .view-btn.active {
   border-color: #1a73e8;
 }
 
+body.dark-theme .panels-container {
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--item-border);
+}
+
+body.dark-theme .unified-actions-bar {
+  background: #1a1a1a;
+  border-top: 1px solid var(--item-border);
+  border-bottom: 1px solid var(--item-border);
+}
+
+body.dark-theme .action-divider {
+  background: #444;
+}
+
 /* Collapsible Panels */
 .panels-container {
   flex-shrink: 0;
@@ -376,6 +391,19 @@ body.dark-theme .view-btn.active {
   transition: all 0.2s;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+body.dark-theme .action-btn-inline {
+  background: #3d5afe;
+}
+
+body.dark-theme .action-btn-inline:hover:not(:disabled) {
+  background: #2a3fdb;
+}
+
+body.dark-theme .action-btn-inline:disabled {
+  background: #444;
+  color: #777;
 }
 
 .action-btn-inline strong {
