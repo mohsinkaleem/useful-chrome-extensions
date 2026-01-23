@@ -56,13 +56,13 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (isRegex) {
       logicGroup.style.display = 'none';
-      helpText.textContent = 'Enter a valid Regular Expression (e.g., /pattern/i or just pattern)';
-      input.placeholder = 'Enter regex pattern (e.g., ^[A-Z].*tutorial)';
+      helpText.textContent = 'Regex pattern (e.g., /tutorial/i)';
+      input.placeholder = 'Regex (e.g., ^[A-Z].*)';
       hideKeywordPreview();
     } else {
       logicGroup.style.display = 'block';
-      helpText.textContent = 'Leave empty to disable keyword filtering. Use commas to separate multiple keywords.';
-      input.placeholder = 'Enter keywords separated by commas (e.g., music, tutorial, gaming)';
+      helpText.textContent = 'Keywords (comma separated)';
+      input.placeholder = 'Keywords (e.g., music, tutorial)';
       // Trigger preview update
       input.dispatchEvent(new Event('input'));
     }

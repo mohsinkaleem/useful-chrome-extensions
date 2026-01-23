@@ -10,119 +10,121 @@
   <div class="container">
     <div class="header">
       <h1>🎬 TubeFilter</h1>
-      <p>Filter YouTube videos easily</p>
+      <p>YouTube Filter</p>
     </div>
 
     <div class="section">
-      <h3>👁️ View Count Filter</h3>
+      <h3>👁️ View Count</h3>
       <div class="filter-group">
-        <label>
+        <label data-type="none">
           <input type="radio" name="viewFilter" value="none" checked>
           No filter
         </label>
         <label>
           <input type="radio" name="viewFilter" value="greater">
-          Greater than
-          <input type="number" id="viewMin" placeholder="1000" disabled>
+          <div class="input-container">
+            &gt; <input type="number" id="viewMin" placeholder="10k" disabled>
+          </div>
         </label>
         <label>
           <input type="radio" name="viewFilter" value="less">
-          Less than
-          <input type="number" id="viewMax" placeholder="10000" disabled>
+          <div class="input-container">
+            &lt; <input type="number" id="viewMax" placeholder="100k" disabled>
+          </div>
         </label>
-        <label>
+        <label class="full-width">
           <input type="radio" name="viewFilter" value="between">
-          Between
-          <input type="number" id="viewBetweenMin" placeholder="1000" disabled>
-          and
-          <input type="number" id="viewBetweenMax" placeholder="10000" disabled>
+          <div class="input-container">
+            Between <input type="number" id="viewBetweenMin" placeholder="1k" disabled> 
+            - <input type="number" id="viewBetweenMax" placeholder="10k" disabled>
+          </div>
         </label>
       </div>
     </div>
 
     <div class="section">
-      <h3>⏱️ Duration Filter</h3>
+      <h3>⏱️ Duration</h3>
       <div class="filter-group">
-        <label>
+        <label data-type="none">
           <input type="radio" name="durationFilter" value="none" checked>
           No filter
         </label>
         <label>
           <input type="radio" name="durationFilter" value="less">
-          Less than
-          <input type="text" id="durationLess" placeholder="10:00" disabled>
+          <div class="input-container">
+            &lt; <input type="text" id="durationLess" placeholder="10:00" disabled>
+          </div>
         </label>
         <label>
           <input type="radio" name="durationFilter" value="greater">
-          Greater than
-          <input type="text" id="durationGreater" placeholder="5:00" disabled>
+          <div class="input-container">
+            &gt; <input type="text" id="durationGreater" placeholder="5:00" disabled>
+          </div>
         </label>
-        <label>
+        <label class="full-width">
           <input type="radio" name="durationFilter" value="custom">
-          Custom range
-          <input type="text" id="durationMin" placeholder="2:00" disabled>
-          to
-          <input type="text" id="durationMax" placeholder="10:00" disabled>
+          <div class="input-container">
+            Range <input type="text" id="durationMin" placeholder="2:00" disabled>
+            - <input type="text" id="durationMax" placeholder="10:00" disabled>
+          </div>
         </label>
       </div>
     </div>
 
     <div class="section">
-      <h3>📅 Upload Time Filter</h3>
+      <h3>📅 Upload Time</h3>
       <div class="filter-group">
-        <label>
+        <label data-type="none">
           <input type="radio" name="timeFilter" value="none" checked>
           No filter
         </label>
-        <label>
+        <label class="full-width">
           <input type="radio" name="timeFilter" value="less">
-          Less than
-          <input type="number" id="timeLess" placeholder="7" min="1" disabled>
-          <select id="timeLessUnit" disabled>
-            <option value="hours">hours ago</option>
-            <option value="days">days ago</option>
-            <option value="weeks">weeks ago</option>
-            <option value="months">months ago</option>
-            <option value="years">years ago</option>
-          </select>
-        </label>
-        <label>
-          <input type="radio" name="timeFilter" value="greater">
-          Greater than
-          <input type="number" id="timeGreater" placeholder="30" min="1" disabled>
-          <select id="timeGreaterUnit" disabled>
-            <option value="hours">hours ago</option>
-            <option value="days" selected>days ago</option>
-            <option value="weeks">weeks ago</option>
-            <option value="months">months ago</option>
-            <option value="years">years ago</option>
-          </select>
-        </label>
-        <label class="time-between-label">
-          <div class="time-between-header">
-            <input type="radio" name="timeFilter" value="between">
-            Between
+          <div class="input-container">
+            &lt; <input type="number" id="timeLess" placeholder="7" min="1" disabled>
+            <select id="timeLessUnit" disabled>
+              <option value="hours">hrs</option>
+              <option value="days">days</option>
+              <option value="weeks">wks</option>
+              <option value="months">mos</option>
+              <option value="years">yrs</option>
+            </select>
+            ago
           </div>
+        </label>
+        <label class="full-width">
+          <input type="radio" name="timeFilter" value="greater">
+          <div class="input-container">
+            &gt; <input type="number" id="timeGreater" placeholder="30" min="1" disabled>
+            <select id="timeGreaterUnit" disabled>
+              <option value="hours">hrs</option>
+              <option value="days" selected>days</option>
+              <option value="weeks">wks</option>
+              <option value="months">mos</option>
+              <option value="years">yrs</option>
+            </select>
+            ago
+          </div>
+        </label>
+        <label class="full-width">
+          <input type="radio" name="timeFilter" value="between">
           <div class="time-between-inputs">
-            <div class="time-input-row">
-              <input type="number" id="timeBetweenMin" placeholder="7" min="1" disabled>
+            <div class="input-container">
+              From <input type="number" id="timeBetweenMin" placeholder="7" min="1" disabled>
               <select id="timeBetweenMinUnit" disabled>
-                <option value="hours">hours ago</option>
-                <option value="days" selected>days ago</option>
-                <option value="weeks">weeks ago</option>
-                <option value="months">months ago</option>
-                <option value="years">years ago</option>
+                <option value="hours">hrs</option>
+                <option value="days" selected>days</option>
+                <option value="weeks">wks</option>
+                <option value="years">yrs</option>
               </select>
             </div>
-            <span class="time-between-and">and</span>
-            <div class="time-input-row">
-              <input type="number" id="timeBetweenMax" placeholder="30" min="1" disabled>
+            <div class="input-container">
+              To <input type="number" id="timeBetweenMax" placeholder="30" min="1" disabled>
               <select id="timeBetweenMaxUnit" disabled>
-                <option value="hours">hours ago</option>
-                <option value="days" selected>days ago</option>
-                <option value="weeks">weeks ago</option>
-                <option value="months">months ago</option>
-                <option value="years">years ago</option>
+                <option value="hours">hrs</option>
+                <option value="days" selected>days</option>
+                <option value="weeks">wks</option>
+                <option value="years">yrs</option>
               </select>
             </div>
           </div>
@@ -131,36 +133,23 @@
     </div>
 
     <div class="section">
-      <h3>🔍 Title Keyword Filter</h3>
-      <div class="filter-group">
-        <textarea id="titleKeywords" placeholder="Enter keywords separated by commas (e.g., music, tutorial, gaming)" rows="2"></textarea>
+      <h3>🔍 Keywords</h3>
+      <div class="filter-group-vertical">
+        <textarea id="titleKeywords" placeholder="Keywords (e.g. music, tutorial)" rows="2"></textarea>
         
         <label class="regex-option">
-          <input type="checkbox" id="useRegex">
-          Use Regular Expression (Regex)
+          <input type="checkbox" id="useRegex"> Regex Mode
         </label>
 
         <div class="keyword-logic-group" id="keywordLogicGroup">
-          <label>
-            <input type="radio" name="keywordLogic" value="AND" checked>
-            AND (video must contain ALL keywords)
-          </label>
-          <label>
-            <input type="radio" name="keywordLogic" value="OR">
-            OR (video must contain ANY keyword)
-          </label>
+          <label><input type="radio" name="keywordLogic" value="AND" checked> Match ALL</label>
+          <label><input type="radio" name="keywordLogic" value="OR"> Match ANY</label>
         </div>
+        
         <div class="keyword-mode-group">
-          <label>
-            <input type="radio" name="keywordMode" value="include" checked>
-            Include videos with keywords
-          </label>
-          <label>
-            <input type="radio" name="keywordMode" value="exclude">
-            Exclude videos with keywords
-          </label>
+          <label><input type="radio" name="keywordMode" value="include" checked> Include</label>
+          <label><input type="radio" name="keywordMode" value="exclude"> Exclude</label>
         </div>
-        <small id="keywordHelp">Leave empty to disable keyword filtering. Use commas to separate multiple keywords.</small>
       </div>
     </div>
 
