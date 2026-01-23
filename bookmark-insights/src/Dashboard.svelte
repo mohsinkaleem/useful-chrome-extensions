@@ -39,10 +39,7 @@
     validateBackup,
     createAutoBackup,
     listAutoBackups,
-    restoreFromAutoBackup,
-    // Platform backfill
-    backfillPlatformData,
-    getPlatformDataStats
+    restoreFromAutoBackup
   } from './db.js';
   
   // Import new insights functions
@@ -129,11 +126,6 @@
   let enrichmentBatchSize = 50;
   let enrichmentConcurrency = 5;
   let forceReenrich = false; // Force re-enrichment even for recently enriched bookmarks
-  
-  // Platform backfill state
-  let runningPlatformBackfill = false;
-  let platformBackfillProgress = null;
-  let platformBackfillResult = null;
   
   // Deep metadata analysis state
   let runningDeepAnalysis = false;
@@ -1011,30 +1003,6 @@
       enrichmentResult = { error: err.message };
     } finally {
       runningEnrichment = false;
-    }
-  }
-  
-  // Platform data backfill - parses URLs to extract platform/creator info without network requests
-  async function handlePlatformBackfill() {
-    runningPlatformBackfill = true;
-    platformBackfillProgress = null;
-    platformBackfillResult = null;
-    
-    try {
-      const result = await backfillPlatformData((processed, total) => {
-        platformBackfillProgress = { processed, total };
-      });
-      
-      platformBackfillResult = result;
-      
-      // Refresh data after backfill
-      await loadBookmarks(0, false);
-      
-    } catch (err) {
-      console.error('Error during platform backfill:', err);
-      platformBackfillResult = { error: err.message };
-    } finally {
-      runningPlatformBackfill = false;
     }
   }
   
@@ -2527,107 +2495,6 @@
             </div>
           </div>
           
-          <!-- Platform Data Backfill Panel -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-              <div>
-                <h3 class="text-lg font-medium text-gray-900">
-                  <span class="inline-block mr-2">📱</span>
-                  Platform Detection
-                </h3>
-                <p class="text-sm text-gray-500 mt-1">
-                  Extract platform, creator, and content type from bookmark URLs (no network requests)
-                </p>
-              </div>
-              <button
-                on:click={handlePlatformBackfill}
-                disabled={runningPlatformBackfill}
-                class="px-4 py-2 bg-pink-600 text-white text-sm rounded-md hover:bg-pink-700 disabled:opacity-50 flex-shrink-0"
-              >
-                {#if runningPlatformBackfill}
-                  <span class="flex items-center">
-                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing...
-                  </span>
-                {:else}
-                  Detect Platforms
-                {/if}
-              </button>
-            </div>
-            <div class="p-6">
-              <div class="text-sm text-gray-600 mb-4">
-                <p>Parses URLs to identify:</p>
-                <div class="flex flex-wrap gap-2 mt-2">
-                  <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">📺 YouTube</span>
-                  <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">💻 GitHub</span>
-                  <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">📝 Medium</span>
-                  <span class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">👨‍💻 dev.to</span>
-                  <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">📰 Substack</span>
-                  <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">🐦 Twitter</span>
-                  <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">🔴 Reddit</span>
-                  <span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs">📚 Stack Overflow</span>
-                  <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">📦 npm</span>
-                </div>
-              </div>
-              
-              <!-- Progress -->
-              {#if runningPlatformBackfill && platformBackfillProgress}
-                <div class="mb-4">
-                  <div class="flex justify-between text-sm text-gray-600 mb-1">
-                    <span>Processing bookmarks...</span>
-                    <span>{platformBackfillProgress.processed} / {platformBackfillProgress.total}</span>
-                  </div>
-                  <div class="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      class="bg-pink-600 h-2 rounded-full transition-all duration-300"
-                      style="width: {(platformBackfillProgress.processed / platformBackfillProgress.total) * 100}%"
-                    ></div>
-                  </div>
-                </div>
-              {/if}
-              
-              <!-- Results -->
-              {#if platformBackfillResult}
-                <div class="p-4 rounded-lg {platformBackfillResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}">
-                  {#if platformBackfillResult.error}
-                    <div class="text-red-700 text-sm">
-                      <strong>Error:</strong> {platformBackfillResult.error}
-                    </div>
-                  {:else}
-                    <div class="text-green-700 text-sm space-y-2">
-                      <div class="font-medium">✅ Platform Detection Complete!</div>
-                      <div class="flex flex-wrap gap-4 text-xs">
-                        <span>Processed: <strong>{platformBackfillResult.processed}</strong></span>
-                        <span>Updated: <strong>{platformBackfillResult.updated}</strong></span>
-                        {#if platformBackfillResult.errors > 0}
-                          <span class="text-orange-600">Errors: {platformBackfillResult.errors}</span>
-                        {/if}
-                      </div>
-                      {#if platformBackfillResult.platforms && Object.keys(platformBackfillResult.platforms).length > 0}
-                        <div class="mt-2 pt-2 border-t border-green-200">
-                          <div class="text-xs text-green-600 mb-1">Platforms detected:</div>
-                          <div class="flex flex-wrap gap-1">
-                            {#each Object.entries(platformBackfillResult.platforms) as [platform, count]}
-                              <span class="px-2 py-0.5 bg-white rounded text-xs">{platform}: {count}</span>
-                            {/each}
-                          </div>
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {:else if !runningPlatformBackfill}
-                <p class="text-gray-500 text-sm">
-                  Click "Detect Platforms" to parse all bookmark URLs and extract platform-specific data.
-                  This enables filtering by platform, channel, repo, and more.
-                </p>
-              {/if}
-            </div>
-          </div>
-          
           <!-- Deep Content Analysis Section -->
           <div class="bg-white rounded-lg shadow">
             <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -2637,7 +2504,7 @@
                   Deep Content Analysis
                 </h3>
                 <p class="text-sm text-gray-500 mt-1">
-                  Analyze existing metadata to extract reading time, publish date, quality score, and smart tags (no network requests)
+                  Analyze existing metadata to extract reading time, publish date, quality score, smart tags, and topics (no network requests)
                 </p>
               </div>
               <button
@@ -2686,8 +2553,8 @@
                   <div class="flex items-start gap-2">
                     <span class="text-lg">🏷️</span>
                     <div>
-                      <div class="font-medium text-gray-800">Smart Tags</div>
-                      <div class="text-xs text-gray-500">Auto-generated topic keywords</div>
+                      <div class="font-medium text-gray-800">Smart Tags & Topics</div>
+                      <div class="text-xs text-gray-500">Auto-generated keywords and topic classification</div>
                     </div>
                   </div>
                 </div>

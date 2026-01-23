@@ -474,11 +474,11 @@
             </button>
           </div>
         {/if}
-        <div class="grid grid-cols-1 gap-1 max-h-64 overflow-y-auto pr-1">
+        <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
           {#each displayDomains.slice(0, domainDisplayLimit) as domainData}
             <button
               on:click={() => toggleDomainFilter(domainData.domain)}
-              class="w-full text-left px-1 py-0.5 text-sm hover:bg-gray-100 rounded border flex items-center justify-between"
+              class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
               class:bg-blue-50={isFilterActive('domains', domainData.domain)}
               class:text-blue-700={isFilterActive('domains', domainData.domain)}
               class:border-blue-200={isFilterActive('domains', domainData.domain)}
@@ -486,10 +486,8 @@
               class:border-transparent={!isFilterActive('domains', domainData.domain)}
               title={domainData.domain}
             >
-              <span class="truncate font-medium text-xs">{domainData.domain}</span>
-              <div class="flex items-center text-[10px] text-gray-400 ml-2">
-                <span>{domainData.count}</span>
-              </div>
+              <span class="font-medium">{domainData.domain}</span>
+              <span class="text-[10px] text-gray-400">{domainData.count}</span>
             </button>
           {/each}
           {#if displayDomains.length > domainDisplayLimit}
@@ -520,11 +518,11 @@
         <span class="text-gray-400">{sectionsExpanded.folders ? '▼' : '▶'}</span>
       </button>
       {#if sectionsExpanded.folders}
-        <div class="grid grid-cols-1 gap-1 max-h-64 overflow-y-auto pr-1">
+        <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
           {#each displayFolders.slice(0, folderDisplayLimit) as folderData}
             <button
               on:click={() => toggleFolderFilter(folderData.folder)}
-              class="w-full text-left px-2 py-1 text-sm hover:bg-gray-100 rounded border flex items-center justify-between"
+              class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
               class:bg-green-50={isFilterActive('folders', folderData.folder)}
               class:text-green-700={isFilterActive('folders', folderData.folder)}
               class:border-green-200={isFilterActive('folders', folderData.folder)}
@@ -532,8 +530,8 @@
               class:border-transparent={!isFilterActive('folders', folderData.folder)}
               title={folderData.folder}
             >
-              <span class="truncate block text-xs">📁 {folderData.folder.toLowerCase().replace("bookmarks","")}</span>
-              <span class="text-[10px] text-gray-400 ml-1">{folderData.count}</span>
+              <span class="font-medium">📁 {folderData.folder.toLowerCase().replace("bookmarks","")}</span>
+              <span class="text-[10px] text-gray-400">{folderData.count}</span>
             </button>
           {/each}
           {#if displayFolders.length > folderDisplayLimit}
@@ -559,18 +557,18 @@
           <span class="text-gray-400">{sectionsExpanded.topics ? '▼' : '▶'}</span>
         </button>
         {#if sectionsExpanded.topics}
-          <div class="grid grid-cols-1 gap-1 max-h-64 overflow-y-auto pr-1">
+          <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
             {#each displayTopics.slice(0, topicDisplayLimit) as t}
               <button
                 on:click={() => toggleTopicFilter(t.topic)}
-                class="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded border flex items-center justify-between"
+                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
                 class:bg-indigo-50={isFilterActive('topics', t.topic)}
                 class:text-indigo-700={isFilterActive('topics', t.topic)}
                 class:border-indigo-200={isFilterActive('topics', t.topic)}
                 class:text-gray-600={!isFilterActive('topics', t.topic)}
                 class:border-transparent={!isFilterActive('topics', t.topic)}
               >
-                <span class="text-xs">{getTopicDisplayName(t.topic)}</span>
+                <span class="font-medium">{getTopicDisplayName(t.topic)}</span>
                 <span class="text-[10px] text-gray-400">{t.count}</span>
               </button>
             {/each}
@@ -598,22 +596,20 @@
           <span class="text-gray-400">{sectionsExpanded.creators ? '▼' : '▶'}</span>
         </button>
         {#if sectionsExpanded.creators}
-          <div class="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto pr-1">
+          <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
             {#each displayCreators.slice(0, creatorDisplayLimit) as c}
               {@const isSelected = isFilterActive('creators', `${c.platform}:${c.creator}`)}
               <button
                 on:click={() => toggleCreatorFilter(c.creator, c.platform)}
-                class="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded border"
+                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
                 class:bg-pink-50={isSelected}
                 class:text-pink-700={isSelected}
                 class:border-pink-200={isSelected}
                 class:text-gray-600={!isSelected}
                 class:border-transparent={!isSelected}
               >
-                <div class="flex items-center justify-between">
-                  <span class="truncate text-xs">👤 {c.creator}</span>
-                  <span class="text-[10px] text-gray-400 ml-1">{c.count}</span>
-                </div>
+                <span class="font-medium">👤 {c.creator}</span>
+                <span class="text-[10px] text-gray-400">{c.count}</span>
               </button>
             {/each}
             {#if displayCreators.length > creatorDisplayLimit}
@@ -640,18 +636,18 @@
           <span class="text-gray-400">{sectionsExpanded.contentTypes ? '▼' : '▶'}</span>
         </button>
         {#if sectionsExpanded.contentTypes}
-          <div class="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto pr-1">
+          <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
             {#each displayContentTypes.slice(0, contentTypeDisplayLimit) as ct}
               <button
                 on:click={() => toggleContentTypeFilter(ct.type)}
-                class="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded border flex items-center justify-between"
+                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
                 class:bg-orange-50={isFilterActive('types', ct.type)}
                 class:text-orange-700={isFilterActive('types', ct.type)}
                 class:border-orange-200={isFilterActive('types', ct.type)}
                 class:text-gray-600={!isFilterActive('types', ct.type)}
                 class:border-transparent={!isFilterActive('types', ct.type)}
               >
-                <span class="text-xs">{getContentTypeDisplayName(ct.type)}</span>
+                <span class="font-medium">{getContentTypeDisplayName(ct.type)}</span>
                 <span class="text-[10px] text-gray-400">{ct.count}</span>
               </button>
             {/each}

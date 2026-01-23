@@ -3,7 +3,6 @@
 
 import { getSettings, getNextEnrichmentBatch, removeFromEnrichmentQueue, upsertBookmark, getBookmark, logEvent } from './db.js';
 import { parseBookmarkUrl } from './url-parsers.js';
-import { detectTopics } from './topics.js';
 
 // Domain-based categorization rules
 const CATEGORY_RULES = {
@@ -119,10 +118,9 @@ export async function enrichBookmark(bookmarkId, options = {}) {
         bookmark.contentType = platformData.type;
         bookmark.platformData = platformData;
       }
-      // Detect topics from available metadata even for dead links
-      bookmark.topics = detectTopics(bookmark);
+      // Topics will be detected separately via Deep Analysis
       await upsertBookmark(bookmark);
-      await logEvent(bookmarkId, 'enrichment', { isAlive: false, topics: bookmark.topics });
+      await logEvent(bookmarkId, 'enrichment', { isAlive: false });
       return { success: true, isAlive: false, skipped: true };
     }
 
@@ -153,15 +151,14 @@ export async function enrichBookmark(bookmarkId, options = {}) {
       bookmark.platformData = enrichedPlatformData;
     }
 
-    // Detect and assign topics based on all available metadata
-    bookmark.topics = detectTopics(bookmark);
+    // Topics will be detected separately via Deep Analysis - not during enrichment
+    // This keeps enrichment fast and allows users to control when topics are generated
 
     await upsertBookmark(bookmark);
     await logEvent(bookmarkId, 'enrichment', { 
       success: true, 
       category,
       platform: enrichedPlatformData?.platform,
-      topics: bookmark.topics,
       hasDescription: !!metadata.description 
     });
 
@@ -835,10 +832,12 @@ export { CATEGORY_RULES, PATH_PATTERNS, CONTENT_KEYWORDS };
 
 import { analyzeBookmarkMetadata } from './metadata-analyzer.js';
 import { enhanceWithSchemaOrg } from './url-parsers.js';
+import { detectTopics } from './topics.js';
 
 /**
  * Re-analyze a bookmark's existing rawMetadata to extract deep insights
  * This does NOT make network requests - it only processes existing data
+ * Includes topic detection which is now done separately from enrichment
  * @param {Object} bookmark - Full bookmark object with rawMetadata
  * @returns {Object} - Updated bookmark object with new analysis fields
  */
@@ -861,6 +860,9 @@ export async function reanalyzeBookmark(bookmark) {
     bookmark.contentQualityScore = analysis.contentQualityScore;
     bookmark.smartTags = analysis.smartTags;
 
+    // Detect and assign topics based on all available metadata
+    bookmark.topics = detectTopics(bookmark);
+
     // Enhance platform data with Schema.org if available
     if (bookmark.rawMetadata && bookmark.platformData) {
       const enhancedPlatformData = enhanceWithSchemaOrg(bookmark.platformData, bookmark.rawMetadata);
@@ -873,14 +875,15 @@ export async function reanalyzeBookmark(bookmark) {
     // Save updated bookmark
     await upsertBookmark(bookmark);
     
-    console.log(`Re-analyzed bookmark: ${bookmark.title} - Quality: ${analysis.contentQualityScore}, Reading time: ${analysis.readingTime || 'N/A'} min`);
+    console.log(`Re-analyzed bookmark: ${bookmark.title} - Quality: ${analysis.contentQualityScore}, Topics: ${bookmark.topics?.length || 0}, Reading time: ${analysis.readingTime || 'N/A'} min`);
     
     return { 
       success: true, 
       readingTime: analysis.readingTime,
       publishedDate: analysis.publishedDate,
       contentQualityScore: analysis.contentQualityScore,
-      smartTagsCount: analysis.smartTags?.length || 0
+      smartTagsCount: analysis.smartTags?.length || 0,
+      topicsCount: bookmark.topics?.length || 0
     };
   } catch (error) {
     console.error(`Error re-analyzing bookmark ${bookmark.id}:`, error);
