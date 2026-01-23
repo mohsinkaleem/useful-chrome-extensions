@@ -70,6 +70,9 @@
   let loading = true;
   let error = null;
   
+  // Dark mode state
+  let darkMode = false;
+  
   // Initialize currentView from URL hash for persistence across refreshes
   function getViewFromHash() {
     const hash = window.location.hash.replace('#', '');
@@ -189,8 +192,28 @@
   let multiSelectMode = false;
   let viewMode = 'list'; // 'list' or 'card'
   
+  // Dark mode functions
+  function applyDarkMode(enabled) {
+    if (enabled) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }
+  
+  async function toggleDarkMode() {
+    darkMode = !darkMode;
+    applyDarkMode(darkMode);
+    await chrome.storage.local.set({ darkMode });
+  }
+  
   onMount(async () => {
     try {
+      // Load dark mode preference
+      const stored = await chrome.storage.local.get('darkMode');
+      darkMode = stored.darkMode || false;
+      applyDarkMode(darkMode);
+      
       // Handle hash changes for navigation
       window.addEventListener('hashchange', () => {
         const newView = getViewFromHash();
@@ -1804,16 +1827,16 @@
   <title>Bookmark Insight Dashboard</title>
 </svelte:head>
 
-<div class="min-h-screen bg-gray-50">
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
   <!-- Header -->
-  <header class="bg-white shadow-sm border-b border-gray-200">
+  <header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex justify-between items-center py-4">
         <div class="flex items-center space-x-4">
-          <h1 class="text-2xl font-bold text-gray-900">Bookmark Insight</h1>
+          <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Bookmark Insight</h1>
           <button
             on:click={handleExportBookmarks}
-            class="px-3 py-1 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+            class="px-3 py-1 text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
             title="Export bookmarks to JSON"
           >
             <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1823,49 +1846,52 @@
           </button>
         </div>
         
-        <!-- Navigation -->
-        <nav class="flex space-x-4">
+        <div class="flex items-center space-x-4">
+          <!-- Dark Mode Toggle -->
           <button
-            on:click={() => switchView('bookmarks')}
-            class="px-4 py-2 rounded-md text-sm font-medium"
-            class:bg-blue-100={currentView === 'bookmarks'}
-            class:text-blue-700={currentView === 'bookmarks'}
-            class:text-gray-500={currentView !== 'bookmarks'}
-            class:hover:text-gray-700={currentView !== 'bookmarks'}
+            on:click={toggleDarkMode}
+            class="p-2 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            Bookmarks
+            {#if darkMode}
+              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+              </svg>
+            {:else}
+              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+              </svg>
+            {/if}
           </button>
-          <button
-            on:click={() => switchView('insights')}
-            class="px-4 py-2 rounded-md text-sm font-medium"
-            class:bg-blue-100={currentView === 'insights'}
-            class:text-blue-700={currentView === 'insights'}
-            class:text-gray-500={currentView !== 'insights'}
-            class:hover:text-gray-700={currentView !== 'insights'}
-          >
-            Insights
-          </button>
-          <button
-            on:click={() => switchView('health')}
-            class="px-4 py-2 rounded-md text-sm font-medium"
-            class:bg-blue-100={currentView === 'health'}
-            class:text-blue-700={currentView === 'health'}
-            class:text-gray-500={currentView !== 'health'}
-            class:hover:text-gray-700={currentView !== 'health'}
-          >
-            Health
-          </button>
-          <button
-            on:click={() => switchView('dataExplorer')}
-            class="px-4 py-2 rounded-md text-sm font-medium"
-            class:bg-blue-100={currentView === 'dataExplorer'}
-            class:text-blue-700={currentView === 'dataExplorer'}
-            class:text-gray-500={currentView !== 'dataExplorer'}
-            class:hover:text-gray-700={currentView !== 'dataExplorer'}
-          >
-            🗄️ Data
-          </button>
-        </nav>
+          
+          <!-- Navigation -->
+          <nav class="flex space-x-4">
+            <button
+              on:click={() => switchView('bookmarks')}
+              class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'bookmarks' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
+            >
+              Bookmarks
+            </button>
+            <button
+              on:click={() => switchView('insights')}
+              class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'insights' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
+            >
+              Insights
+            </button>
+            <button
+              on:click={() => switchView('health')}
+              class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'health' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
+            >
+              Health
+            </button>
+            <button
+              on:click={() => switchView('dataExplorer')}
+              class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView === 'dataExplorer' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
+            >
+              🗄️ Data
+            </button>
+          </nav>
+        </div>
       </div>
     </div>
   </header>
@@ -1884,10 +1910,10 @@
         <div class="flex-1 min-w-0 overflow-hidden">
           {#if loading}
             <div class="flex items-center justify-center h-64">
-              <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>
             </div>
           {:else if error}
-            <div class="text-center text-red-600 p-8">
+            <div class="text-center text-red-600 dark:text-red-400 p-8">
               <p>Error: {error}</p>
               <button
                 on:click={() => loadBookmarks(0, false)}
@@ -1897,7 +1923,7 @@
               </button>
             </div>
           {:else if bookmarks.length === 0}
-            <div class="text-center text-gray-500 p-8">
+            <div class="text-center text-gray-500 dark:text-gray-400 p-8">
               {#if $searchQueryStore}
                 <p>No bookmarks found for "{$searchQueryStore}"</p>
               {:else}
@@ -1908,7 +1934,7 @@
             <div class="mb-4 flex flex-col gap-4">
               <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div class="flex items-center gap-3">
-                  <h2 class="text-lg font-medium text-gray-900">
+                  <h2 class="text-lg font-medium text-gray-900 dark:text-gray-100">
                     {totalCount} bookmark{totalCount !== 1 ? 's' : ''}
                   </h2>
                 </div>
@@ -1921,7 +1947,7 @@
                   <select
                     bind:value={currentSortBy}
                     on:change={(e) => handleSortChange(e.target.value)}
-                    class="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white"
+                    class="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-blue-500 focus:border-blue-500"
                   >
                     {#each Object.values(SORT_OPTIONS) as option}
                       <option value={option.key}>{option.label}</option>
@@ -1931,10 +1957,7 @@
                   <!-- Multi-Select Toggle -->
                   <button
                     on:click={toggleMultiSelectMode}
-                    class="px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-                    class:bg-blue-50={multiSelectMode}
-                    class:border-blue-300={multiSelectMode}
-                    class:text-blue-700={multiSelectMode}
+                    class="px-3 py-2 text-sm border rounded-md transition-colors {multiSelectMode ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300' : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'}"
                   >
                     {multiSelectMode ? 'Cancel' : 'Select'}
                   </button>
@@ -1942,7 +1965,7 @@
                   <!-- View Mode Toggle -->
                   <button
                     on:click={toggleViewMode}
-                    class="p-2 text-gray-500 hover:text-gray-700 border border-gray-300 rounded-md"
+                    class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-600 rounded-md transition-colors"
                     title="Toggle view mode"
                   >
                     {#if viewMode === 'list'}
@@ -1961,13 +1984,13 @@
               <!-- Active Filters Chips -->
               {#if $activeFilters.domains.length > 0 || $activeFilters.folders.length > 0 || $activeFilters.dateRange || $searchQueryStore || $activeFilters.tags.length > 0 || $activeFilters.topics.length > 0 || $activeFilters.types.length > 0 || $activeFilters.creators.length > 0 || $activeFilters.deadLinks || $activeFilters.stale}
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm text-gray-500 mr-1">Filters:</span>
+                  <span class="text-sm text-gray-500 dark:text-gray-400 mr-1">Filters:</span>
                   
                   <!-- Search Query Chip -->
                   {#if $searchQueryStore}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                       Search: {$searchQueryStore}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-blue-400 hover:text-blue-600 focus:outline-none" on:click={() => searchQueryStore.set('')}>
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-blue-400 dark:text-blue-500 hover:text-blue-600 dark:hover:text-blue-300 focus:outline-none" on:click={() => searchQueryStore.set('')}>
                         <span class="sr-only">Remove search filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
@@ -1976,9 +1999,9 @@
 
                   <!-- Domain Chips -->
                   {#each $activeFilters.domains as domain}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800">
                       Domain: {domain}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-green-400 hover:text-green-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('domains', domain)}>
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-green-400 dark:text-green-500 hover:text-green-600 dark:hover:text-green-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('domains', domain)}>
                         <span class="sr-only">Remove domain filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
@@ -1987,9 +2010,9 @@
 
                   <!-- Folder Chips -->
                   {#each $activeFilters.folders as folder}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800">
                       Folder: {folder}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-yellow-400 hover:text-yellow-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('folders', folder)}>
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-yellow-400 dark:text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('folders', folder)}>
                         <span class="sr-only">Remove folder filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
@@ -1998,9 +2021,9 @@
 
                   <!-- Topic Chips -->
                   {#each $activeFilters.topics as topic}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                       Topic: {topic}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-indigo-400 hover:text-indigo-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('topics', topic)}>
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('topics', topic)}>
                         <span class="sr-only">Remove topic filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
@@ -2009,9 +2032,9 @@
 
                   <!-- Type Chips -->
                   {#each $activeFilters.types as type}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                       Type: {type}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-purple-400 hover:text-purple-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('types', type)}>
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-purple-400 dark:text-purple-500 hover:text-purple-600 dark:hover:text-purple-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('types', type)}>
                         <span class="sr-only">Remove type filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
@@ -2020,9 +2043,9 @@
 
                   <!-- Creator Chips -->
                   {#each $activeFilters.creators as creator}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 border border-pink-200 dark:border-pink-800">
                       Creator: {creator.creator}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-pink-400 hover:text-pink-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('creators', creator)}>
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-pink-400 dark:text-pink-500 hover:text-pink-600 dark:hover:text-pink-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('creators', creator)}>
                         <span class="sr-only">Remove creator filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
@@ -2031,9 +2054,9 @@
 
                   <!-- Tag Chips -->
                   {#each $activeFilters.tags as tag}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
                       Tag: {tag}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-gray-400 hover:text-gray-600 focus:outline-none" on:click={() => activeFilters.toggleFilter('tags', tag)}>
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('tags', tag)}>
                         <span class="sr-only">Remove tag filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
@@ -2140,21 +2163,21 @@
 
             <!-- Multi-Select Toolbar -->
             {#if multiSelectMode}
-              <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <div class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div class="flex flex-wrap items-center gap-2 sm:gap-4">
-                    <span class="text-sm text-blue-700">
+                    <span class="text-sm text-blue-700 dark:text-blue-300">
                       {$selectedBookmarks.size} selected
                     </span>
                     <button
                       on:click={selectAllBookmarks}
-                      class="text-sm text-blue-600 hover:text-blue-800"
+                      class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
                     >
                       Select All
                     </button>
                     <button
                       on:click={deselectAllBookmarks}
-                      class="text-sm text-blue-600 hover:text-blue-800"
+                      class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
                     >
                       Deselect All
                     </button>
@@ -2181,7 +2204,7 @@
             
             <!-- Bookmarks Display -->
             {#if viewMode === 'list'}
-              <div class="bg-white rounded-lg shadow overflow-hidden">
+              <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700 transition-colors">
                 <div class="max-w-full overflow-x-auto">
                   {#each bookmarks as bookmark (bookmark.id)}
                     <BookmarkListItem 
@@ -2248,51 +2271,51 @@
           <!-- Quick Stats Summary -->
           {#if quickStats}
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              <div class="bg-white p-4 rounded-lg shadow text-center">
-                <div class="text-2xl font-bold text-blue-600">{quickStats.total}</div>
-                <div class="text-xs text-gray-500">Total Bookmarks</div>
+              <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow text-center transition-colors">
+                <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{quickStats.total}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Total Bookmarks</div>
               </div>
-              <div class="bg-white p-4 rounded-lg shadow text-center">
-                <div class="text-2xl font-bold text-red-600">{quickStats.duplicateGroups}</div>
-                <div class="text-xs text-gray-500">Duplicate Groups</div>
+              <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow text-center transition-colors">
+                <div class="text-2xl font-bold text-red-600 dark:text-red-400">{quickStats.duplicateGroups}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Duplicate Groups</div>
               </div>
-              <div class="bg-white p-4 rounded-lg shadow text-center">
-                <div class="text-2xl font-bold text-orange-600">{quickStats.deadLinks}</div>
-                <div class="text-xs text-gray-500">Dead Links</div>
+              <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow text-center transition-colors">
+                <div class="text-2xl font-bold text-orange-600 dark:text-orange-400">{quickStats.deadLinks}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Dead Links</div>
               </div>
-              <div class="bg-white p-4 rounded-lg shadow text-center">
-                <div class="text-2xl font-bold text-purple-600">{quickStats.uniqueDomains}</div>
-                <div class="text-xs text-gray-500">Unique Domains</div>
+              <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow text-center transition-colors">
+                <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">{quickStats.uniqueDomains}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Unique Domains</div>
               </div>
-              <div class="bg-white p-4 rounded-lg shadow text-center">
-                <div class="text-2xl font-bold text-green-600">{quickStats.addedThisWeek}</div>
-                <div class="text-xs text-gray-500">Added This Week</div>
+              <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow text-center transition-colors">
+                <div class="text-2xl font-bold text-green-600 dark:text-green-400">{quickStats.addedThisWeek}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Added This Week</div>
               </div>
-              <div class="bg-white p-4 rounded-lg shadow text-center">
-                <div class="text-2xl font-bold text-cyan-600">{quickStats.addedThisMonth}</div>
-                <div class="text-xs text-gray-500">Added This Month</div>
+              <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow text-center transition-colors">
+                <div class="text-2xl font-bold text-cyan-600 dark:text-cyan-400">{quickStats.addedThisMonth}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Added This Month</div>
               </div>
             </div>
           {/if}
           
           <!-- Enrichment Panel -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow transition-colors">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
               <div>
-                <h3 class="text-lg font-medium text-gray-900">
-                  <svg class="w-5 h-5 inline-block mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                  <svg class="w-5 h-5 inline-block mr-2 text-purple-500 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
                   </svg>
                   Bookmark Enrichment
                 </h3>
-                <p class="text-sm text-gray-500 mt-1">
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                   Fetch metadata (descriptions, categories, keywords) for your bookmarks
                 </p>
               </div>
               <button
                 on:click={handleRunEnrichment}
                 disabled={runningEnrichment}
-                class="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 flex-shrink-0"
+                class="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 flex-shrink-0 transition-colors"
               >
                 {#if runningEnrichment}
                   <span class="flex items-center">
@@ -2309,32 +2332,32 @@
             </div>
             <div class="p-6">
               {#if enrichmentStatus}
-                <div class="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                <div class="mb-4 p-4 bg-purple-50 dark:bg-purple-900/10 rounded-lg border border-purple-200 dark:border-purple-800/30">
                   <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div class="text-center">
-                      <div class="text-xl font-bold text-purple-700">{enrichmentStatus.pendingCount || enrichmentStatus.queueSize || 0}</div>
-                      <div class="text-xs text-purple-600">Pending Enrichment</div>
+                      <div class="text-xl font-bold text-purple-700 dark:text-purple-300">{enrichmentStatus.pendingCount || enrichmentStatus.queueSize || 0}</div>
+                      <div class="text-xs text-purple-600 dark:text-purple-400">Pending Enrichment</div>
                     </div>
                     <div class="text-center">
-                      <div class="text-xl font-bold text-green-700">{enrichmentStatus.enrichedCount || 0}</div>
-                      <div class="text-xs text-green-600">Successfully Enriched</div>
+                      <div class="text-xl font-bold text-green-700 dark:text-green-300">{enrichmentStatus.enrichedCount || 0}</div>
+                      <div class="text-xs text-green-600 dark:text-green-400">Successfully Enriched</div>
                     </div>
                     <div class="text-center">
-                      <div class="text-xl font-bold text-blue-700">{enrichmentStatus.totalBookmarks || 0}</div>
-                      <div class="text-xs text-blue-600">Total HTTP Bookmarks</div>
+                      <div class="text-xl font-bold text-blue-700 dark:text-blue-300">{enrichmentStatus.totalBookmarks || 0}</div>
+                      <div class="text-xs text-blue-600 dark:text-blue-400">Total HTTP Bookmarks</div>
                     </div>
                     <div class="text-center">
-                      <div class="text-xl font-bold {enrichmentStatus.enabled ? 'text-green-700' : 'text-gray-500'}">
+                      <div class="text-xl font-bold {enrichmentStatus.enabled ? 'text-green-700 dark:text-green-400' : 'text-gray-500 dark:text-gray-500'}">
                         {enrichmentStatus.enabled ? '✓' : '○'}
                       </div>
-                      <div class="text-xs {enrichmentStatus.enabled ? 'text-green-600' : 'text-gray-500'}">
+                      <div class="text-xs {enrichmentStatus.enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-500'}">
                         {enrichmentStatus.enabled ? 'System Enabled' : 'System Disabled'}
                       </div>
                     </div>
                   </div>
                   {#if enrichmentStatus.pendingCount > 0 && enrichmentStatus.totalBookmarks > 0}
                     <div class="mt-3">
-                      <div class="flex justify-between text-xs text-purple-600 mb-1">
+                      <div class="flex justify-between text-xs text-purple-600 dark:text-purple-400 mb-1">
                         <span>Overall Coverage</span>
                         <span>{((enrichmentStatus.enrichedCount / enrichmentStatus.totalBookmarks) * 100).toFixed(1)}%</span>
                       </div>
@@ -2349,8 +2372,8 @@
                 </div>
               {/if}
               
-              <div class="mb-4 text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200">
-                <p class="font-medium mb-1">How it works:</p>
+              <div class="mb-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-200 dark:border-gray-700">
+                <p class="font-medium mb-1 dark:text-gray-300">How it works:</p>
                 <ul class="list-disc list-inside space-y-1 text-xs">
                   {#if forceReenrich}
                     <li><strong>Force Mode:</strong> Will re-download metadata for {enrichmentBatchSize} bookmarks, starting with unenriched ones, then oldest checked.</li>
@@ -2365,33 +2388,33 @@
               <!-- Enrichment Configuration -->
               <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Batch Size
-                    <span class="text-xs text-gray-500 font-normal">(how many bookmarks to process)</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-500 font-normal">(how many bookmarks to process)</span>
                     <input 
                       type="number" 
                       min="5" 
                       max="200" 
                       bind:value={enrichmentBatchSize}
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      class="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       disabled={runningEnrichment}
                     />
                   </label>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Concurrency
-                    <span class="text-xs text-gray-500 font-normal">(parallel requests)</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-500 font-normal">(parallel requests)</span>
                     <input 
                       type="number" 
                       min="1" 
                       max="20" 
                       bind:value={enrichmentConcurrency}
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      class="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       disabled={runningEnrichment}
                     />
                   </label>
-                  <p class="text-xs text-gray-500 mt-1">
+                  <p class="text-xs text-gray-500 dark:text-gray-500 mt-1">
                     Higher = faster, but more resource intensive (recommended: 5-10)
                   </p>
                 </div>
@@ -2400,16 +2423,16 @@
                     <input 
                       type="checkbox" 
                       bind:checked={forceReenrich}
-                      class="mt-0.5 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                      class="mt-0.5 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 dark:border-gray-600 rounded"
                       disabled={runningEnrichment}
                     />
                     <div>
-                      <span class="text-sm font-medium text-gray-700">Force Re-enrich</span>
-                      <p class="text-xs text-gray-500 mt-0.5">
+                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Force Re-enrich</span>
+                      <p class="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
                         Re-fetch metadata for bookmarks even if already enriched. Bypasses the queue and processes {enrichmentBatchSize} bookmarks directly.
                       </p>
                       {#if forceReenrich}
-                        <p class="text-xs text-purple-600 mt-1 font-medium">
+                        <p class="text-xs text-purple-600 dark:text-purple-400 mt-1 font-medium">
                           ⚡ Will process unenriched bookmarks first, then oldest enriched
                         </p>
                       {/if}
@@ -2420,29 +2443,29 @@
               
               <!-- Real-time Progress Display -->
               {#if enrichmentProgress && runningEnrichment}
-                <div class="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                   <div class="mb-3">
                     <div class="flex justify-between items-center mb-2">
-                      <span class="text-sm font-medium text-blue-900">Processing...</span>
-                      <span class="text-sm text-blue-700">
+                      <span class="text-sm font-medium text-blue-900 dark:text-blue-300">Processing...</span>
+                      <span class="text-sm text-blue-700 dark:text-blue-400">
                         {enrichmentProgress.completed || enrichmentProgress.current} / {enrichmentProgress.total} completed
                       </span>
                     </div>
-                    <div class="w-full bg-blue-200 rounded-full h-2">
+                    <div class="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
                       <div 
-                        class="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                        class="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all duration-300" 
                         style="width: {((enrichmentProgress.completed || enrichmentProgress.current) / enrichmentProgress.total * 100)}%"
                       ></div>
                     </div>
                   </div>
                   
                   {#if enrichmentProgress.title}
-                    <div class="text-xs text-blue-800 space-y-1">
+                    <div class="text-xs text-blue-800 dark:text-blue-200 space-y-1">
                       <div class="font-medium truncate" title="{enrichmentProgress.url}">
                         {enrichmentProgress.status === 'processing' ? '⏳' : enrichmentProgress.status === 'completed' ? '✓' : '✗'} 
                         {enrichmentProgress.title}
                       </div>
-                      <div class="text-blue-600 truncate text-[10px]">{enrichmentProgress.url}</div>
+                      <div class="text-blue-600 dark:text-blue-400 truncate text-[10px]">{enrichmentProgress.url}</div>
                     </div>
                   {/if}
                 </div>
@@ -2450,21 +2473,21 @@
 
               <!-- Results Display -->
               {#if enrichmentResult}
-                <div class="mt-4 p-4 rounded-lg {enrichmentResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}">
+                <div class="mt-4 p-4 rounded-lg {enrichmentResult.error ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'}">
                   {#if enrichmentResult.error}
-                    <div class="text-red-700 text-sm">
+                    <div class="text-red-700 dark:text-red-400 text-sm">
                       <strong>Error:</strong> {enrichmentResult.error}
                     </div>
                   {:else}
-                    <div class="text-green-700 text-sm space-y-1">
-                      <div><strong>Enrichment Complete!</strong></div>
+                    <div class="text-green-700 dark:text-green-400 text-sm space-y-1">
+                      <div><strong class="dark:text-green-300">Enrichment Complete!</strong></div>
                       <div>Processed: {enrichmentResult.processed || 0} bookmarks</div>
                       <div>Successful: {enrichmentResult.success || 0}</div>
                       {#if enrichmentResult.failed > 0}
-                        <div class="text-orange-600">Failed: {enrichmentResult.failed}</div>
+                        <div class="text-orange-600 dark:text-orange-400">Failed: {enrichmentResult.failed}</div>
                       {/if}
                       {#if enrichmentResult.skipped > 0}
-                        <div class="text-gray-600">Skipped (already enriched): {enrichmentResult.skipped}</div>
+                        <div class="text-gray-600 dark:text-gray-400">Skipped (already enriched): {enrichmentResult.skipped}</div>
                       {/if}
                     </div>
                   {/if}
@@ -2474,11 +2497,11 @@
               <!-- Progress Logs (collapsible) -->
               {#if enrichmentLogs.length > 0}
                 <details class="mt-4">
-                  <summary class="cursor-pointer text-sm text-gray-600 hover:text-gray-800 font-medium">View Detailed Logs ({enrichmentLogs.length})</summary>
-                  <div class="mt-2 max-h-64 overflow-y-auto bg-gray-50 rounded p-3 space-y-1 text-xs font-mono">
+                  <summary class="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 font-medium transition-colors">View Detailed Logs ({enrichmentLogs.length})</summary>
+                  <div class="mt-2 max-h-64 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 rounded p-3 space-y-1 text-xs font-mono border border-gray-200 dark:border-gray-700">
                     {#each enrichmentLogs.slice().reverse() as log}
-                      <div class="{log.status === 'completed' ? 'text-green-700' : log.status === 'failed' || log.status === 'error' ? 'text-red-700' : 'text-gray-600'}">
-                        <span class="text-gray-400">{new Date(log.timestamp).toLocaleTimeString()}</span> 
+                      <div class="{log.status === 'completed' ? 'text-green-700 dark:text-green-400' : log.status === 'failed' || log.status === 'error' ? 'text-red-700 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}">
+                        <span class="text-gray-400 dark:text-gray-500">{new Date(log.timestamp).toLocaleTimeString()}</span> 
                         [{log.current}/{log.total}] 
                         {log.status === 'completed' ? '✓' : log.status === 'failed' || log.status === 'error' ? '✗' : '⏳'} 
                         <span class="truncate inline-block max-w-md" title="{log.url}">{log.title || log.url}</span>
@@ -2496,21 +2519,21 @@
           </div>
           
           <!-- Deep Content Analysis Section -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h3 class="text-lg font-medium text-gray-900">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
                   <span class="inline-block mr-2">🔍</span>
                   Deep Content Analysis
                 </h3>
-                <p class="text-sm text-gray-500 mt-1">
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                   Analyze existing metadata to extract reading time, publish date, quality score, smart tags, and topics (no network requests)
                 </p>
               </div>
               <button
                 on:click={handleDeepAnalysis}
                 disabled={runningDeepAnalysis}
-                class="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:opacity-50 flex-shrink-0"
+                class="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:opacity-50 flex-shrink-0 transition-colors"
               >
                 {#if runningDeepAnalysis}
                   <span class="flex items-center">
@@ -2526,14 +2549,14 @@
               </button>
             </div>
             <div class="p-6">
-              <div class="text-sm text-gray-600 mb-4">
+              <div class="text-sm text-gray-600 dark:text-gray-300 mb-4">
                 <p class="mb-2">Extracts intelligent insights from your bookmarks:</p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                   <div class="flex items-start gap-2">
                     <span class="text-lg">⏱️</span>
                     <div>
-                      <div class="font-medium text-gray-800">Reading Time</div>
-                      <div class="text-xs text-gray-500">Estimated time to read/watch content</div>
+                      <div class="font-medium text-gray-800 dark:text-gray-100">Reading Time</div>
+                      <div class="text-xs text-gray-500 dark:text-gray-400">Estimated time to read/watch content</div>
                     </div>
                   </div>
                   <div class="flex items-start gap-2">
@@ -2592,45 +2615,45 @@
               
               <!-- Results -->
               {#if deepAnalysisResult}
-                <div class="p-4 rounded-lg {deepAnalysisResult.error ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}">
+                <div class="p-4 rounded-lg {deepAnalysisResult.error ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'}">
                   {#if deepAnalysisResult.error}
-                    <div class="text-red-700 text-sm">
+                    <div class="text-red-700 dark:text-red-400 text-sm">
                       <strong>Error:</strong> {deepAnalysisResult.error}
                     </div>
                   {:else}
-                    <div class="text-green-700 text-sm space-y-2">
+                    <div class="text-green-700 dark:text-green-300 text-sm space-y-2">
                       <div class="font-medium">✅ Deep Analysis Complete!</div>
                       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-                        <div class="text-center p-2 bg-white rounded">
-                          <div class="text-lg font-bold text-indigo-600">{deepAnalysisResult.processed}</div>
-                          <div class="text-gray-600">Processed</div>
+                        <div class="text-center p-2 bg-white dark:bg-gray-800 rounded shadow-sm">
+                          <div class="text-lg font-bold text-indigo-600 dark:text-indigo-400">{deepAnalysisResult.processed}</div>
+                          <div class="text-gray-600 dark:text-gray-400">Processed</div>
                         </div>
-                        <div class="text-center p-2 bg-white rounded">
-                          <div class="text-lg font-bold text-green-600">{deepAnalysisResult.analyzed}</div>
-                          <div class="text-gray-600">Analyzed</div>
+                        <div class="text-center p-2 bg-white dark:bg-gray-800 rounded shadow-sm">
+                          <div class="text-lg font-bold text-green-600 dark:text-green-400">{deepAnalysisResult.analyzed}</div>
+                          <div class="text-gray-600 dark:text-gray-400">Analyzed</div>
                         </div>
-                        <div class="text-center p-2 bg-white rounded">
-                          <div class="text-lg font-bold text-yellow-600">{deepAnalysisResult.skipped}</div>
-                          <div class="text-gray-600">Skipped</div>
+                        <div class="text-center p-2 bg-white dark:bg-gray-800 rounded shadow-sm">
+                          <div class="text-lg font-bold text-yellow-600 dark:text-yellow-400">{deepAnalysisResult.skipped}</div>
+                          <div class="text-gray-600 dark:text-gray-400">Skipped</div>
                         </div>
-                        <div class="text-center p-2 bg-white rounded">
-                          <div class="text-lg font-bold text-red-600">{deepAnalysisResult.failed}</div>
-                          <div class="text-gray-600">Failed</div>
+                        <div class="text-center p-2 bg-white dark:bg-gray-800 rounded shadow-sm">
+                          <div class="text-lg font-bold text-red-600 dark:text-red-400">{deepAnalysisResult.failed}</div>
+                          <div class="text-gray-600 dark:text-gray-400">Failed</div>
                         </div>
                       </div>
-                      <p class="text-xs text-green-600 mt-2">
+                      <p class="text-xs text-green-600 dark:text-green-400 mt-2">
                         Your bookmarks now have enhanced metadata for smarter filtering and insights!
                       </p>
                     </div>
                   {/if}
                 </div>
               {:else if !runningDeepAnalysis}
-                <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <p class="text-gray-600 text-sm">
+                <div class="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <p class="text-gray-600 dark:text-gray-400 text-sm">
                     Click "Run Analysis" to process all bookmarks that have been enriched with metadata.
                     This will extract additional insights without making any network requests.
                   </p>
-                  <div class="mt-3 text-xs text-gray-500 space-y-1">
+                  <div class="mt-3 text-xs text-gray-500 dark:text-gray-500 space-y-1">
                     <div>• Processes existing metadata only (very fast)</div>
                     <div>• Safe to run multiple times (idempotent)</div>
                     <div>• Enables future smart filtering features</div>
@@ -2641,20 +2664,20 @@
           </div>
           
           <!-- Dead Links Section -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h3 class="text-lg font-medium text-gray-900">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
                   Dead Links {#if !loadingDeadLinks}({deadLinks.length}){/if}
                 </h3>
-                <p class="text-xs text-gray-500 mt-1">Bookmarks detected as unreachable during enrichment</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Bookmarks detected as unreachable during enrichment</p>
               </div>
               {#if deadLinks.length > 0}
                 <div class="flex gap-2 flex-shrink-0">
                   <button
                     on:click={reEnrichDeadLinks}
                     disabled={reEnrichingDeadLinks || deletingDeadLinks}
-                    class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
                     title="Re-check dead links to see if they're alive again"
                   >
                     {#if reEnrichingDeadLinks}
@@ -2667,7 +2690,7 @@
                   <button
                     on:click={deleteAllDeadLinks}
                     disabled={deletingDeadLinks || reEnrichingDeadLinks}
-                    class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
                   >
                     {#if deletingDeadLinks}
                       <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -2682,11 +2705,11 @@
             <div class="p-6">
               <!-- Dead Link Re-check Configuration -->
               {#if deadLinks.length > 0 && !reEnrichingDeadLinks}
-                <div class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <h4 class="text-sm font-medium text-gray-700 mb-3">Re-check Configuration</h4>
+                <div class="mb-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Re-check Configuration</h4>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label for="deadLinkBatchSize" class="block text-sm font-medium text-gray-700 mb-1">
+                      <label for="deadLinkBatchSize" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                         Batch Size
                         <span class="text-xs text-gray-500 font-normal">(0 = all)</span>
                       </label>
@@ -2726,23 +2749,23 @@
               {/if}
               
               {#if reEnrichingDeadLinks && reEnrichProgress}
-                <div class="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                   <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm font-medium text-blue-800">Re-checking dead links...</span>
-                    <span class="text-sm text-blue-600">{reEnrichProgress.current}/{reEnrichProgress.total}</span>
+                    <span class="text-sm font-medium text-blue-800 dark:text-blue-300">Re-checking dead links...</span>
+                    <span class="text-sm text-blue-600 dark:text-blue-400">{reEnrichProgress.current}/{reEnrichProgress.total}</span>
                   </div>
-                  <div class="w-full bg-blue-200 rounded-full h-2 mb-2">
+                  <div class="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2">
                     <div 
-                      class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      class="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all duration-300"
                       style="width: {(reEnrichProgress.current / reEnrichProgress.total) * 100}%"
                     ></div>
                   </div>
                   <div class="flex items-center justify-between">
-                    <p class="text-xs text-blue-600 truncate flex-1">Checking: {reEnrichProgress.title || reEnrichProgress.url}</p>
+                    <p class="text-xs text-blue-600 dark:text-blue-400 truncate flex-1">Checking: {reEnrichProgress.title || reEnrichProgress.url}</p>
                     {#if reEnrichProgress.results}
-                      <div class="flex gap-2 text-xs text-blue-600 ml-2">
-                        <span class="text-green-600">✓ {reEnrichProgress.results.success}</span>
-                        <span class="text-red-600">✗ {reEnrichProgress.results.stillDead}</span>
+                      <div class="flex gap-2 text-xs text-blue-600 dark:text-blue-400 ml-2">
+                        <span class="text-green-600 dark:text-green-400">✓ {reEnrichProgress.results.success}</span>
+                        <span class="text-red-600 dark:text-red-400">✗ {reEnrichProgress.results.stillDead}</span>
                       </div>
                     {/if}
                   </div>
@@ -2750,29 +2773,29 @@
               {/if}
               
               {#if reEnrichResult && !reEnrichingDeadLinks}
-                <div class="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                  <h4 class="text-sm font-semibold text-green-800 mb-2">Re-check Complete</h4>
+                <div class="mb-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                  <h4 class="text-sm font-semibold text-green-800 dark:text-green-300 mb-2">Re-check Complete</h4>
                   <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                     <div class="text-center">
-                      <div class="text-lg font-bold text-green-700">{reEnrichResult.total}</div>
-                      <div class="text-xs text-green-600">Checked</div>
+                      <div class="text-lg font-bold text-green-700 dark:text-green-400">{reEnrichResult.total}</div>
+                      <div class="text-xs text-green-600 dark:text-green-500">Checked</div>
                     </div>
                     <div class="text-center">
-                      <div class="text-lg font-bold text-green-700">{reEnrichResult.success}</div>
-                      <div class="text-xs text-green-600">Now Alive</div>
+                      <div class="text-lg font-bold text-green-700 dark:text-green-400">{reEnrichResult.success}</div>
+                      <div class="text-xs text-green-600 dark:text-green-500">Now Alive</div>
                     </div>
                     <div class="text-center">
-                      <div class="text-lg font-bold text-red-700">{reEnrichResult.stillDead}</div>
-                      <div class="text-xs text-red-600">Still Dead</div>
+                      <div class="text-lg font-bold text-red-700 dark:text-red-400">{reEnrichResult.stillDead}</div>
+                      <div class="text-xs text-red-600 dark:text-red-500">Still Dead</div>
                     </div>
                     <div class="text-center">
-                      <div class="text-lg font-bold text-yellow-700">{reEnrichResult.errors}</div>
-                      <div class="text-xs text-yellow-600">Errors</div>
+                      <div class="text-lg font-bold text-yellow-700 dark:text-yellow-400">{reEnrichResult.errors}</div>
+                      <div class="text-xs text-yellow-600 dark:text-yellow-500">Errors</div>
                     </div>
                     {#if reEnrichResult.pending > 0}
                       <div class="text-center">
-                        <div class="text-lg font-bold text-blue-700">{reEnrichResult.pending}</div>
-                        <div class="text-xs text-blue-600">Remaining</div>
+                        <div class="text-lg font-bold text-blue-700 dark:text-blue-400">{reEnrichResult.pending}</div>
+                        <div class="text-xs text-blue-600 dark:text-blue-500">Remaining</div>
                       </div>
                     {/if}
                   </div>
@@ -2789,49 +2812,49 @@
               {:else}
                 <!-- Dead Link Insights Summary -->
                 {#if deadLinkInsights && deadLinkInsights.total > 0}
-                  <div class="mb-6 p-4 bg-red-50 rounded-lg border border-red-200">
-                    <h4 class="text-sm font-semibold text-red-800 mb-3">📊 Dead Link Insights</h4>
+                  <div class="mb-6 p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
+                    <h4 class="text-sm font-semibold text-red-800 dark:text-red-300 mb-3">📊 Dead Link Insights</h4>
                     
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                       <div class="text-center">
-                        <div class="text-2xl font-bold text-red-700">{deadLinkInsights.total}</div>
-                        <div class="text-xs text-red-600">Total Dead</div>
+                        <div class="text-2xl font-bold text-red-700 dark:text-red-400">{deadLinkInsights.total}</div>
+                        <div class="text-xs text-red-600 dark:text-red-500">Total Dead</div>
                       </div>
                       <div class="text-center">
-                        <div class="text-2xl font-bold text-red-700">{deadLinkInsights.deadLinkRate}%</div>
-                        <div class="text-xs text-red-600">Dead Link Rate</div>
+                        <div class="text-2xl font-bold text-red-700 dark:text-red-400">{deadLinkInsights.deadLinkRate}%</div>
+                        <div class="text-xs text-red-600 dark:text-red-500">Dead Link Rate</div>
                       </div>
                       <div class="text-center">
-                        <div class="text-2xl font-bold text-red-700">{deadLinkInsights.checkedCount}</div>
-                        <div class="text-xs text-red-600">Total Checked</div>
+                        <div class="text-2xl font-bold text-red-700 dark:text-red-400">{deadLinkInsights.checkedCount}</div>
+                        <div class="text-xs text-red-600 dark:text-red-500">Total Checked</div>
                       </div>
                       <div class="text-center">
-                        <div class="text-2xl font-bold text-red-700">{deadLinkInsights.byDomain.length}</div>
-                        <div class="text-xs text-red-600">Affected Domains</div>
+                        <div class="text-2xl font-bold text-red-700 dark:text-red-400">{deadLinkInsights.byDomain.length}</div>
+                        <div class="text-xs text-red-600 dark:text-red-500">Affected Domains</div>
                       </div>
                     </div>
                     
                     <!-- Age Distribution -->
                     <div class="mb-4">
-                      <h5 class="text-xs font-medium text-red-700 mb-2">By Bookmark Age</h5>
+                      <h5 class="text-xs font-medium text-red-700 dark:text-red-400 mb-2">By Bookmark Age</h5>
                       <div class="flex gap-2 flex-wrap">
                         {#if deadLinkInsights.byAge.recent > 0}
-                          <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                          <span class="px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-200 text-xs rounded">
                             &lt; 1 week: {deadLinkInsights.byAge.recent}
                           </span>
                         {/if}
                         {#if deadLinkInsights.byAge.moderate > 0}
-                          <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                          <span class="px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-200 text-xs rounded">
                             1 week - 1 month: {deadLinkInsights.byAge.moderate}
                           </span>
                         {/if}
                         {#if deadLinkInsights.byAge.old > 0}
-                          <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                          <span class="px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-200 text-xs rounded">
                             1 month - 1 year: {deadLinkInsights.byAge.old}
                           </span>
                         {/if}
                         {#if deadLinkInsights.byAge.ancient > 0}
-                          <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                          <span class="px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-200 text-xs rounded">
                             &gt; 1 year: {deadLinkInsights.byAge.ancient}
                           </span>
                         {/if}
@@ -2841,10 +2864,10 @@
                     <!-- Top Domains with Dead Links -->
                     {#if deadLinkInsights.byDomain.length > 0}
                       <div class="mb-4">
-                        <h5 class="text-xs font-medium text-red-700 mb-2">Top Domains with Dead Links</h5>
+                        <h5 class="text-xs font-medium text-red-700 dark:text-red-400 mb-2">Top Domains with Dead Links</h5>
                         <div class="flex gap-2 flex-wrap">
                           {#each deadLinkInsights.byDomain.slice(0, 5) as domainInfo}
-                            <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                            <span class="px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-200 text-xs rounded">
                               {domainInfo.domain}: {domainInfo.count}
                             </span>
                           {/each}
@@ -2855,10 +2878,10 @@
                     <!-- By Category -->
                     {#if deadLinkInsights.byCategory.length > 0}
                       <div>
-                        <h5 class="text-xs font-medium text-red-700 mb-2">By Category</h5>
+                        <h5 class="text-xs font-medium text-red-700 dark:text-red-400 mb-2">By Category</h5>
                         <div class="flex gap-2 flex-wrap">
                           {#each deadLinkInsights.byCategory.slice(0, 5) as catInfo}
-                            <span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded">
+                            <span class="px-2 py-1 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-200 text-xs rounded">
                               {catInfo.category}: {catInfo.count}
                             </span>
                           {/each}
@@ -2871,18 +2894,18 @@
                 <!-- Dead Links List -->
                 <div class="space-y-2 max-h-[32rem] overflow-y-auto">
                   {#each deadLinks.slice(0, deadLinksDisplayLimit) as bookmark}
-                    <div class="p-3 bg-red-50 rounded border border-red-200">
+                    <div class="p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800">
                       <div class="flex items-start justify-between">
                         <div class="flex-1 min-w-0">
-                          <div class="text-sm font-medium text-gray-800 truncate">{bookmark.title}</div>
-                          <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                          <div class="text-xs text-red-600 mt-1 flex items-center gap-3">
+                          <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{bookmark.title}</div>
+                          <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{bookmark.url}</div>
+                          <div class="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-3">
                             <span>Last checked: {bookmark.lastChecked ? new Date(bookmark.lastChecked).toLocaleDateString() : 'Unknown'}</span>
                             {#if bookmark.domain}
-                              <span class="text-gray-500">• {bookmark.domain}</span>
+                              <span class="text-gray-500 dark:text-gray-500">• {bookmark.domain}</span>
                             {/if}
                             {#if bookmark.category}
-                              <span class="text-gray-500">• {bookmark.category}</span>
+                              <span class="text-gray-500 dark:text-gray-500">• {bookmark.category}</span>
                             {/if}
                           </div>
                         </div>
@@ -2921,18 +2944,18 @@
           </div>
           
           <!-- Duplicates & Similarities (Unified) -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div class="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                  <h3 class="text-lg font-medium text-gray-900">
+                  <h3 class="text-lg font-medium text-gray-900 dark:text-white">
                     Duplicates & Similarities
                   </h3>
-                  <p class="text-xs text-gray-500 mt-1">Manage exact duplicates and find similar content</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Manage exact duplicates and find similar content</p>
                 </div>
                 <div class="flex items-center gap-2">
                   {#if enhancedSimilarCacheInfo?.fromCache}
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-md" title="Loaded from cache">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-md" title="Loaded from cache">
                       <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
                       </svg>
@@ -2955,15 +2978,15 @@
               </div>
               
               <!-- Tabs -->
-              <div class="flex space-x-4 mt-4 border-b border-gray-100">
+              <div class="flex space-x-4 mt-4 border-b border-gray-100 dark:border-gray-700">
                 <button
-                  class="pb-2 text-sm font-medium border-b-2 transition-colors {activeSimilarityTab === 'duplicates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+                  class="pb-2 text-sm font-medium border-b-2 transition-colors {activeSimilarityTab === 'duplicates' ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
                   on:click={() => activeSimilarityTab = 'duplicates'}
                 >
                   Exact Duplicates ({duplicates.length})
                 </button>
                 <button
-                  class="pb-2 text-sm font-medium border-b-2 transition-colors {activeSimilarityTab === 'similar' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+                  class="pb-2 text-sm font-medium border-b-2 transition-colors {activeSimilarityTab === 'similar' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
                   on:click={() => activeSimilarityTab = 'similar'}
                 >
                   Similar Content ({enhancedSimilarStats ? enhancedSimilarStats.total : 0})
@@ -2985,21 +3008,21 @@
                   </div>
                 {:else}
                   <!-- Selection Toolbar -->
-                  <div class="mb-4 p-3 bg-blue-50 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                  <div class="mb-4 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg flex flex-wrap items-center justify-between gap-2">
                     <div class="flex items-center gap-3">
-                      <span class="text-sm text-gray-600">
+                      <span class="text-sm text-gray-600 dark:text-gray-400">
                         {selectedDuplicates.size} selected
                       </span>
                       <button
                         on:click={selectAllDuplicates}
-                        class="text-xs px-2 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded"
+                        class="text-xs px-2 py-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded"
                       >
                         Select All Duplicates
                       </button>
                       {#if selectedDuplicates.size > 0}
                         <button
                           on:click={clearDuplicateSelection}
-                          class="text-xs px-2 py-1 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded"
+                          class="text-xs px-2 py-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded"
                         >
                           Clear Selection
                         </button>
@@ -3025,24 +3048,24 @@
                   
                   <div class="space-y-6 max-h-[32rem] overflow-y-auto">
                     {#each duplicates.slice(0, duplicatesDisplayLimit) as group, groupIndex}
-                      <div class="border border-gray-200 rounded-lg p-4">
-                        <h4 class="font-medium text-gray-900 mb-3 truncate" title={group[0].url}>
+                      <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                        <h4 class="font-medium text-gray-900 dark:text-white mb-3 truncate" title={group[0].url}>
                           {group[0].url}
                         </h4>
                         <div class="space-y-2">
                           {#each group as bookmark, index}
-                            <div class="flex items-center justify-between p-2 bg-gray-50 rounded {selectedDuplicates.has(bookmark.id) ? 'ring-2 ring-blue-400 bg-blue-50' : ''}">
+                            <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900/50 rounded {selectedDuplicates.has(bookmark.id) ? 'ring-2 ring-blue-400 dark:ring-blue-600 bg-blue-50 dark:bg-blue-950/40' : ''}">
                               <div class="flex items-center gap-3 flex-1 min-w-0">
                                 <input
                                   type="checkbox"
                                   checked={selectedDuplicates.has(bookmark.id)}
                                   on:change={() => toggleDuplicateSelection(bookmark.id)}
-                                  class="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                  class="h-4 w-4 text-blue-600 dark:text-blue-500 rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:ring-blue-500"
                                 />
                                 <div class="flex-1 min-w-0">
-                                  <div class="text-sm font-medium truncate">{bookmark.title}</div>
-                                  <div class="text-xs text-gray-500">
-                                    {bookmark.folderPath || 'No folder'} {#if index === 0}<span class="text-green-600">(oldest)</span>{/if}
+                                  <div class="text-sm font-medium truncate dark:text-gray-200">{bookmark.title}</div>
+                                  <div class="text-xs text-gray-500 dark:text-gray-400">
+                                    {bookmark.folderPath || 'No folder'} {#if index === 0}<span class="text-green-600 dark:text-green-400 font-medium">(oldest)</span>{/if}
                                   </div>
                                 </div>
                               </div>
@@ -3087,15 +3110,15 @@
                 {:else}
                   <!-- Stats Summary -->
                   {#if enhancedSimilarStats}
-                    <div class="mb-4 p-3 bg-indigo-50 rounded-lg flex items-center justify-between">
+                    <div class="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg flex items-center justify-between">
                       <div class="flex gap-4 text-sm">
-                        <span class="text-indigo-700">
+                        <span class="text-indigo-700 dark:text-indigo-300">
                           <strong>{enhancedSimilarStats.sameDomain}</strong> same-domain pairs
                         </span>
-                        <span class="text-indigo-600">
+                        <span class="text-indigo-600 dark:text-indigo-400">
                           <strong>{enhancedSimilarStats.crossDomain}</strong> cross-domain pairs
                         </span>
-                        <span class="text-indigo-500">
+                        <span class="text-indigo-500 dark:text-indigo-500">
                           Avg: <strong>{(enhancedSimilarStats.avgSimilarity * 100).toFixed(0)}%</strong> similar
                         </span>
                       </div>
@@ -3104,22 +3127,22 @@
                   
                   <div class="space-y-3 max-h-[40rem] overflow-y-auto">
                     {#each enhancedSimilarPairs.slice(0, similarDisplayLimit) as pair, idx}
-                      <div class="border {pair.sameDomain ? 'border-indigo-200 bg-indigo-50' : 'border-purple-200 bg-purple-50'} rounded-lg p-4">
+                      <div class="border {pair.sameDomain ? 'border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30' : 'border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30'} rounded-lg p-4">
                         <div class="flex justify-between items-center mb-3">
                           <div class="flex items-center gap-2">
-                            <span class="text-xs font-semibold px-2 py-1 rounded {pair.sameDomain ? 'bg-indigo-200 text-indigo-800' : 'bg-purple-200 text-purple-800'}">
+                            <span class="text-xs font-semibold px-2 py-1 rounded {pair.sameDomain ? 'bg-indigo-200 dark:bg-indigo-800 text-indigo-800 dark:text-indigo-200' : 'bg-purple-200 dark:bg-purple-800 text-purple-800 dark:text-purple-200'}">
                               {Math.round(pair.similarity * 100)}% match
                             </span>
                             {#if pair.sameDomain}
-                              <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">Same Domain</span>
+                              <span class="text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">Same Domain</span>
                             {/if}
                             {#if pair.sameCategory}
-                              <span class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">Same Category</span>
+                              <span class="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded">Same Category</span>
                             {/if}
                           </div>
                           <button
                             on:click={() => openComparisonModal(pair)}
-                            class="text-xs px-3 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                            class="text-xs px-3 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                           >
                             Compare Details
                           </button>
@@ -3127,24 +3150,24 @@
                         
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <!-- Bookmark 1 -->
-                          <div class="p-3 bg-white rounded border border-gray-200">
+                          <div class="p-3 bg-white dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
                             <div class="flex justify-between items-start mb-2">
                               <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-gray-800 truncate" title={pair.bookmark1.title}>
+                                <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate" title={pair.bookmark1.title}>
                                   {pair.bookmark1.title}
                                 </div>
-                                <div class="text-xs text-gray-500 truncate" title={pair.bookmark1.url}>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 truncate" title={pair.bookmark1.url}>
                                   {pair.bookmark1.url}
                                 </div>
                               </div>
                             </div>
                             <div class="flex items-center justify-between mt-2">
-                              <div class="text-xs text-gray-400">
+                              <div class="text-xs text-gray-400 dark:text-gray-500">
                                 Coverage: {pair.coverage1.percentage.toFixed(0)}%
                               </div>
                               <div class="flex gap-1">
                                 <a href={pair.bookmark1.url} target="_blank" rel="noopener" 
-                                   class="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">Open</a>
+                                   class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-700">Open</a>
                                 <button
                                   on:click={() => deleteFromComparison(pair.bookmark1.id)}
                                   class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
@@ -3154,24 +3177,24 @@
                           </div>
                           
                           <!-- Bookmark 2 -->
-                          <div class="p-3 bg-white rounded border border-gray-200">
+                          <div class="p-3 bg-white dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
                             <div class="flex justify-between items-start mb-2">
                               <div class="flex-1 min-w-0">
-                                <div class="text-sm font-medium text-gray-800 truncate" title={pair.bookmark2.title}>
+                                <div class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate" title={pair.bookmark2.title}>
                                   {pair.bookmark2.title}
                                 </div>
-                                <div class="text-xs text-gray-500 truncate" title={pair.bookmark2.url}>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 truncate" title={pair.bookmark2.url}>
                                   {pair.bookmark2.url}
                                 </div>
                               </div>
                             </div>
                             <div class="flex items-center justify-between mt-2">
-                              <div class="text-xs text-gray-400">
+                              <div class="text-xs text-gray-400 dark:text-gray-500">
                                 Coverage: {pair.coverage2.percentage.toFixed(0)}%
                               </div>
                               <div class="flex gap-1">
                                 <a href={pair.bookmark2.url} target="_blank" rel="noopener" 
-                                   class="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">Open</a>
+                                   class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-700">Open</a>
                                 <button
                                   on:click={() => deleteFromComparison(pair.bookmark2.id)}
                                   class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
@@ -3200,43 +3223,43 @@
           </div>
           
           <!-- Useless Bookmarks Detection -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
                 🗑️ Cleanup Candidates {#if uselessBookmarks}({uselessBookmarks.summary.total} found){/if}
               </h3>
-              <p class="text-xs text-gray-500 mt-1">Bookmarks that may be candidates for removal based on various criteria</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Bookmarks that may be candidates for removal based on various criteria</p>
             </div>
             <div class="p-6">
               {#if loadingUseless}
                 <div class="flex items-center justify-center py-8">
-                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600"></div>
-                  <span class="ml-3 text-gray-500">Analyzing bookmarks for cleanup...</span>
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 dark:border-orange-400"></div>
+                  <span class="ml-3 text-gray-500 dark:text-gray-400">Analyzing bookmarks for cleanup...</span>
                 </div>
               {:else if !uselessBookmarks || uselessBookmarks.summary.total === 0}
-                <p class="text-gray-500">No cleanup candidates found. Your bookmarks look great!</p>
+                <p class="text-gray-500 dark:text-gray-400">No cleanup candidates found. Your bookmarks look great!</p>
               {:else}
                 <!-- Summary Cards -->
                 <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-                  <div class="p-3 bg-red-50 rounded-lg text-center">
-                    <div class="text-2xl font-bold text-red-600">{uselessBookmarks.summary.byCategory.deadLinks || 0}</div>
-                    <div class="text-xs text-red-500">Dead Links</div>
+                  <div class="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-center transition-colors">
+                    <div class="text-2xl font-bold text-red-600 dark:text-red-400">{uselessBookmarks.summary.byCategory.deadLinks || 0}</div>
+                    <div class="text-xs text-red-500 dark:text-red-400/80">Dead Links</div>
                   </div>
-                  <div class="p-3 bg-orange-50 rounded-lg text-center">
-                    <div class="text-2xl font-bold text-orange-600">{uselessBookmarks.summary.byCategory.oldUnused || 0}</div>
-                    <div class="text-xs text-orange-500">Old & Unused</div>
+                  <div class="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-center transition-colors">
+                    <div class="text-2xl font-bold text-orange-600 dark:text-orange-400">{uselessBookmarks.summary.byCategory.oldUnused || 0}</div>
+                    <div class="text-xs text-orange-500 dark:text-orange-400/80">Old & Unused</div>
                   </div>
-                  <div class="p-3 bg-yellow-50 rounded-lg text-center">
-                    <div class="text-2xl font-bold text-yellow-600">{uselessBookmarks.summary.byCategory.genericTitles || 0}</div>
-                    <div class="text-xs text-yellow-600">Generic Titles</div>
+                  <div class="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-center transition-colors">
+                    <div class="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{uselessBookmarks.summary.byCategory.genericTitles || 0}</div>
+                    <div class="text-xs text-yellow-600 dark:text-yellow-400/80">Generic Titles</div>
                   </div>
-                  <div class="p-3 bg-purple-50 rounded-lg text-center">
-                    <div class="text-2xl font-bold text-purple-600">{uselessBookmarks.summary.byCategory.temporaryUrls || 0}</div>
-                    <div class="text-xs text-purple-500">Temp/Dev URLs</div>
+                  <div class="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-center transition-colors">
+                    <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">{uselessBookmarks.summary.byCategory.temporaryUrls || 0}</div>
+                    <div class="text-xs text-purple-500 dark:text-purple-400/80">Temp/Dev URLs</div>
                   </div>
-                  <div class="p-3 bg-gray-100 rounded-lg text-center">
-                    <div class="text-2xl font-bold text-gray-600">{uselessBookmarks.summary.byCategory.lowScore || 0}</div>
-                    <div class="text-xs text-gray-500">Low Quality</div>
+                  <div class="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg text-center transition-colors">
+                    <div class="text-2xl font-bold text-gray-600 dark:text-gray-300">{uselessBookmarks.summary.byCategory.lowScore || 0}</div>
+                    <div class="text-xs text-gray-500 dark:text-gray-400/80">Low Quality</div>
                   </div>
                 </div>
                 
@@ -3438,18 +3461,18 @@
           </div>
           
           <!-- Malformed URLs -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
               <div>
-                <h3 class="text-lg font-medium text-gray-900">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
                   Invalid URLs {#if !loadingMalformed}({malformedUrls.length}){/if}
                 </h3>
-                <p class="text-xs text-gray-500 mt-1">Bookmarks with unrecognized URL schemes</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Bookmarks with unrecognized URL schemes</p>
               </div>
               {#if malformedUrls.length > 0}
                 <button
                   on:click={deleteAllMalformedUrls}
-                  class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                  class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
                 >
                   Delete All ({malformedUrls.length})
                 </button>
@@ -3458,24 +3481,24 @@
             <div class="p-6">
               {#if loadingMalformed}
                 <div class="flex items-center justify-center py-8">
-                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-                  <span class="ml-3 text-gray-500">Checking URLs...</span>
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 dark:border-purple-400"></div>
+                  <span class="ml-3 text-gray-500 dark:text-gray-400">Checking URLs...</span>
                 </div>
               {:else if malformedUrls.length === 0}
-                <p class="text-gray-500">All bookmark URLs are valid.</p>
+                <p class="text-gray-500 dark:text-gray-400">All bookmark URLs are valid.</p>
               {:else}
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {#each malformedUrls as bookmark}
-                    <div class="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-900/50">
                       <div class="flex justify-between items-start gap-2">
                         <div class="flex-1 min-w-0">
-                          <div class="text-sm font-medium truncate" title={bookmark.title}>{bookmark.title}</div>
-                          <div class="text-xs text-red-600 truncate mt-1" title={bookmark.url}>{bookmark.url}</div>
-                          <div class="text-xs text-gray-500 mt-1">{bookmark.folderPath || 'No folder'}</div>
+                          <div class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={bookmark.title}>{bookmark.title}</div>
+                          <div class="text-xs text-red-600 dark:text-red-400 truncate mt-1" title={bookmark.url}>{bookmark.url}</div>
+                          <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">{bookmark.folderPath || 'No folder'}</div>
                         </div>
                         <button
                           on:click={() => deleteMalformedUrl(bookmark.id)}
-                          class="flex-shrink-0 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          class="flex-shrink-0 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
                         >
                           Delete
                         </button>
@@ -3488,30 +3511,30 @@
           </div>
           
           <!-- Backup & Restore Panel -->
-          <div class="bg-white rounded-lg shadow">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
-                <svg class="w-5 h-5 inline-block mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">
+                <svg class="w-5 h-5 inline-block mr-2 text-green-500 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
                 </svg>
                 Backup & Restore
               </h3>
-              <p class="text-sm text-gray-500 mt-1">
+              <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Protect your enrichment data - backup regularly!
               </p>
             </div>
             <div class="p-6">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <!-- Backup Section -->
-                <div class="border border-gray-200 rounded-lg p-4">
-                  <h4 class="font-medium text-gray-900 mb-3">Create Backup</h4>
-                  <p class="text-sm text-gray-600 mb-4">
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/30">
+                  <h4 class="font-medium text-gray-900 dark:text-gray-100 mb-3">Create Backup</h4>
+                  <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                     Download a complete backup of your bookmarks including all enrichment data, categories, and metadata.
                   </p>
                   <button
                     on:click={handleDownloadBackup}
                     disabled={backupInProgress}
-                    class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center justify-center"
+                    class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center justify-center transition-colors"
                   >
                     {#if backupInProgress}
                       <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
@@ -3529,9 +3552,9 @@
                 </div>
                 
                 <!-- Restore Section -->
-                <div class="border border-gray-200 rounded-lg p-4">
-                  <h4 class="font-medium text-gray-900 mb-3">Restore Backup</h4>
-                  <p class="text-sm text-gray-600 mb-4">
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/30">
+                  <h4 class="font-medium text-gray-900 dark:text-gray-100 mb-3">Restore Backup</h4>
+                  <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                     Restore from a backup file. Your current data will be auto-backed up first.
                   </p>
                   
@@ -3629,12 +3652,12 @@
 <!-- Comparison Modal for Similar Bookmarks -->
 {#if selectedComparisonPair}
   <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-  <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" on:click={closeComparisonModal}>
+  <div class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 transition-all backdrop-blur-sm" on:click={closeComparisonModal}>
     <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-    <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" on:click|stopPropagation>
-      <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-        <h3 class="text-lg font-semibold text-gray-900">Compare Similar Bookmarks</h3>
-        <button on:click={closeComparisonModal} class="text-gray-400 hover:text-gray-600">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in duration-200" on:click|stopPropagation>
+      <div class="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center z-10">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Compare Similar Bookmarks</h3>
+        <button on:click={closeComparisonModal} class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
@@ -3644,31 +3667,31 @@
       <div class="p-6">
         <!-- Similarity Score -->
         <div class="text-center mb-6">
-          <div class="inline-flex items-center px-4 py-2 bg-indigo-100 rounded-full">
-            <span class="text-2xl font-bold text-indigo-700">{Math.round(selectedComparisonPair.similarity * 100)}%</span>
-            <span class="ml-2 text-sm text-indigo-600">Overall Similarity</span>
+          <div class="inline-flex items-center px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-full border border-indigo-200 dark:border-indigo-800/50">
+            <span class="text-2xl font-bold text-indigo-700 dark:text-indigo-400">{Math.round(selectedComparisonPair.similarity * 100)}%</span>
+            <span class="ml-2 text-sm text-indigo-600 dark:text-indigo-300">Overall Similarity</span>
           </div>
         </div>
         
         <!-- Similarity Breakdown -->
-        <div class="mb-6 p-4 bg-gray-50 rounded-lg">
-          <h4 class="text-sm font-semibold text-gray-700 mb-3">Similarity Breakdown</h4>
+        <div class="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700/50">
+          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Similarity Breakdown</h4>
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div class="text-center">
-              <div class="text-lg font-bold text-blue-600">{Math.round((selectedComparisonPair.breakdown?.titleFuzzy || 0) * 100)}%</div>
-              <div class="text-xs text-gray-500">Title (Fuzzy)</div>
+              <div class="text-lg font-bold text-blue-600 dark:text-blue-400">{Math.round((selectedComparisonPair.breakdown?.titleFuzzy || 0) * 100)}%</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">Title (Fuzzy)</div>
             </div>
             <div class="text-center">
-              <div class="text-lg font-bold text-green-600">{Math.round((selectedComparisonPair.breakdown?.titleWords || 0) * 100)}%</div>
-              <div class="text-xs text-gray-500">Title (Words)</div>
+              <div class="text-lg font-bold text-green-600 dark:text-green-400">{Math.round((selectedComparisonPair.breakdown?.titleWords || 0) * 100)}%</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">Title (Words)</div>
             </div>
             <div class="text-center">
-              <div class="text-lg font-bold text-purple-600">{Math.round((selectedComparisonPair.breakdown?.descriptionWords || 0) * 100)}%</div>
-              <div class="text-xs text-gray-500">Description</div>
+              <div class="text-lg font-bold text-purple-600 dark:text-purple-400">{Math.round((selectedComparisonPair.breakdown?.descriptionWords || 0) * 100)}%</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">Description</div>
             </div>
             <div class="text-center">
-              <div class="text-lg font-bold text-orange-600">{Math.round((selectedComparisonPair.breakdown?.keywordsOverlap || 0) * 100)}%</div>
-              <div class="text-xs text-gray-500">Keywords</div>
+              <div class="text-lg font-bold text-orange-600 dark:text-orange-400">{Math.round((selectedComparisonPair.breakdown?.keywordsOverlap || 0) * 100)}%</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">Keywords</div>
             </div>
           </div>
         </div>
@@ -3676,17 +3699,17 @@
         <!-- Side by Side Comparison -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <!-- Bookmark 1 -->
-          <div class="border border-gray-200 rounded-lg overflow-hidden">
-            <div class="bg-blue-50 px-4 py-2 border-b border-blue-200">
-              <span class="text-sm font-medium text-blue-800">Bookmark 1</span>
+          <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800">
+            <div class="bg-blue-50 dark:bg-blue-900/30 px-4 py-2 border-b border-blue-200 dark:border-blue-800/50">
+              <span class="text-sm font-medium text-blue-800 dark:text-blue-300">Bookmark 1</span>
             </div>
             <div class="p-4 space-y-3">
               <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Title</div>
-                <div class="text-sm font-medium">{selectedComparisonPair.bookmark1.title}</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">Title</div>
+                <div class="text-sm font-medium text-gray-900 dark:text-gray-100">{selectedComparisonPair.bookmark1.title}</div>
               </div>
               <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">URL</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">URL</div>
                 <a href={selectedComparisonPair.bookmark1.url} target="_blank" rel="noopener" 
                    class="text-sm text-blue-600 hover:underline break-all">{selectedComparisonPair.bookmark1.url}</a>
               </div>

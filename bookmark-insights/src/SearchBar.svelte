@@ -97,7 +97,7 @@
   <div class="flex items-center gap-2">
     <div class="relative flex-1">
       <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-        <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
         </svg>
       </div>
@@ -109,7 +109,7 @@
         on:focus={handleFocus}
         on:keydown={handleKeyDown}
         placeholder={placeholder}
-        class="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+        class="block w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg leading-5 bg-white dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
         autocomplete="off"
         spellcheck="false"
       />
@@ -120,7 +120,7 @@
           type="button"
           title="Clear search (Esc)"
         >
-          <svg class="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="h-5 w-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
         </button>
@@ -128,7 +128,7 @@
     </div>
     <button
       on:click={toggleHelp}
-      class="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-gray-300 transition-colors"
+      class="p-2.5 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg border border-gray-300 dark:border-gray-600 transition-colors"
       type="button"
       title="Search help"
     >
@@ -144,25 +144,25 @@
   {#if value && (parsedQuery.positive.length > 0 || parsedQuery.negative.length > 0 || parsedQuery.phrases.length > 0 || parsedQuery.regexPatterns.length > 0)}
     <div class="flex flex-wrap gap-1.5 mt-2">
       {#each parsedQuery.positive as term}
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">
           <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
           {term}
         </span>
       {/each}
       {#each parsedQuery.negative as term}
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300">
           <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
           {term}
         </span>
       {/each}
       {#each parsedQuery.phrases as phrase}
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
           <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
           "{phrase}"
         </span>
       {/each}
       {#each parsedQuery.regexPatterns as pattern}
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300">
           <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 20 20"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l-4 4 4 4M6 16l-4-4 4-4"/></svg>
           {pattern}
         </span>
@@ -172,32 +172,32 @@
   
   <!-- Search help dropdown -->
   {#if showHelp}
-    <div class="absolute z-20 w-full mt-2 p-4 bg-white border border-gray-200 rounded-lg shadow-lg max-h-[70vh] overflow-y-auto">
-      <h4 class="font-medium text-gray-900 mb-3 flex items-center gap-2">
-        <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="absolute z-20 w-full mt-2 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-[70vh] overflow-y-auto">
+      <h4 class="font-medium text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+        <svg class="w-4 h-4 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
         </svg>
         Search Syntax
       </h4>
       <div class="space-y-2 text-sm">
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-green-100 text-green-800 rounded text-xs whitespace-nowrap">+term</code>
-          <span class="text-gray-600">Must include this term</span>
+          <code class="px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded text-xs whitespace-nowrap">+term</code>
+          <span class="text-gray-600 dark:text-gray-400">Must include this term</span>
         </div>
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-red-100 text-red-800 rounded text-xs whitespace-nowrap">-term</code>
-          <span class="text-gray-600">Must NOT include this term</span>
+          <code class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 rounded text-xs whitespace-nowrap">-term</code>
+          <span class="text-gray-600 dark:text-gray-400">Must NOT include this term</span>
         </div>
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-xs whitespace-nowrap">"exact phrase"</code>
-          <span class="text-gray-600">Match exact phrase</span>
+          <code class="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 rounded text-xs whitespace-nowrap">"exact phrase"</code>
+          <span class="text-gray-600 dark:text-gray-400">Match exact phrase</span>
         </div>
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded text-xs whitespace-nowrap">word</code>
-          <span class="text-gray-600">Regular search term</span>
+          <code class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs whitespace-nowrap">word</code>
+          <span class="text-gray-600 dark:text-gray-400">Regular search term</span>
         </div>
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded text-xs whitespace-nowrap">/regex/</code>
+          <code class="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 rounded text-xs whitespace-nowrap">/regex/</code>
           <span class="text-gray-600">Regular expression pattern</span>
         </div>
       </div>

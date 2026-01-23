@@ -8,8 +8,8 @@
     "build:js": "rollup -c",
     "build": "npm run build:css && npm run build:js && npm run clean:maps",
     "clean:maps": "rm -f public/*.map background.js.map",
-    "package": "npm run build && rm -rf extension && mkdir -p extension && cp -r public icons manifest.json popup.html dashboard.html background.js extension/ && echo 'Extension folder ready at ./extension'",
-    "dist": "npm run build && rm -rf dist && mkdir -p dist && cp -r public icons manifest.json popup.html dashboard.html background.js dist/ && echo 'Dist size:' && du -sh dist",
+    "package": "npm run build && rm -rf extension && mkdir -p extension && cp -r public icons manifest.json popup.html dashboard.html sidepanel.html background.js extension/ && echo 'Extension folder ready at ./extension'",
+    "dist": "npm run build && rm -rf dist && mkdir -p dist && cp -r public icons manifest.json popup.html dashboard.html sidepanel.html background.js dist/ && echo 'Dist size:' && du -sh dist",
     "dev:css": "tailwindcss -i ./src/tailwind.css -o ./public/tailwind.css --watch",
     "dev": "npm run build:css && rollup -c -w",
     "start": "sirv public --no-clear"

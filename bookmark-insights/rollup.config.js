@@ -35,6 +35,33 @@ export default [
     }
   },
   {
+    input: 'src/sidepanel.js',
+    output: {
+      sourcemap: !production,
+      format: 'es',
+      file: 'public/sidepanel.js',
+      inlineDynamicImports: true
+    },
+    plugins: [
+      svelte({
+        compilerOptions: {
+          dev: !production
+        }
+      }),
+      css({ output: 'sidepanel.css' }),
+      resolve({
+        browser: true,
+        dedupe: ['svelte'],
+        preferBuiltins: false
+      }),
+      commonjs(),
+      production && terser()
+    ],
+    watch: {
+      clearScreen: false
+    }
+  },
+  {
     input: 'src/dashboard.js',
     output: {
       sourcemap: !production,

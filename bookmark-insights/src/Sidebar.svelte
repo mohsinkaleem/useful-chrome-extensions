@@ -339,14 +339,14 @@
   }
 </script>
 
-<div class="w-[24rem] bg-gray-50 border-r border-gray-200 p-4 overflow-y-auto flex-shrink-0">
+<div class="w-[24rem] bg-gray-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-shrink-0">
   <div class="mb-6">
     <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm font-medium text-gray-900">Filters</h3>
+      <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">Filters</h3>
       {#if activeFiltersExist}
         <button
           on:click={clearFilters}
-          class="text-xs text-blue-600 hover:text-blue-800"
+          class="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
         >
           Clear All
         </button>
@@ -357,63 +357,63 @@
     {#if activeFiltersExist}
       <div class="mb-4 flex flex-wrap gap-2">
         {#each $activeFilters.topics as topic}
-          <div class="flex items-center space-x-1 p-1.5 bg-indigo-50 rounded-md border border-indigo-100">
-            <div class="text-[10px] text-indigo-800">{getTopicDisplayName(topic)}</div>
+          <div class="flex items-center space-x-1 p-1.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-md border border-indigo-100 dark:border-indigo-800">
+            <div class="text-[10px] text-indigo-800 dark:text-indigo-300">{getTopicDisplayName(topic)}</div>
             <button 
               on:click={() => toggleTopicFilter(topic)}
-              class="text-indigo-600 hover:text-indigo-800 font-bold"
+              class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 font-bold"
             >
               ×
             </button>
           </div>
         {/each}
         {#each $activeFilters.creators as creatorData}
-          <div class="flex items-center space-x-1 p-1.5 bg-pink-50 rounded-md border border-pink-100">
-            <div class="text-[10px] text-pink-800">{creatorData.creator}</div>
+          <div class="flex items-center space-x-1 p-1.5 bg-pink-50 dark:bg-pink-900/30 rounded-md border border-pink-100 dark:border-pink-800">
+            <div class="text-[10px] text-pink-800 dark:text-pink-300">{creatorData.creator}</div>
             <button 
               on:click={() => toggleCreatorFilter(creatorData.creator, creatorData.platform)}
-              class="text-pink-600 hover:text-pink-800 font-bold"
+              class="text-pink-600 dark:text-pink-400 hover:text-pink-800 dark:hover:text-pink-200 font-bold"
             >
               ×
             </button>
           </div>
         {/each}
         {#each $activeFilters.types as type}
-          <div class="flex items-center space-x-1 p-1.5 bg-orange-50 rounded-md border border-orange-100">
-            <div class="text-[10px] text-orange-800">{getContentTypeDisplayName(type)}</div>
+          <div class="flex items-center space-x-1 p-1.5 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-100 dark:border-orange-800">
+            <div class="text-[10px] text-orange-800 dark:text-orange-300">{getContentTypeDisplayName(type)}</div>
             <button 
               on:click={() => toggleContentTypeFilter(type)}
-              class="text-orange-600 hover:text-orange-800 font-bold"
+              class="text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-200 font-bold"
             >
               ×
             </button>
           </div>
         {/each}
         {#each $activeFilters.domains as domain}
-          <div class="flex items-center space-x-1 p-1.5 bg-blue-50 rounded-md border border-blue-100">
-            <div class="text-[10px] text-blue-800">{domain}</div>
+          <div class="flex items-center space-x-1 p-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-md border border-blue-100 dark:border-blue-800">
+            <div class="text-[10px] text-blue-800 dark:text-blue-300">{domain}</div>
             <button 
               on:click={() => toggleDomainFilter(domain)}
-              class="text-blue-600 hover:text-blue-800 font-bold"
+              class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 font-bold"
             >
               ×
             </button>
           </div>
         {/each}
         {#each $activeFilters.folders as folder}
-          <div class="flex items-center space-x-1 p-1.5 bg-green-50 rounded-md border border-green-100">
-            <div class="text-[10px] text-green-800">{folder}</div>
+          <div class="flex items-center space-x-1 p-1.5 bg-green-50 dark:bg-green-900/30 rounded-md border border-green-100 dark:border-green-800">
+            <div class="text-[10px] text-green-800 dark:text-green-300">{folder}</div>
             <button 
               on:click={() => toggleFolderFilter(folder)}
-              class="text-green-600 hover:text-green-800 font-bold"
+              class="text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-200 font-bold"
             >
               ×
             </button>
           </div>
         {/each}
         {#if $activeFilters.dateRange}
-          <div class="flex items-center space-x-1 p-1.5 bg-purple-50 rounded-md border border-purple-100">
-            <div class="text-[10px] text-purple-800">
+          <div class="flex items-center space-x-1 p-1.5 bg-purple-50 dark:bg-purple-900/30 rounded-md border border-purple-100 dark:border-purple-800">
+            <div class="text-[10px] text-purple-800 dark:text-purple-300">
               {$activeFilters.dateRange.period === 'week' ? 'This Week' : 
                $activeFilters.dateRange.period === 'twoWeek' ? 'This 2-Week' :
                $activeFilters.dateRange.period === 'month' ? 'This Month' :
@@ -423,7 +423,7 @@
             </div>
             <button 
               on:click={() => { activeFilters.setFilter('dateRange', null); }}
-              class="text-purple-600 hover:text-purple-800 font-bold"
+              class="text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-200 font-bold"
             >
               ×
             </button>
@@ -438,36 +438,30 @@
     <div class="mb-0">
       <button
         on:click={() => toggleSection('domains')}
-        class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
+        class="w-full flex items-center justify-between text-xs font-medium text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2 hover:text-gray-900 dark:hover:text-white"
       >
         <span>
           {#if isSearchActive}
-            <span class="text-blue-600">Matching Domains ({displayDomains.length})</span>
+            <span class="text-blue-600 dark:text-blue-400">Matching Domains ({displayDomains.length})</span>
           {:else}
             🌐 Domains ({displayDomains.length})
           {/if}
         </span>
-        <span class="text-gray-400">{sectionsExpanded.domains ? '▼' : '▶'}</span>
+        <span class="text-gray-400 dark:text-gray-500">{sectionsExpanded.domains ? '▼' : '▶'}</span>
       </button>
       {#if sectionsExpanded.domains}
         {#if !isSearchActive}
           <div class="flex space-x-1 mb-2">
             <button
               on:click={() => domainSortMode = 'recency'}
-              class="text-[10px] px-1.5 py-0.5 rounded"
-              class:bg-blue-100={domainSortMode === 'recency'}
-              class:text-blue-700={domainSortMode === 'recency'}
-              class:text-gray-500={domainSortMode !== 'recency'}
+              class="text-[10px] px-1.5 py-0.5 rounded transition-colors {domainSortMode === 'recency' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}"
               title="Sort by most recent bookmark"
             >
               Recent
             </button>
             <button
               on:click={() => domainSortMode = 'count'}
-              class="text-[10px] px-1.5 py-0.5 rounded"
-              class:bg-blue-100={domainSortMode === 'count'}
-              class:text-blue-700={domainSortMode === 'count'}
-              class:text-gray-500={domainSortMode !== 'count'}
+              class="text-[10px] px-1.5 py-0.5 rounded transition-colors {domainSortMode === 'count' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-gray-500 dark:text-gray-400'}"
               title="Sort by bookmark count"
             >
               Count
@@ -478,22 +472,17 @@
           {#each displayDomains.slice(0, domainDisplayLimit) as domainData}
             <button
               on:click={() => toggleDomainFilter(domainData.domain)}
-              class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
-              class:bg-blue-50={isFilterActive('domains', domainData.domain)}
-              class:text-blue-700={isFilterActive('domains', domainData.domain)}
-              class:border-blue-200={isFilterActive('domains', domainData.domain)}
-              class:text-gray-600={!isFilterActive('domains', domainData.domain)}
-              class:border-transparent={!isFilterActive('domains', domainData.domain)}
+              class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 dark:hover:bg-gray-700 rounded border transition-colors flex items-center gap-1.5 {isFilterActive('domains', domainData.domain) ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' : 'text-gray-600 dark:text-gray-400 border-transparent dark:border-transparent'}"
               title={domainData.domain}
             >
               <span class="font-medium">{domainData.domain}</span>
-              <span class="text-[10px] text-gray-400">{domainData.count}</span>
+              <span class="text-[10px] text-gray-400 dark:text-gray-500">{domainData.count}</span>
             </button>
           {/each}
           {#if displayDomains.length > domainDisplayLimit}
             <button
               on:click={loadMoreDomains}
-              class="w-full text-center px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded border border-blue-200 mt-2"
+              class="w-full text-center px-2 py-1.5 text-xs text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/40 rounded border border-blue-200 dark:border-blue-800 mt-2"
             >
               Load More
             </button>
@@ -506,38 +495,33 @@
     <div class="mb-0">
       <button
         on:click={() => toggleSection('folders')}
-        class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
+        class="w-full flex items-center justify-between text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2 hover:text-gray-900 dark:hover:text-gray-200 transition-colors"
       >
         <span>
           {#if isSearchActive}
-            <span class="text-blue-600">Matching Folders ({displayFolders.length})</span>
+            <span class="text-blue-600 dark:text-blue-400">Matching Folders ({displayFolders.length})</span>
           {:else}
             📁 Folders ({displayFolders.length})
           {/if}
         </span>
-        <span class="text-gray-400">{sectionsExpanded.folders ? '▼' : '▶'}</span>
+        <span class="text-gray-400 dark:text-gray-500">{sectionsExpanded.folders ? '▼' : '▶'}</span>
       </button>
       {#if sectionsExpanded.folders}
         <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
           {#each displayFolders.slice(0, folderDisplayLimit) as folderData}
             <button
               on:click={() => toggleFolderFilter(folderData.folder)}
-              class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
-              class:bg-green-50={isFilterActive('folders', folderData.folder)}
-              class:text-green-700={isFilterActive('folders', folderData.folder)}
-              class:border-green-200={isFilterActive('folders', folderData.folder)}
-              class:text-gray-600={!isFilterActive('folders', folderData.folder)}
-              class:border-transparent={!isFilterActive('folders', folderData.folder)}
+              class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 dark:hover:bg-gray-700 rounded border transition-colors flex items-center gap-1.5 {isFilterActive('folders', folderData.folder) ? 'bg-green-50 dark:bg-green-900/40 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800' : 'text-gray-600 dark:text-gray-400 border-transparent dark:border-transparent'}"
               title={folderData.folder}
             >
               <span class="font-medium">📁 {folderData.folder.toLowerCase().replace("bookmarks","")}</span>
-              <span class="text-[10px] text-gray-400">{folderData.count}</span>
+              <span class="text-[10px] text-gray-400 dark:text-gray-500">{folderData.count}</span>
             </button>
           {/each}
           {#if displayFolders.length > folderDisplayLimit}
             <button
               on:click={loadMoreFolders}
-              class="w-full text-center px-2 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded border border-green-200 mt-2"
+              class="w-full text-center px-2 py-1.5 text-xs text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/40 rounded border border-green-200 dark:border-green-800 mt-2"
             >
               Load More
             </button>
@@ -551,31 +535,26 @@
       <div class="mb-0">
         <button
           on:click={() => toggleSection('topics')}
-          class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
+          class="w-full flex items-center justify-between text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2 hover:text-gray-900 dark:hover:text-gray-200"
         >
           <span>🏷️ Topics ({displayTopics.length})</span>
-          <span class="text-gray-400">{sectionsExpanded.topics ? '▼' : '▶'}</span>
+          <span class="text-gray-400 dark:text-gray-500">{sectionsExpanded.topics ? '▼' : '▶'}</span>
         </button>
         {#if sectionsExpanded.topics}
           <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
             {#each displayTopics.slice(0, topicDisplayLimit) as t}
               <button
                 on:click={() => toggleTopicFilter(t.topic)}
-                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
-                class:bg-indigo-50={isFilterActive('topics', t.topic)}
-                class:text-indigo-700={isFilterActive('topics', t.topic)}
-                class:border-indigo-200={isFilterActive('topics', t.topic)}
-                class:text-gray-600={!isFilterActive('topics', t.topic)}
-                class:border-transparent={!isFilterActive('topics', t.topic)}
+                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 dark:hover:bg-gray-700 rounded border transition-colors flex items-center gap-1.5 {isFilterActive('topics', t.topic) ? 'bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' : 'text-gray-600 dark:text-gray-400 border-transparent dark:border-transparent'}"
               >
                 <span class="font-medium">{getTopicDisplayName(t.topic)}</span>
-                <span class="text-[10px] text-gray-400">{t.count}</span>
+                <span class="text-[10px] text-gray-400 dark:text-gray-500">{t.count}</span>
               </button>
             {/each}
             {#if displayTopics.length > topicDisplayLimit}
               <button
                 on:click={loadMoreTopics}
-                class="w-full text-center px-2 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 rounded border border-indigo-200 mt-2"
+                class="w-full text-center px-2 py-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded border border-indigo-200 dark:border-indigo-800 mt-2"
               >
                 Show more
               </button>
@@ -590,10 +569,10 @@
       <div class="mb-0">
         <button
           on:click={() => toggleSection('creators')}
-          class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
+          class="w-full flex items-center justify-between text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2 hover:text-gray-900 dark:hover:text-gray-200"
         >
           <span>👤 Top Creators ({displayCreators.length})</span>
-          <span class="text-gray-400">{sectionsExpanded.creators ? '▼' : '▶'}</span>
+          <span class="text-gray-400 dark:text-gray-500">{sectionsExpanded.creators ? '▼' : '▶'}</span>
         </button>
         {#if sectionsExpanded.creators}
           <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
@@ -601,21 +580,16 @@
               {@const isSelected = isFilterActive('creators', `${c.platform}:${c.creator}`)}
               <button
                 on:click={() => toggleCreatorFilter(c.creator, c.platform)}
-                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
-                class:bg-pink-50={isSelected}
-                class:text-pink-700={isSelected}
-                class:border-pink-200={isSelected}
-                class:text-gray-600={!isSelected}
-                class:border-transparent={!isSelected}
+                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 dark:hover:bg-gray-700 rounded border transition-colors flex items-center gap-1.5 {isSelected ? 'bg-pink-50 dark:bg-pink-900/40 text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800' : 'text-gray-600 dark:text-gray-400 border-transparent dark:border-transparent'}"
               >
                 <span class="font-medium">👤 {c.creator}</span>
-                <span class="text-[10px] text-gray-400">{c.count}</span>
+                <span class="text-[10px] text-gray-400 dark:text-gray-500">{c.count}</span>
               </button>
             {/each}
             {#if displayCreators.length > creatorDisplayLimit}
               <button
                 on:click={loadMoreCreators}
-                class="w-full text-center px-2 py-1 text-xs text-pink-600 hover:bg-pink-50 rounded"
+                class="w-full text-center px-2 py-1 text-xs text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/40 rounded border border-pink-200 dark:border-pink-800 mt-2"
               >
                 Show more
               </button>
@@ -630,31 +604,26 @@
       <div class="mb-0">
         <button
           on:click={() => toggleSection('contentTypes')}
-          class="w-full flex items-center justify-between text-xs font-medium text-gray-700 uppercase tracking-wide mb-2 hover:text-gray-900"
+          class="w-full flex items-center justify-between text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2 hover:text-gray-900 dark:hover:text-gray-200"
         >
           <span>📝 Content Types ({displayContentTypes.length})</span>
-          <span class="text-gray-400">{sectionsExpanded.contentTypes ? '▼' : '▶'}</span>
+          <span class="text-gray-400 dark:text-gray-500">{sectionsExpanded.contentTypes ? '▼' : '▶'}</span>
         </button>
         {#if sectionsExpanded.contentTypes}
           <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
             {#each displayContentTypes.slice(0, contentTypeDisplayLimit) as ct}
               <button
                 on:click={() => toggleContentTypeFilter(ct.type)}
-                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 rounded border flex items-center gap-1.5"
-                class:bg-orange-50={isFilterActive('types', ct.type)}
-                class:text-orange-700={isFilterActive('types', ct.type)}
-                class:border-orange-200={isFilterActive('types', ct.type)}
-                class:text-gray-600={!isFilterActive('types', ct.type)}
-                class:border-transparent={!isFilterActive('types', ct.type)}
+                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 dark:hover:bg-gray-700 rounded border transition-colors flex items-center gap-1.5 {isFilterActive('types', ct.type) ? 'bg-orange-50 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' : 'text-gray-600 dark:text-gray-400 border-transparent dark:border-transparent'}"
               >
                 <span class="font-medium">{getContentTypeDisplayName(ct.type)}</span>
-                <span class="text-[10px] text-gray-400">{ct.count}</span>
+                <span class="text-[10px] text-gray-400 dark:text-gray-500">{ct.count}</span>
               </button>
             {/each}
             {#if displayContentTypes.length > contentTypeDisplayLimit}
               <button
                 on:click={loadMoreContentTypes}
-                class="w-full text-center px-2 py-1 text-xs text-orange-600 hover:bg-orange-50 rounded"
+                class="w-full text-center px-2 py-1.5 text-xs text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/40 rounded border border-orange-200 dark:border-orange-800 mt-2"
               >
                 Show more
               </button>
@@ -666,72 +635,58 @@
     
     <!-- Date Filters -->
     <div class="mb-0">
-      <h4 class="text-xs font-medium text-gray-700 uppercase tracking-wide mb-2">
+      <h4 class="text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2">
         Date Added
       </h4>
       <div class="grid grid-cols-1 gap-1">
         <button
           on:click={() => applyDateFilter('week')}
-          class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded flex items-center justify-between"
-          class:bg-blue-50={$activeFilters.dateRange?.period === 'week'}
-          class:text-blue-700={$activeFilters.dateRange?.period === 'week'}
+          class="w-full text-left px-2 py-1 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between {$activeFilters.dateRange?.period === 'week' ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : ''}"
         >
           <span class="text-xs">This Week</span>
-          <span class="text-[10px] text-gray-400">{displayDateCounts.week}</span>
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{displayDateCounts.week}</span>
         </button>
         <button
           on:click={() => applyDateFilter('twoWeek')}
-          class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded flex items-center justify-between"
-          class:bg-blue-50={$activeFilters.dateRange?.period === 'twoWeek'}
-          class:text-blue-700={$activeFilters.dateRange?.period === 'twoWeek'}
+          class="w-full text-left px-2 py-1 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between {$activeFilters.dateRange?.period === 'twoWeek' ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : ''}"
         >
           <span class="text-xs">This 2-Week</span>
-          <span class="text-[10px] text-gray-400">{displayDateCounts.twoWeek}</span>
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{displayDateCounts.twoWeek}</span>
         </button>
         <button
           on:click={() => applyDateFilter('month')}
-          class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded flex items-center justify-between"
-          class:bg-blue-50={$activeFilters.dateRange?.period === 'month'}
-          class:text-blue-700={$activeFilters.dateRange?.period === 'month'}
+          class="w-full text-left px-2 py-1 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between {$activeFilters.dateRange?.period === 'month' ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : ''}"
         >
           <span class="text-xs">This Month</span>
-          <span class="text-[10px] text-gray-400">{displayDateCounts.month}</span>
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{displayDateCounts.month}</span>
         </button>
         <button
           on:click={() => applyDateFilter('threeMonth')}
-          class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded flex items-center justify-between"
-          class:bg-blue-50={$activeFilters.dateRange?.period === 'threeMonth'}
-          class:text-blue-700={$activeFilters.dateRange?.period === 'threeMonth'}
+          class="w-full text-left px-2 py-1 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between {$activeFilters.dateRange?.period === 'threeMonth' ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : ''}"
         >
           <span class="text-xs">This 3-Month</span>
-          <span class="text-[10px] text-gray-400">{displayDateCounts.threeMonth}</span>
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{displayDateCounts.threeMonth}</span>
         </button>
         <button
           on:click={() => applyDateFilter('sixMonth')}
-          class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded flex items-center justify-between"
-          class:bg-blue-50={$activeFilters.dateRange?.period === 'sixMonth'}
-          class:text-blue-700={$activeFilters.dateRange?.period === 'sixMonth'}
+          class="w-full text-left px-2 py-1 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between {$activeFilters.dateRange?.period === 'sixMonth' ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : ''}"
         >
           <span class="text-xs">This 6-Month</span>
-          <span class="text-[10px] text-gray-400">{displayDateCounts.sixMonth}</span>
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{displayDateCounts.sixMonth}</span>
         </button>
         <button
           on:click={() => applyDateFilter('year')}
-          class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded flex items-center justify-between"
-          class:bg-blue-50={$activeFilters.dateRange?.period === 'year'}
-          class:text-blue-700={$activeFilters.dateRange?.period === 'year'}
+          class="w-full text-left px-2 py-1 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between {$activeFilters.dateRange?.period === 'year' ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : ''}"
         >
           <span class="text-xs">This Year</span>
-          <span class="text-[10px] text-gray-400">{displayDateCounts.year}</span>
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{displayDateCounts.year}</span>
         </button>
         <button
           on:click={() => applyDateFilter('older')}
-          class="w-full text-left px-2 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded flex items-center justify-between"
-          class:bg-blue-50={$activeFilters.dateRange?.period === 'older'}
-          class:text-blue-700={$activeFilters.dateRange?.period === 'older'}
+          class="w-full text-left px-2 py-1 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between {$activeFilters.dateRange?.period === 'older' ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : ''}"
         >
           <span class="text-xs">Older</span>
-          <span class="text-[10px] text-gray-400">{displayDateCounts.older}</span>
+          <span class="text-[10px] text-gray-400 dark:text-gray-500">{displayDateCounts.older}</span>
         </button>
       </div>
     </div>
