@@ -12,7 +12,7 @@ A powerful, lightweight Chrome extension for managing tabs, windows, and browser
 - Debounced search (150ms) to prevent UI lag
 
 ### 👁️ View Modes
-- **List View**: Detailed tab information with URLs and memory indicators
+- **List View**: Detailed tab information with URLs
 - **Compact View**: Minimal view showing just titles
 - **Grid View**: Visual grid layout for quick scanning
 
@@ -46,25 +46,7 @@ A powerful, lightweight Chrome extension for managing tabs, windows, and browser
 - Quick navigation to media tabs
 - Content script injection for YouTube, Spotify, Twitch, and other media sites only
 
-### 💤 Resource Management
-- Track discarded/hibernated vs active tabs
-- Hibernate inactive tabs (not accessed in last hour)
-- Respects pinned and audible tabs (won't hibernate)
-- Visual count of active vs total tabs
-
-### 📊 Resource Monitor
-- **Compact overview** in header showing total memory and heavy tab count
-- **Dedicated resource page** with detailed per-tab breakdown
-- **Intelligent memory estimation** based on:
-  - Website type (YouTube, Gmail, Meet, Figma, etc.)
-  - Tab state (active, audible, discarded)
-  - Tab age (older tabs accumulate memory)
-- **Lazy loading**: Shows top 10 tabs initially, "Load More" for rest
-- **Color-coded severity**: Green → Yellow → Orange → Red
-- **Quick actions**: Hibernate heavy tabs, navigate to any tab
-- **Live updates** every 5 seconds
-
-### 📑 Bookmarking
+###  Bookmarking
 - Bulk bookmark tabs to timestamped folders
 - Bookmark entire windows
 - Dynamic bookmark bar detection (no hardcoded folder IDs)
@@ -83,7 +65,6 @@ A powerful, lightweight Chrome extension for managing tabs, windows, and browser
 ### 🖱️ Context Menu
 - Close duplicate tabs
 - Bookmark current tab
-- Hibernate current tab
 - Group tabs by domain
 
 ## Installation
@@ -146,14 +127,10 @@ tab-manager/
 │   │   └── auto-grouper.ts    # Auto-grouping engine with rules
 │   ├── popup/
 │   │   ├── popup.ts           # Main popup controller
-│   │   ├── resource-monitor-page.ts  # Resource page controller
 │   │   └── components/
 │   │       ├── TabList.ts         # Tab rendering with tooltips
 │   │       ├── SearchBar.ts       # Search with filters
 │   │       ├── QuickActions.ts    # Batch operations
-│   │       ├── ResourcePanel.ts   # Hibernation controls
-│   │       ├── ResourceOverview.ts # Compact memory stats
-│   │       ├── ResourceMonitor.ts  # Full resource monitor
 │   │       ├── MediaControls.ts    # Media tab controls
 │   │       └── SessionManager.ts   # Session save/restore
 │   ├── sidepanel/
@@ -161,7 +138,7 @@ tab-manager/
 │   ├── content/
 │   │   └── content-script.ts  # Media control (YouTube, Spotify, etc.)
 │   └── shared/
-│       ├── tab-utils.ts       # Tab queries, events, memory estimation
+│       ├── tab-utils.ts       # Tab queries, events
 │       ├── url-utils.ts       # URL normalization, duplicate detection
 │       └── bookmark-utils.ts  # Bookmark operations
 ├── icons/                     # Extension icons (SVG)

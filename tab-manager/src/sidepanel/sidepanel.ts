@@ -48,13 +48,6 @@ class SidepanelApp {
       this.loadAndRenderTabs(query, filters);
     });
 
-    // Handle high resource filter manually if needed, or pass to render
-    document.getElementById('filter-heavy')?.addEventListener('change', (e) => {
-      // Re-trigger load to filter
-      const checkbox = e.target as HTMLInputElement;
-       this.loadAndRenderTabs(this.currentSearchQuery, { ...this.currentFilters, heavy: checkbox.checked });
-    });
-
     this.tabList.onTabClick(async (tabId) => {
       const tab = await chrome.tabs.get(tabId);
       if (tab.windowId && tab.id) {

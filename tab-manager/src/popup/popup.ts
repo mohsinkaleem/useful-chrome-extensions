@@ -1,12 +1,10 @@
 // Main popup script
 import { TabBalancer } from '../shared/tab-balancer.js';
-import { TabEventManager, getAllTabs, getTabsByWindow, estimateTabMemory } from '../shared/tab-utils.js';
+import { TabEventManager, getAllTabs, getTabsByWindow } from '../shared/tab-utils.js';
 import { findDuplicatesByUrl, getDuplicateGroups, normalizeUrl } from '../shared/url-utils.js';
 import { TabList } from './components/TabList.js';
 import { SearchBar } from './components/SearchBar.js';
 import { QuickActions } from './components/QuickActions.js';
-import { ResourcePanel } from './components/ResourcePanel.js';
-import { ResourceOverview } from './components/ResourceOverview.js';
 import { MediaControls } from './components/MediaControls.js';
 import { SessionManager } from './components/SessionManager.js';
 
@@ -15,8 +13,6 @@ class TabManagerApp {
   private tabList: TabList;
   private searchBar: SearchBar;
   private quickActions: QuickActions;
-  private resourcePanel: ResourcePanel;
-  private resourceOverview: ResourceOverview;
   private mediaControls: MediaControls;
   private sessionManager: SessionManager;
   private selectedTabs: Set<number> = new Set();
@@ -31,8 +27,6 @@ class TabManagerApp {
     this.tabList = new TabList();
     this.searchBar = new SearchBar();
     this.quickActions = new QuickActions();
-    this.resourcePanel = new ResourcePanel();
-    this.resourceOverview = new ResourceOverview();
     this.mediaControls = new MediaControls();
     this.sessionManager = new SessionManager();
     
@@ -305,12 +299,6 @@ class TabManagerApp {
     this.tabList.setDuplicateHighlight(this.highlightDuplicates, this.duplicateUrls);
     this.tabList.render(filteredByWindow, this.currentView);
     
-    // Update resource panel with more stats
-    this.resourcePanel.update(tabs, this.duplicateUrls.size);
-    
-    // Update resource overview
-    this.resourceOverview.update(tabs);
-    
     // Update media controls
     this.mediaControls.update(tabs);
   }
@@ -318,42 +306,12 @@ class TabManagerApp {
   private updateStats(tabs: chrome.tabs.Tab[], windowCount: number) {
     const tabCountEl = document.getElementById('tab-count');
     const windowCountEl = document.getElementById('window-count');
-    const memoryEl = document.getElementById('memory-usage');
-    const heavyTabsEl = document.getElementById('header-heavy-tabs');
     
     if (tabCountEl) {
       tabCountEl.textContent = `${tabs.length} tabs`;
     }
     if (windowCountEl) {
       windowCountEl.textContent = `${windowCount} windows`;
-    }
-    
-    // Calculate memory and heavy tabs
-    let totalMemory = 0;
-    let heavyTabsCount = 0;
-    
-    for (const tab of tabs) {
-      const estimate = estimateTabMemory(tab);
-      totalMemory += estimate;
-      
-      // Consider a tab "heavy" if it uses more than 200MB
-      if (estimate > 200 * 1024 * 1024) {
-        heavyTabsCount++;
-      }
-    }
-    
-    if (memoryEl) {
-      // Use same estimation logic as ResourceOverview
-      const estimatedGB = totalMemory / (1024 * 1024 * 1024);
-      if (estimatedGB >= 1) {
-        memoryEl.textContent = `~${estimatedGB.toFixed(1)} GB`;
-      } else {
-        memoryEl.textContent = `~${(totalMemory / (1024 * 1024)).toFixed(0)} MB`;
-      }
-    }
-    
-    if (heavyTabsEl) {
-      heavyTabsEl.textContent = heavyTabsCount.toString();
     }
   }
 

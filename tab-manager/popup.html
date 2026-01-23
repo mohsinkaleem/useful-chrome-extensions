@@ -16,10 +16,6 @@
         <span class="stat-sep">•</span>
         <span id="window-count">0 windows</span>
         <span class="stat-sep">•</span>
-        <span id="memory-usage" title="Estimated memory">--</span>
-        <span class="stat-sep">•</span>
-        <span title="Heavy tabs (>200MB)">⚠️ <strong id="header-heavy-tabs">0</strong></span>
-        <span class="stat-sep">•</span>
         <button id="theme-toggle" class="action-btn small" title="Toggle Dark Mode" style="border:none; background:transparent; font-size:14px; padding:0; line-height:1; cursor:pointer;">🌙</button>
       </div>
     </header>
@@ -43,14 +39,14 @@
         </label>
         <label class="filter-chip-icon" title="Highlight duplicate tabs">
           <input type="checkbox" id="filter-duplicates" />
-          <span class="filter-icon">⚠️</span>
+          <span class="filter-icon">🔁</span>
         </label>
       </div>
       <div class="view-controls">
-        <button id="open-sidepanel" class="view-btn" title="Open Side Panel">◨</button>
+        <button id="open-sidepanel" class="view-btn" title="Open Side Panel">📒</button>
         <div class="view-sep" style="width: 1px; height: 16px; background: #ddd; margin: 0 4px;"></div>
-        <button id="view-list" class="view-btn active" title="List view">☰</button>
-        <button id="view-compact" class="view-btn" title="Compact view">≡</button>
+        <button id="view-list" class="view-btn active" title="List view">📋</button>
+        <button id="view-compact" class="view-btn" title="Compact view">☰</button>
         <button id="view-grid" class="view-btn" title="Grid view">▦</button>
       </div>
     </div>
@@ -70,27 +66,23 @@
       </details>
 
       <!-- Unified Actions Bar -->
-      <div class="unified-actions-bar" id="resource-overview">
-        <button id="action-hibernate-inactive" class="action-btn-inline" title="Hibernate inactive tabs">
-          💤 (<strong id="discarded-count">0</strong>)
-        </button>
+      <div class="unified-actions-bar">
         <button id="action-close-duplicates" class="action-btn-inline" title="Close duplicate tabs">
           🗑️ (<strong id="duplicate-count">0</strong>)
         </button>
         <div class="action-divider"></div>
-        <button id="action-close-selected" class="action-btn-inline" disabled title="Close selected tabs">✕</button>
-        <button id="action-bookmark-selected" class="action-btn-inline" disabled title="Bookmark selected tabs">★</button>
-        <button id="action-bookmark-all" class="action-btn-inline" title="Bookmark all tabs">★ All</button>
-        <button id="action-group-selected" class="action-btn-inline" disabled title="Group selected tabs">▤</button>
+        <button id="action-close-selected" class="action-btn-inline" disabled title="Close selected tabs">✖️</button>
+        <button id="action-bookmark-selected" class="action-btn-inline" disabled title="Bookmark selected tabs">⭐</button>
+        <button id="action-bookmark-all" class="action-btn-inline" title="Bookmark all tabs">🌟 All</button>
+        <button id="action-group-selected" class="action-btn-inline" disabled title="Group selected tabs">🧩</button>
         
         <div style="display: flex; align-items: center; gap: 4px; border-left: 1px solid #ddd; padding-left: 4px;">
             <button id="action-balance-windows" class="action-btn-inline" title="Balance windows (Re-arrange tabs)">⚖️</button>
             <button id="action-group-all" class="action-btn-inline" title="Group all tabs by domain">📁</button>
-            <button id="action-ungroup-all" class="action-btn-inline" title="Ungroup all tabs">📂</button>
+            <button id="action-ungroup-all" class="action-btn-inline" title="Ungroup all tabs">📤</button>
         </div>
         
         <button id="action-save-session" class="action-btn-inline" title="Save session">💾</button>
-        <button id="view-resource-details" class="action-btn-inline" title="View detailed resource monitor">📊</button>
       </div>
     </div>
 

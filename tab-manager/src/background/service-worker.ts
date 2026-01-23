@@ -21,12 +21,6 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 
   chrome.contextMenus.create({
-    id: 'hibernate-tab',
-    title: 'Hibernate This Tab',
-    contexts: ['page']
-  });
-
-  chrome.contextMenus.create({
     id: 'group-by-domain',
     title: 'Group Tabs by Domain',
     contexts: ['page']
@@ -62,12 +56,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           title: tab.title,
           url: tab.url
         });
-      }
-      break;
-
-    case 'hibernate-tab':
-      if (tab?.id) {
-        await chrome.tabs.discard(tab.id);
       }
       break;
 

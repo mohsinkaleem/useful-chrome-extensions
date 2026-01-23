@@ -15,14 +15,13 @@ The extension follows a modular architecture with clear separation of concerns:
 │  Popup / Side Panel                                         │
 │  ├── popup.ts             Main controller                   │
 │  ├── sidepanel.ts         Side panel controller (Chrome 114+)│
-│  ├── resource-monitor-page.ts  Resource page controller    │
-│  └── components/          UI components (8 modules)         │
+│  └── components/          UI components (7 modules)         │
 ├─────────────────────────────────────────────────────────────┤
 │  Content Script                                             │
 │  └── content-script.ts    Media control on specific sites  │
 ├─────────────────────────────────────────────────────────────┤
 │  Shared Utilities                                           │
-│  ├── tab-utils.ts         Tab queries, events, memory est. │
+│  ├── tab-utils.ts         Tab queries, events              │
 │  ├── url-utils.ts         URL normalization, duplicates    │
 │  └── bookmark-utils.ts    Bookmark operations              │
 └─────────────────────────────────────────────────────────────┘
@@ -69,9 +68,6 @@ The extension follows a modular architecture with clear separation of concerns:
 | `TabList.ts` | Renders tabs grouped by window, tooltips, selection |
 | `SearchBar.ts` | Search input with debounce, filter checkboxes |
 | `QuickActions.ts` | Close/bookmark/group buttons for selected tabs |
-| `ResourcePanel.ts` | Hibernation controls, active/discarded counts |
-| `ResourceOverview.ts` | Compact memory display in header |
-| `ResourceMonitor.ts` | Full resource page with lazy loading |
 | `MediaControls.ts` | Playing tabs list with mute/navigation |
 | `SessionManager.ts` | Modal for save/restore sessions |
 
@@ -91,7 +87,6 @@ The extension follows a modular architecture with clear separation of concerns:
 getAllTabs()              // Get all tabs across windows
 getTabsByWindow()         // Get tabs grouped by window ID
 getActiveTab()            // Get currently focused tab
-estimateTabMemory(tab)    // Centralized memory estimation
 TabEventManager           // Debounced tab event listener
 ```
 
@@ -188,7 +183,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 ```bash
 esbuild src/background/service-worker.ts \
         src/popup/popup.ts \
-        src/popup/resource-monitor-page.ts \
         src/content/content-script.ts \
   --bundle \
   --outdir=dist \
@@ -209,8 +203,7 @@ dist/
 ├── background/
 │   └── service-worker.js      # Background entry
 ├── popup/
-│   ├── popup.js               # Popup entry
-│   └── resource-monitor-page.js
+│   └── popup.js               # Popup entry
 ├── content/
 │   └── content-script.js      # Content script entry
 ├── chunk-*.js                 # Shared code chunks
@@ -276,9 +269,6 @@ Previously: Injected on `<all_urls>` (every page)
 Now: Only on media sites (YouTube, Spotify, Twitch, etc.)
 
 This eliminates memory overhead on non-media pages.
-
-### 3. Lazy Loading
-Resource monitor shows top 10 tabs initially. Users click "Load More" to see additional tabs, preventing DOM bloat with many tabs.
 
 ### 4. Clean Extension Folder
 The `npm run package` command creates an `extension/` folder with only:
@@ -384,10 +374,7 @@ if (tab?.url && tab?.id) {
 - [ ] Close duplicates keeps newest tab
 - [ ] Session save/restore works
 - [ ] Pinned state restored with sessions
-- [ ] Hibernate inactive tabs works
 - [ ] Media controls show for playing tabs
 - [ ] Context menu items work
 - [ ] Auto-grouping works when enabled
-- [ ] Resource monitor shows all tabs
-- [ ] "Load More" reveals additional tabs
 - [ ] Jump-to-tab navigation works
