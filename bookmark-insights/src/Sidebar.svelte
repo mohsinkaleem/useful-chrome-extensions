@@ -140,47 +140,53 @@
       .sort((a, b) => b.count - a.count);
   }
 
-  // Use search result stats when available, otherwise use full domain list
-  $: displayDomains = (isSearchActive || activeFiltersExist) && searchResultStats?.domains 
-    ? searchResultStats.domains 
-    : (domainSortMode === 'recency' ? domainsByRecency : domainsByCount);
-  
-  // Use search result folders when available
-  $: displayFolders = (isSearchActive || activeFiltersExist) && searchResultStats?.folders 
-    ? searchResultStats.folders
-    : folders;
-
-  // Use search result platforms when available
-  $: displayPlatforms = (isSearchActive || activeFiltersExist) && searchResultStats?.platforms
-    ? searchResultStats.platforms
-    : platforms;
-
-  // Use search result creators when available
-  $: displayCreators = (isSearchActive || activeFiltersExist) && searchResultStats?.creators
-    ? searchResultStats.creators
-    : creators;
-
-  // Use search result content types when available
-  $: displayContentTypes = (isSearchActive || activeFiltersExist) && searchResultStats?.contentTypes
-    ? searchResultStats.contentTypes
-    : contentTypes;
-
-  // Use search result date counts when available
-  $: displayDateCounts = (isSearchActive || activeFiltersExist) && searchResultStats?.dateCounts
-    ? searchResultStats.dateCounts
-    : dateCounts;
-  
-  // Reactive computed value for active filters check
+  // Reactive computed value for active filters check - MUST be defined before useFilteredStats
   $: activeFiltersExist = $activeFilters.domains.length > 0 || 
                           $activeFilters.folders.length > 0 || 
                           $activeFilters.platforms.length > 0 ||
                           $activeFilters.creators.length > 0 ||
                           $activeFilters.types.length > 0 ||
+                          ($activeFilters.tags && $activeFilters.tags.length > 0) ||
+                          $activeFilters.deadLinks ||
+                          $activeFilters.stale ||
                           $activeFilters.dateRange !== null ||
                           $activeFilters.readingTimeRange !== null ||
                           $activeFilters.qualityScoreRange !== null ||
-                          $activeFilters.hasPublishedDate !== null ||
-                          $activeFilters.tags.length > 0;
+                          $activeFilters.hasPublishedDate !== null;
+
+  // Reactive: Check if we should use filtered stats
+  // This ensures proper reactivity when searchResultStats prop changes
+  $: useFilteredStats = (isSearchActive || activeFiltersExist) && searchResultStats != null;
+  
+  // Use search result stats when available, otherwise use full domain list
+  $: displayDomains = useFilteredStats && searchResultStats?.domains 
+    ? searchResultStats.domains 
+    : (domainSortMode === 'recency' ? domainsByRecency : domainsByCount);
+  
+  // Use search result folders when available
+  $: displayFolders = useFilteredStats && searchResultStats?.folders 
+    ? searchResultStats.folders
+    : folders;
+
+  // Use search result platforms when available
+  $: displayPlatforms = useFilteredStats && searchResultStats?.platforms
+    ? searchResultStats.platforms
+    : platforms;
+
+  // Use search result creators when available
+  $: displayCreators = useFilteredStats && searchResultStats?.creators
+    ? searchResultStats.creators
+    : creators;
+
+  // Use search result content types when available
+  $: displayContentTypes = useFilteredStats && searchResultStats?.contentTypes
+    ? searchResultStats.contentTypes
+    : contentTypes;
+
+  // Use search result date counts when available
+  $: displayDateCounts = useFilteredStats && searchResultStats?.dateCounts
+    ? searchResultStats.dateCounts
+    : dateCounts;
   
   function loadMoreDomains() {
     domainDisplayLimit += 30;
@@ -272,6 +278,12 @@
   }
   
   function applyDateFilter(period) {
+    // Toggle behavior: if the same period is already active, clear it
+    if ($activeFilters.dateRange?.period === period) {
+      activeFilters.setFilter('dateRange', null);
+      return;
+    }
+    
     const now = new Date();
     const currentYear = now.getFullYear();
     let startDate;

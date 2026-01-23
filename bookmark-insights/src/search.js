@@ -679,7 +679,7 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
       filteredBookmarks = filteredBookmarks.filter(b => {
           if (activeFilters.domains && activeFilters.domains.length > 0) {
               const domain = (b.domain || '').toLowerCase();
-              if (!activeFilters.domains.some(d => domain.includes(d))) return false;
+              if (!activeFilters.domains.some(d => domain.includes(d.toLowerCase()))) return false;
           }
           if (activeFilters.folders && activeFilters.folders.length > 0) {
               // Fixed: Only check folderPath, don't fall back to category
@@ -687,10 +687,12 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
               if (!activeFilters.folders.some(f => folder.includes(f.toLowerCase()))) return false;
           }
           if (activeFilters.platforms && activeFilters.platforms.length > 0) {
-              if (!activeFilters.platforms.includes(b.platform)) return false;
+              const platform = (b.platform || '').toLowerCase();
+              if (!activeFilters.platforms.some(p => platform === p.toLowerCase())) return false;
           }
           if (activeFilters.types && activeFilters.types.length > 0) {
-              if (!activeFilters.types.includes(b.contentType)) return false;
+              const contentType = (b.contentType || '').toLowerCase();
+              if (!activeFilters.types.some(t => contentType === t.toLowerCase())) return false;
           }
           if (activeFilters.creators && activeFilters.creators.length > 0) {
               const key = `${b.platform || 'other'}:${b.creator}`;
@@ -715,6 +717,28 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
               const { startDate, endDate } = activeFilters.dateRange;
               if (b.dateAdded < startDate || b.dateAdded > endDate) return false;
           }
+          
+          // Reading time filter (minutes)
+          if (activeFilters.readingTimeRange) {
+              const { min, max } = activeFilters.readingTimeRange;
+              const readingTime = b.readingTime || 0;
+              if (min !== undefined && min !== null && readingTime < min) return false;
+              if (max !== undefined && max !== null && readingTime > max) return false;
+          }
+          
+          // Quality score filter (0-100)
+          if (activeFilters.qualityScoreRange) {
+              const { min, max } = activeFilters.qualityScoreRange;
+              const qualityScore = b.qualityScore || 0;
+              if (min !== undefined && min !== null && qualityScore < min) return false;
+              if (max !== undefined && max !== null && qualityScore > max) return false;
+          }
+          
+          // Has published date filter
+          if (activeFilters.hasPublishedDate !== null && activeFilters.hasPublishedDate !== undefined) {
+              const hasDate = Boolean(b.publishedDate || b.rawMetadata?.publishedDate);
+              if (activeFilters.hasPublishedDate !== hasDate) return false;
+          }
 
           return true;
       });
@@ -722,7 +746,7 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 
   if (!query || !query.trim()) {
     const sortFn = getSortFunction(options.sortBy || 'date_desc');
-    return {
+    const response = {
       results: filteredBookmarks
         .sort(sortFn)
         .slice(offset, offset + limit),
@@ -730,6 +754,13 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
       hasMore: offset + limit < filteredBookmarks.length,
       parsedQuery: null
     };
+    
+    // Compute stats in single pass if requested (for filter-only mode)
+    if (computeStats) {
+      response.stats = computeSearchResultStats(filteredBookmarks);
+    }
+    
+    return response;
   }
 
   // Parse special filters first

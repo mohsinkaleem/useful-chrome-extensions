@@ -428,8 +428,13 @@ function createActiveFiltersStore() {
                 if (category === 'creators') {
                      const existing = state.creators.find(c => c.key === value.key);
                      if (!existing) return { ...state, creators: [...state.creators, value] };
-                } else if (!state[category].includes(value)) {
-                    return { ...state, [category]: [...state[category], value] };
+                } else {
+                    // Use case-insensitive comparison for string values
+                    const valueStr = String(value).toLowerCase();
+                    const exists = state[category].some(i => String(i).toLowerCase() === valueStr);
+                    if (!exists) {
+                        return { ...state, [category]: [...state[category], value] };
+                    }
                 }
             } else if (typeof state[category] === 'boolean') {
                 return { ...state, [category]: value };
@@ -444,7 +449,9 @@ function createActiveFiltersStore() {
                 if (category === 'creators') {
                     return { ...state, creators: state.creators.filter(c => c.key !== value.key) };
                 }
-                return { ...state, [category]: state[category].filter(i => i !== value) };
+                // Use case-insensitive comparison for string values
+                const valueStr = String(value).toLowerCase();
+                return { ...state, [category]: state[category].filter(i => String(i).toLowerCase() !== valueStr) };
             } else if (typeof state[category] === 'boolean') {
                 return { ...state, [category]: false };
             } else {
@@ -462,8 +469,13 @@ function createActiveFiltersStore() {
                         return { ...state, creators: [...state.creators, value] };
                     }
                 }
-                if (state[category].includes(value)) {
-                    return { ...state, [category]: state[category].filter(i => i !== value) };
+                // Use case-insensitive comparison for string values (domains, folders, platforms, types)
+                const valueStr = String(value).toLowerCase();
+                const existingIndex = state[category].findIndex(i => 
+                    String(i).toLowerCase() === valueStr
+                );
+                if (existingIndex !== -1) {
+                    return { ...state, [category]: state[category].filter((_, idx) => idx !== existingIndex) };
                 } else {
                     return { ...state, [category]: [...state[category], value] };
                 }

@@ -371,11 +371,12 @@
              filters.platforms.length > 0 || 
              filters.types.length > 0 || 
              filters.creators.length > 0 ||
+             (filters.tags && filters.tags.length > 0) ||
              filters.deadLinks || 
              filters.stale ||
-             filters.dateRange ||
-             filters.readingTimeRange ||
-             filters.qualityScoreRange ||
+             filters.dateRange !== null ||
+             filters.readingTimeRange !== null ||
+             filters.qualityScoreRange !== null ||
              filters.hasPublishedDate !== null;
   }
   

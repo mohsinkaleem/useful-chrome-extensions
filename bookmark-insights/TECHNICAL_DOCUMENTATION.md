@@ -1,7 +1,42 @@
 # Bookmark Insights - Technical Documentation
 
 **Version:** 3.2  
-**Last Updated:** December 31, 2025
+**Last Updated:** January 23, 2026
+
+## Recent Updates (January 2026)
+
+### Filter Reactivity & State Management Improvements
+
+**Issue**: Sidebar filter counts weren't updating when filters were applied without an active search query.
+
+**Root Causes Identified & Fixed**:
+
+1. **Missing Stats Computation in Filter-Only Mode** ([search.js](src/search.js))
+   - The `searchBookmarks()` function had an early return path for filter-only queries (no search text) that didn't compute stats
+   - Added `computeStats` check to the filter-only code path to ensure sidebar stats are calculated
+
+2. **Inconsistent Active Filter Detection** ([Dashboard.svelte](src/Dashboard.svelte), [Sidebar.svelte](src/Sidebar.svelte))
+   - `hasActiveFilters()` in Dashboard and `activeFiltersExist` in Sidebar checked different filter properties
+   - Aligned both to check all filter types: domains, folders, platforms, types, creators, tags, deadLinks, stale, dateRange, readingTimeRange, qualityScoreRange, hasPublishedDate
+
+3. **Missing Filter Implementations** ([search.js](src/search.js))
+   - Added support for `readingTimeRange`, `qualityScoreRange`, and `hasPublishedDate` filters
+   - These filters were defined in the UI but not applied during search/filtering
+
+4. **Case-Insensitive Filter Matching** ([stores.js](src/stores.js), [search.js](src/search.js))
+   - Filter toggle/add/remove operations now use case-insensitive comparison for consistency
+   - Search filtering now lowercases both bookmark values and filter values when comparing
+
+5. **Reactive Statement Ordering** ([Sidebar.svelte](src/Sidebar.svelte))
+   - Moved `activeFiltersExist` computation before `useFilteredStats` to ensure proper dependency resolution
+   - Added intermediate `useFilteredStats` reactive variable to ensure proper prop change detection
+
+6. **Date Filter Toggle Behavior** ([Sidebar.svelte](src/Sidebar.svelte))
+   - Added toggle-off functionality: clicking the same date filter again now clears it instead of reapplying
+
+**Result**: Sidebar now correctly updates all filter counts in real-time, whether using search or filters alone.
+
+---
 
 ## Table of Contents
 
@@ -170,15 +205,28 @@ $: {
 
 #### Sidebar.svelte
 
-Reactive UI that responds to store changes:
+Reactive UI that responds to store changes with proper dependency ordering:
 
 ```javascript
-// Reactive display logic
+// 1. Compute active filter state (must be first)
 $: activeFiltersExist = $activeFilters.domains.length > 0 || 
-                        $activeFilters.platforms.length > 0 || ...;
+                        $activeFilters.folders.length > 0 || 
+                        $activeFilters.platforms.length > 0 ||
+                        $activeFilters.creators.length > 0 ||
+                        $activeFilters.types.length > 0 ||
+                        ($activeFilters.tags && $activeFilters.tags.length > 0) ||
+                        $activeFilters.deadLinks ||
+                        $activeFilters.stale ||
+                        $activeFilters.dateRange !== null ||
+                        $activeFilters.readingTimeRange !== null ||
+                        $activeFilters.qualityScoreRange !== null ||
+                        $activeFilters.hasPublishedDate !== null;
 
-// Switch to filtered stats when any filter is active
-$: displayDomains = (isSearchActive || activeFiltersExist) && searchResultStats?.domains 
+// 2. Determine if filtered stats should be used
+$: useFilteredStats = (isSearchActive || activeFiltersExist) && searchResultStats != null;
+
+// 3. Switch to filtered stats when available
+$: displayDomains = useFilteredStats && searchResultStats?.domains 
   ? searchResultStats.domains 
   : domainsByCount;
 
@@ -188,28 +236,45 @@ function toggleDomainFilter(domain) {
 }
 ```
 
+**Critical**: Reactive statement ordering matters in Svelte. `activeFiltersExist` must be computed before `useFilteredStats` to ensure proper dependency resolution.
+
 ### Search Integration
 
-The `searchBookmarks()` function in `search.js` accepts `activeFilters` as a parameter and applies them before text search:
+The `searchBookmarks()` function in `search.js` accepts `activeFilters` as a parameter and applies them with case-insensitive matching:
 
 ```javascript
 export async function searchBookmarks(query, activeFilters = null, options = {}) {
   let filteredBookmarks = allBookmarks;
   
-  // Apply activeFilters first
+  // Apply activeFilters first (with case-insensitive comparison)
   if (activeFilters) {
     filteredBookmarks = filteredBookmarks.filter(b => {
       if (activeFilters.domains.length > 0) {
         const domain = (b.domain || '').toLowerCase();
-        if (!activeFilters.domains.some(d => domain.includes(d))) return false;
+        if (!activeFilters.domains.some(d => domain.includes(d.toLowerCase()))) return false;
       }
       if (activeFilters.folders.length > 0) {
         const folder = (b.folderPath || '').toLowerCase();
-        if (!activeFilters.folders.some(f => folder.includes(f))) return false;
+        if (!activeFilters.folders.some(f => folder.includes(f.toLowerCase()))) return false;
+      }
+      if (activeFilters.readingTimeRange) {
+        const { min, max } = activeFilters.readingTimeRange;
+        const readingTime = b.readingTime || 0;
+        if (min != null && readingTime < min) return false;
+        if (max != null && readingTime > max) return false;
       }
       // ... more filter checks
       return true;
     });
+  }
+  
+  // Compute stats for sidebar updates (filter-only mode)
+  if (!query || !query.trim()) {
+    const response = { results, total, hasMore };
+    if (options.computeStats) {
+      response.stats = computeSearchResultStats(filteredBookmarks);
+    }
+    return response;
   }
   
   // Then apply text search to filtered results
@@ -221,6 +286,8 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 - Folder filter: `activeFilters.folders` → `bookmark.folderPath` (not `folder`)
 - Content type filter: `activeFilters.types` → `bookmark.contentType` (not `type`)
 - Creator filter: `activeFilters.creators` → `bookmark.creator` + `bookmark.platform`
+
+**Filter Support**: domains, folders, platforms, types, creators, tags, deadLinks, stale, dateRange, readingTimeRange, qualityScoreRange, hasPublishedDate
 
 ---
 
