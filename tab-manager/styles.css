@@ -1268,3 +1268,14 @@ body.dark-theme .tab-url {
   text-overflow: ellipsis;
 }
 
+
+/* Drag and Drop Styles */
+.window-group.drag-over {
+  border: 2px dashed #2196F3;
+  background-color: rgba(33, 150, 243, 0.05);
+}
+
+body.dark-theme .window-group.drag-over {
+  border-color: #64b5f6;
+  background-color: rgba(33, 150, 243, 0.1);
+}

@@ -47,6 +47,42 @@ export class TabList {
   private createGroup(key: number | string, tabs: chrome.tabs.Tab[], viewMode: string): HTMLElement {
     const group = document.createElement('div');
     group.className = 'window-group'; // Reuse window-group style, or rename class to 'tab-group-container' in CSS
+
+    // Enable drop for window groups
+    if (typeof key === 'number') {
+      group.ondragover = (e) => {
+        e.preventDefault(); // Allow drop
+        e.dataTransfer!.dropEffect = 'move';
+        group.classList.add('drag-over');
+      };
+      
+      group.ondragleave = (e) => {
+        group.classList.remove('drag-over');
+      };
+
+      group.ondrop = async (e) => {
+        e.preventDefault();
+        group.classList.remove('drag-over');
+        
+        try {
+          const data = e.dataTransfer!.getData('text/plain');
+          if (!data) return;
+          
+          const { tabId, windowId: sourceWindowId } = JSON.parse(data);
+          const targetWindowId = key;
+          
+          // Only move if different window
+          if (tabId && sourceWindowId !== targetWindowId) {
+            await chrome.tabs.move(tabId, {
+              windowId: targetWindowId,
+              index: -1 // Append to end
+            });
+          }
+        } catch (err) {
+          console.error('Drop failed:', err);
+        }
+      };
+    }
     
     // Header
     const header = document.createElement('div');
@@ -154,6 +190,18 @@ export class TabList {
   private createTabItem(tab: chrome.tabs.Tab, viewMode: string): HTMLElement {
     const item = document.createElement('div');
     item.className = 'tab-item';
+    
+    // Add drag support
+    item.draggable = true;
+    item.ondragstart = (e) => {
+      if (tab.id !== undefined && tab.windowId !== undefined) {
+        e.dataTransfer!.setData('text/plain', JSON.stringify({
+          tabId: tab.id,
+          windowId: tab.windowId
+        }));
+        e.dataTransfer!.effectAllowed = 'move';
+      }
+    };
     
     if (tab.active) {
       item.classList.add('active');
