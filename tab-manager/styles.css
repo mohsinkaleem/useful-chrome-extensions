@@ -759,6 +759,18 @@ body.dark-theme .window-group {
   align-items: center;
   min-height: 26px;
   flex-shrink: 0;
+  gap: 8px;
+}
+
+/* Window checkbox styling - positioned on the right */
+.window-checkbox {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin: 0;
+  order: 999;
+  margin-left: auto;
 }
 
 .window-title {

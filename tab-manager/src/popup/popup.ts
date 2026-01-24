@@ -106,6 +106,23 @@ class TabManagerApp {
       this.quickActions.updateSelectedTabs(Array.from(this.selectedTabs));
     });
 
+    // Window selection changes
+    this.tabList.onWindowSelectionChange((selectedWindowIds) => {
+      const mergeBtn = document.getElementById('merge-windows-btn');
+      if (mergeBtn) {
+        if (selectedWindowIds.length >= 2) {
+          mergeBtn.style.display = 'inline-block';
+        } else {
+          mergeBtn.style.display = 'none';
+        }
+      }
+    });
+
+    // Merge windows button
+    document.getElementById('merge-windows-btn')?.addEventListener('click', async () => {
+      await this.mergeSelectedWindows();
+    });
+
     // Tab click
     this.tabList.onTabClick(async (tabId) => {
       try {
@@ -144,7 +161,7 @@ class TabManagerApp {
 
     // Balance Windows
     document.getElementById('action-balance-windows')?.addEventListener('click', async () => {
-      const msg = "Start balancing windows?\n\nThis will rearrange tabs to respect <10 and >50 limits, consolidating small windows.";
+      const msg = "Start balancing windows?\n\nThis will rearrange tabs to respect <10 and >30 limits, consolidating small windows.";
       
       if (!confirm(msg)) return;
        
@@ -393,6 +410,43 @@ class TabManagerApp {
 
     if (toClose.length > 0) {
       await chrome.tabs.remove(toClose);
+    }
+  }
+
+  private async mergeSelectedWindows() {
+    const selectedWindowIds = this.tabList.getSelectedWindows();
+    
+    if (selectedWindowIds.length < 2) {
+      alert('Please select at least 2 windows to merge');
+      return;
+    }
+
+    try {
+      // Use the first selected window as the target
+      const targetWindowId = selectedWindowIds[0];
+      const sourceWindowIds = selectedWindowIds.slice(1);
+
+      // Move all tabs from source windows to target window
+      for (const sourceWindowId of sourceWindowIds) {
+        const tabs = await chrome.tabs.query({ windowId: sourceWindowId });
+        const tabIds = tabs.map(t => t.id).filter((id): id is number => id !== undefined);
+        
+        if (tabIds.length > 0) {
+          await chrome.tabs.move(tabIds, { windowId: targetWindowId, index: -1 });
+        }
+      }
+
+      // Focus the target window
+      await chrome.windows.update(targetWindowId, { focused: true });
+
+      // Clear selection
+      this.tabList.clearWindowSelection();
+      
+      // Reload tabs
+      await this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
+    } catch (error) {
+      console.error('Error merging windows:', error);
+      alert('Failed to merge windows. Please try again.');
     }
   }
 }

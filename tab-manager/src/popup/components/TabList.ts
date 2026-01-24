@@ -9,6 +9,8 @@ export class TabList {
   private highlightDuplicates: boolean = false;
   private duplicateUrls: Set<string> = new Set();
   private showCheckboxes: boolean = true;
+  private selectedWindows: Set<number> = new Set();
+  private windowSelectionCallbacks: Array<(selectedWindowIds: number[]) => void> = [];
 
   constructor() {
     this.container = document.getElementById('tabs-container');
@@ -64,14 +66,6 @@ export class TabList {
     title.appendChild(arrow);
     title.appendChild(titleText);
     
-    // Toggle Collapse
-    title.style.cursor = 'pointer';
-    title.onclick = () => {
-        const isHidden = tabList.style.display === 'none';
-        tabList.style.display = isHidden ? '' : 'none';
-        arrow.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
-    };
-
     const actions = document.createElement('div');
     actions.className = 'window-actions';
     
@@ -112,6 +106,24 @@ export class TabList {
     header.appendChild(title);
     header.appendChild(actions);
     
+    // Window checkbox (only for window view, not domain) - add at the end so it appears on right
+    if (typeof key === 'number') {
+      const windowCheckbox = document.createElement('input');
+      windowCheckbox.type = 'checkbox';
+      windowCheckbox.className = 'window-checkbox';
+      windowCheckbox.checked = this.selectedWindows.has(key);
+      windowCheckbox.onclick = (e) => {
+        e.stopPropagation();
+        if (windowCheckbox.checked) {
+          this.selectedWindows.add(key);
+        } else {
+          this.selectedWindows.delete(key);
+        }
+        this.notifyWindowSelectionChange();
+      };
+      header.appendChild(windowCheckbox);
+    }
+    
     // Tab list
     const tabList = document.createElement('div');
     tabList.className = `tab-list ${viewMode}`;
@@ -125,6 +137,15 @@ export class TabList {
     
     group.appendChild(header);
     group.appendChild(tabList);
+    
+    // Toggle Collapse - set up after tabList is created
+    title.style.cursor = 'pointer';
+    title.onclick = (e) => {
+        e.stopPropagation();
+        const isHidden = tabList.style.display === 'none';
+        tabList.style.display = isHidden ? '' : 'none';
+        arrow.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+    };
     
     return group;
 
@@ -298,6 +319,10 @@ export class TabList {
     this.clickCallbacks.push(callback);
   }
 
+  onWindowSelectionChange(callback: (selectedWindowIds: number[]) => void) {
+    this.windowSelectionCallbacks.push(callback);
+  }
+
   private notifySelectionChange() {
     const selectedIds = Array.from(this.selectedTabs);
     this.selectionCallbacks.forEach(cb => cb(selectedIds));
@@ -305,5 +330,18 @@ export class TabList {
 
   private notifyClick(tabId: number) {
     this.clickCallbacks.forEach(cb => cb(tabId));
+  }
+
+  private notifyWindowSelectionChange() {
+    const selectedWindowIds = Array.from(this.selectedWindows);
+    this.windowSelectionCallbacks.forEach(cb => cb(selectedWindowIds));
+  }
+
+  getSelectedWindows(): number[] {
+    return Array.from(this.selectedWindows);
+  }
+
+  clearWindowSelection() {
+    this.selectedWindows.clear();
   }
 }

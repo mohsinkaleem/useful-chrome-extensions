@@ -35,7 +35,7 @@ export class TabBalancer {
 
   constructor(config: Partial<BalancingConfig> = {}) {
     this.config = {
-      maxTabs: 50,
+      maxTabs: 30,
       minTabs: 10,
       respectGrouping: true,
       autoGroup: false,
