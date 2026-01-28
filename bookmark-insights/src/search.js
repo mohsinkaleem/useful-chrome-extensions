@@ -2,7 +2,7 @@
 // Provides fuzzy matching, relevance ranking, and multi-field search
 
 import { Document } from 'flexsearch';
-import { db, getAllBookmarks, setCache, getCache } from './db.js';
+import { db, getAllBookmarks, getAllBookmarksWithReadingList, setCache, getCache } from './db.js';
 import { getSortFunction } from './utils.js';
 // import { allBookmarks as bookmarksStore } from './stores.js';
 
@@ -13,6 +13,7 @@ let indexInitialized = false;
 /**
  * Get bookmarks using cached store when possible
  * Falls back to direct db call if store not available
+ * Now includes reading list items for unified search
  */
 async function getBookmarksCached() {
   // try {
@@ -20,7 +21,7 @@ async function getBookmarksCached() {
   //   return await bookmarksStore.getCached();
   // } catch (error) {
   //   // Fallback to direct db call
-    return await getAllBookmarks();
+    return await getAllBookmarksWithReadingList();
   // }
 }
 
@@ -693,15 +694,6 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
                   bookmarkTopics.some(bt => bt.toLowerCase() === t.toLowerCase() || bt.toLowerCase().startsWith(t.toLowerCase() + '/'))
               )) return false;
           }
-          if (activeFilters.types && activeFilters.types.length > 0) {
-              const contentType = (b.contentType || '').toLowerCase();
-              if (!activeFilters.types.some(t => contentType === t.toLowerCase())) return false;
-          }
-          if (activeFilters.creators && activeFilters.creators.length > 0) {
-              const key = `${b.platform || 'other'}:${b.creator}`;
-              // activeFilters.creators contains objects { key, creator, platform }
-              if (!activeFilters.creators.some(c => c.key === key)) return false;
-          }
           if (activeFilters.tags && activeFilters.tags.length > 0) {
               if (!b.tags || !Array.isArray(b.tags)) return false;
               if (!activeFilters.tags.some(t => b.tags.includes(t))) return false;
@@ -714,6 +706,11 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
               const neverAccessed = !b.accessCount || b.accessCount === 0;
               const isAlive = b.isAlive !== false;
               if (!(isOld && neverAccessed && isAlive)) return false;
+          }
+          
+          // Reading list filter - show only reading list items
+          if (activeFilters.readingList) {
+              if (!b.isReadingListItem) return false;
           }
           
           if (activeFilters.dateRange) {
@@ -871,8 +868,6 @@ export function computeSearchResultStats(bookmarks) {
   const domainCounts = new Map();
   const folderCounts = new Map();
   const topicCounts = new Map();
-  const creatorCounts = new Map();
-  const typeCounts = new Map();
   
   // Date period calculations
   const now = Date.now();
@@ -911,24 +906,6 @@ export function computeSearchResultStats(bookmarks) {
     for (const topic of bookmarkTopics) {
       topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
     }
-
-    // Count creators
-    if (bookmark.creator) {
-      const key = `${bookmark.platform || 'other'}:${bookmark.creator}`;
-      if (!creatorCounts.has(key)) {
-        creatorCounts.set(key, { 
-          creator: bookmark.creator, 
-          platform: bookmark.platform || 'other', 
-          count: 0 
-        });
-      }
-      creatorCounts.get(key).count++;
-    }
-
-    // Count content types
-    if (bookmark.contentType) {
-      typeCounts.set(bookmark.contentType, (typeCounts.get(bookmark.contentType) || 0) + 1);
-    }
     
     // Count date periods
     const dateAdded = bookmark.dateAdded;
@@ -953,17 +930,10 @@ export function computeSearchResultStats(bookmarks) {
   const topics = Array.from(topicCounts.entries())
     .map(([topic, count]) => ({ topic, count }))
     .sort((a, b) => b.count - a.count);
-
-  const creators = Array.from(creatorCounts.values())
-    .sort((a, b) => b.count - a.count);
-
-  const contentTypes = Array.from(typeCounts.entries())
-    .map(([type, count]) => ({ type, count }))
-    .sort((a, b) => b.count - a.count);
   
   const dateCounts = { week, twoWeek, month, threeMonth, sixMonth, year, older };
   
-  return { domains, folders, topics, creators, contentTypes, dateCounts };
+  return { domains, folders, topics, dateCounts };
 }
 
 // Note: advancedSearch function removed - use searchBookmarks() with activeFilters parameter instead

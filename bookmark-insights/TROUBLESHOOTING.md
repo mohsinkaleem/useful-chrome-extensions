@@ -119,6 +119,11 @@ To check for errors:
 
 ### Common Error Messages
 
+**"Cannot read properties of undefined (reading 'length')"**
+- **Fixed in v3.3**: This was caused by missing filter properties in the store
+- If you still see this error, rebuild the extension: `npm run build && npm run package`
+- Reload the extension in Chrome
+
 **"Cannot read property of undefined"**
 - Usually means data isn't loaded yet
 - Try refreshing or waiting a moment

@@ -406,15 +406,14 @@ function createActiveFiltersStore() {
         domains: [],
         folders: [],
         topics: [],
-        types: [],
-        creators: [],
         tags: [],
         deadLinks: false,
         stale: false,
         dateRange: null,
         readingTimeRange: null,
         qualityScoreRange: null,
-        hasPublishedDate: null
+        hasPublishedDate: null,
+        readingList: false  // Filter to show only reading list items
     });
 
     return {
@@ -422,19 +421,11 @@ function createActiveFiltersStore() {
         set,
         addFilter: (category, value) => update(state => {
             if (Array.isArray(state[category])) {
-                // For objects (like creators), we might need deep comparison or just check reference/key
-                // Assuming value is primitive or we handle it carefully.
-                // For creators, Sidebar used { key, creator, platform }
-                if (category === 'creators') {
-                     const existing = state.creators.find(c => c.key === value.key);
-                     if (!existing) return { ...state, creators: [...state.creators, value] };
-                } else {
-                    // Use case-insensitive comparison for string values
-                    const valueStr = String(value).toLowerCase();
-                    const exists = state[category].some(i => String(i).toLowerCase() === valueStr);
-                    if (!exists) {
-                        return { ...state, [category]: [...state[category], value] };
-                    }
+                // Use case-insensitive comparison for string values
+                const valueStr = String(value).toLowerCase();
+                const exists = state[category].some(i => String(i).toLowerCase() === valueStr);
+                if (!exists) {
+                    return { ...state, [category]: [...state[category], value] };
                 }
             } else if (typeof state[category] === 'boolean') {
                 return { ...state, [category]: value };
@@ -446,9 +437,6 @@ function createActiveFiltersStore() {
         }),
         removeFilter: (category, value) => update(state => {
             if (Array.isArray(state[category])) {
-                if (category === 'creators') {
-                    return { ...state, creators: state.creators.filter(c => c.key !== value.key) };
-                }
                 // Use case-insensitive comparison for string values
                 const valueStr = String(value).toLowerCase();
                 return { ...state, [category]: state[category].filter(i => String(i).toLowerCase() !== valueStr) };
@@ -461,15 +449,7 @@ function createActiveFiltersStore() {
         }),
         toggleFilter: (category, value) => update(state => {
              if (Array.isArray(state[category])) {
-                if (category === 'creators') {
-                    const existing = state.creators.find(c => c.key === value.key);
-                    if (existing) {
-                        return { ...state, creators: state.creators.filter(c => c.key !== value.key) };
-                    } else {
-                        return { ...state, creators: [...state.creators, value] };
-                    }
-                }
-                // Use case-insensitive comparison for string values (domains, folders, platforms, types)
+                // Use case-insensitive comparison for string values (domains, folders, topics)
                 const valueStr = String(value).toLowerCase();
                 const existingIndex = state[category].findIndex(i => 
                     String(i).toLowerCase() === valueStr
@@ -489,29 +469,27 @@ function createActiveFiltersStore() {
             domains: [],
             folders: [],
             topics: [],
-            types: [],
-            creators: [],
             tags: [],
             deadLinks: false,
             stale: false,
             dateRange: null,
             readingTimeRange: null,
             qualityScoreRange: null,
-            hasPublishedDate: null
+            hasPublishedDate: null,
+            readingList: false
         }),
         reset: () => set({
             domains: [],
             folders: [],
             topics: [],
-            types: [],
-            creators: [],
             tags: [],
             deadLinks: false,
             stale: false,
             dateRange: null,
             readingTimeRange: null,
             qualityScoreRange: null,
-            hasPublishedDate: null
+            hasPublishedDate: null,
+            readingList: false
         })
     };
 }

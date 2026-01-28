@@ -21,6 +21,7 @@
     findSimilarBookmarks,
     deleteBookmark,
     deleteBookmarks,
+    upsertBookmark,
     getDeadLinks,
     exportBookmarks,
     getQuickStats,
@@ -37,9 +38,7 @@
     downloadBackup,
     restoreFromBackup,
     validateBackup,
-    createAutoBackup,
-    listAutoBackups,
-    restoreFromAutoBackup
+    parseDbBackupFile
   } from './db.js';
   
   // Import new insights functions
@@ -182,15 +181,19 @@
   // Backup state
   let backupInProgress = false;
   let restoreInProgress = false;
-  let autoBackups = [];
   let showRestoreDialog = false;
   let restoreFile = null;
   let backupValidation = null;
+  let backupFormat = 'json'; // 'json' or 'db'
   
   // Multi-select state
   // selectedBookmarks moved to store
   let multiSelectMode = false;
   let viewMode = 'list'; // 'list' or 'card'
+  
+  // Undo delete state
+  let undoDeleteToast = null;
+  let undoDeleteTimeout = null;
   
   // Dark mode functions
   function applyDarkMode(enabled) {
@@ -381,14 +384,14 @@
   }
   
   function hasActiveFilters(filters) {
-      return filters.domains.length > 0 || 
-             filters.folders.length > 0 || 
-             filters.topics.length > 0 || 
-             filters.types.length > 0 || 
-             filters.creators.length > 0 ||
+      if (!filters) return false;
+      return (filters.domains && filters.domains.length > 0) || 
+             (filters.folders && filters.folders.length > 0) || 
+             (filters.topics && filters.topics.length > 0) || 
              (filters.tags && filters.tags.length > 0) ||
              filters.deadLinks || 
              filters.stale ||
+             filters.readingList ||
              filters.dateRange !== null ||
              filters.readingTimeRange !== null ||
              filters.qualityScoreRange !== null ||
@@ -1003,10 +1006,6 @@
     enrichmentLogs = [];
     
     try {
-      // Create auto-backup before enrichment
-      console.log('Creating auto-backup before enrichment...');
-      await createAutoBackup();
-      
       const response = await chrome.runtime.sendMessage({ 
         action: 'runEnrichment',
         batchSize: enrichmentBatchSize,
@@ -1656,9 +1655,9 @@
   async function handleDeleteSingle(event) {
     const { bookmarkId } = event.detail;
     
-    if (!confirm('Are you sure you want to delete this bookmark?')) {
-      return;
-    }
+    // Find the bookmark to store for undo
+    const bookmarkToDelete = bookmarks.find(b => b.id === bookmarkId);
+    if (!bookmarkToDelete) return;
     
     try {
       await deleteBookmark(bookmarkId);
@@ -1674,10 +1673,75 @@
       if (sidebarRef && sidebarRef.refresh) {
         sidebarRef.refresh();
       }
+      
+      // Clear any existing undo timeout
+      if (undoDeleteTimeout) {
+        clearTimeout(undoDeleteTimeout);
+      }
+      
+      // Show undo toast
+      undoDeleteToast = {
+        bookmark: bookmarkToDelete,
+        title: bookmarkToDelete.title || 'Bookmark'
+      };
+      
+      // Auto-dismiss after 5 seconds
+      undoDeleteTimeout = setTimeout(() => {
+        undoDeleteToast = null;
+      }, 5000);
+      
     } catch (err) {
       console.error('Error deleting bookmark:', err);
       alert('Error deleting bookmark. Please try again.');
     }
+  }
+  
+  async function handleUndoDelete() {
+    if (!undoDeleteToast) return;
+    
+    try {
+      // Restore the bookmark
+      await upsertBookmark(undoDeleteToast.bookmark);
+      
+      // Re-create in Chrome bookmarks
+      try {
+        await chrome.bookmarks.create({
+          parentId: undoDeleteToast.bookmark.parentId || '1',
+          title: undoDeleteToast.bookmark.title,
+          url: undoDeleteToast.bookmark.url
+        });
+      } catch (chromeErr) {
+        console.warn('Could not restore to Chrome bookmarks:', chromeErr);
+      }
+      
+      // Update local state
+      bookmarks = [...bookmarks, undoDeleteToast.bookmark].sort((a, b) => b.dateAdded - a.dateAdded);
+      totalCount = totalCount + 1;
+      
+      // Invalidate cache
+      allBookmarks.invalidate();
+      
+      // Refresh sidebar
+      if (sidebarRef && sidebarRef.refresh) {
+        sidebarRef.refresh();
+      }
+      
+      // Clear the toast
+      if (undoDeleteTimeout) {
+        clearTimeout(undoDeleteTimeout);
+      }
+      undoDeleteToast = null;
+      
+    } catch (err) {
+      console.error('Error restoring bookmark:', err);
+    }
+  }
+  
+  function dismissUndoToast() {
+    if (undoDeleteTimeout) {
+      clearTimeout(undoDeleteTimeout);
+    }
+    undoDeleteToast = null;
   }
 
   async function handleEnrichBookmark(event) {
@@ -1710,7 +1774,7 @@
   async function handleDownloadBackup() {
     backupInProgress = true;
     try {
-      const result = await downloadBackup();
+      const result = await downloadBackup(backupFormat);
       if (result.success) {
         alert(`Backup saved: ${result.filename}\n\nContains:\n- ${result.metadata.totalBookmarks} bookmarks\n- ${result.metadata.enrichedCount} enriched\n- ${result.metadata.categorizedCount} categorized`);
       }
@@ -1733,18 +1797,22 @@
       return;
     }
     
-    if (!confirm(`Restore backup from ${backupValidation.createdAt}?\n\nThis will replace your current data with:\n- ${backupValidation.metadata.totalBookmarks} bookmarks\n- ${backupValidation.metadata.enrichedCount} enriched\n\nYour current data will be auto-backed up first.`)) {
+    if (!confirm(`Restore backup from ${backupValidation.createdAt}?\n\nThis will replace your current data with:\n- ${backupValidation.metadata.totalBookmarks} bookmarks\n- ${backupValidation.metadata.enrichedCount} enriched`)) {
       return;
     }
     
     restoreInProgress = true;
     try {
-      // Create auto-backup first
-      await createAutoBackup();
+      // Read and parse the file (handle both .json and .db formats)
+      let backup;
       
-      // Read and parse the file
-      const text = await restoreFile.text();
-      const backup = JSON.parse(text);
+      if (restoreFile.name.endsWith('.db')) {
+        const arrayBuffer = await restoreFile.arrayBuffer();
+        backup = await parseDbBackupFile(arrayBuffer);
+      } else {
+        const text = await restoreFile.text();
+        backup = JSON.parse(text);
+      }
       
       // Restore
       const result = await restoreFromBackup(backup);
@@ -1772,35 +1840,21 @@
     restoreFile = file;
     
     try {
-      const text = await file.text();
-      const backup = JSON.parse(text);
+      let backup;
+      
+      if (file.name.endsWith('.db')) {
+        // Handle .db format using the robust parser
+        const arrayBuffer = await file.arrayBuffer();
+        backup = await parseDbBackupFile(arrayBuffer);
+      } else {
+        // Handle .json format
+        const text = await file.text();
+        backup = JSON.parse(text);
+      }
+      
       backupValidation = validateBackup(backup);
     } catch (err) {
-      backupValidation = { valid: false, issues: ['Invalid JSON file'] };
-    }
-  }
-  
-  async function loadAutoBackups() {
-    autoBackups = await listAutoBackups();
-  }
-  
-  async function handleRestoreAutoBackup(index) {
-    if (!confirm(`Restore auto-backup from ${autoBackups[index].createdAt}?\n\nThis will replace your current data.`)) {
-      return;
-    }
-    
-    restoreInProgress = true;
-    try {
-      const result = await restoreFromAutoBackup(index);
-      if (result.success) {
-        alert('Restore complete! Refreshing...');
-        window.location.reload();
-      }
-    } catch (err) {
-      console.error('Error restoring auto-backup:', err);
-      alert('Error: ' + err.message);
-    } finally {
-      restoreInProgress = false;
+      backupValidation = { valid: false, issues: ['Invalid backup file: ' + err.message] };
     }
   }
   
@@ -1982,7 +2036,7 @@
               </div>
 
               <!-- Active Filters Chips -->
-              {#if $activeFilters.domains.length > 0 || $activeFilters.folders.length > 0 || $activeFilters.dateRange || $searchQueryStore || $activeFilters.tags.length > 0 || $activeFilters.topics.length > 0 || $activeFilters.types.length > 0 || $activeFilters.creators.length > 0 || $activeFilters.deadLinks || $activeFilters.stale}
+              {#if ($activeFilters.domains && $activeFilters.domains.length > 0) || ($activeFilters.folders && $activeFilters.folders.length > 0) || $activeFilters.dateRange || $searchQueryStore || ($activeFilters.tags && $activeFilters.tags.length > 0) || ($activeFilters.topics && $activeFilters.topics.length > 0) || $activeFilters.deadLinks || $activeFilters.stale || $activeFilters.readingList}
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="text-sm text-gray-500 dark:text-gray-400 mr-1">Filters:</span>
                   
@@ -2030,27 +2084,16 @@
                     </span>
                   {/each}
 
-                  <!-- Type Chips -->
-                  {#each $activeFilters.types as type}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                      Type: {type}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-purple-400 dark:text-purple-500 hover:text-purple-600 dark:hover:text-purple-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('types', type)}>
-                        <span class="sr-only">Remove type filter</span>
+                  <!-- Reading List Chip -->
+                  {#if $activeFilters.readingList}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-100 dark:bg-cyan-900/40 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">
+                      Reading List
+                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-cyan-400 dark:text-cyan-500 hover:text-cyan-600 dark:hover:text-cyan-300 focus:outline-none" on:click={() => activeFilters.setFilter('readingList', false)}>
+                        <span class="sr-only">Remove reading list filter</span>
                         <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                       </button>
                     </span>
-                  {/each}
-
-                  <!-- Creator Chips -->
-                  {#each $activeFilters.creators as creator}
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 border border-pink-200 dark:border-pink-800">
-                      Creator: {creator.creator}
-                      <button type="button" class="ml-1.5 inline-flex items-center justify-center text-pink-400 dark:text-pink-500 hover:text-pink-600 dark:hover:text-pink-300 focus:outline-none" on:click={() => activeFilters.toggleFilter('creators', creator)}>
-                        <span class="sr-only">Remove creator filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
-                      </button>
-                    </span>
-                  {/each}
+                  {/if}
 
                   <!-- Tag Chips -->
                   {#each $activeFilters.tags as tag}
@@ -2298,148 +2341,69 @@
             </div>
           {/if}
           
-          <!-- Enrichment Panel -->
+          <!-- Enrichment Panel - Simplified -->
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow transition-colors">
-            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-              <div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
-                  <svg class="w-5 h-5 inline-block mr-2 text-purple-500 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
-                  </svg>
-                  Bookmark Enrichment
-                </h3>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Fetch metadata (descriptions, categories, keywords) for your bookmarks
-                </p>
-              </div>
-              <button
-                on:click={handleRunEnrichment}
-                disabled={runningEnrichment}
-                class="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 flex-shrink-0 transition-colors"
-              >
-                {#if runningEnrichment}
-                  <span class="flex items-center">
-                    <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                <div>
+                  <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-purple-500 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
                     </svg>
-                    Enriching...
-                  </span>
-                {:else}
-                  {forceReenrich ? `Re-enrich ${enrichmentBatchSize} Bookmarks` : `Enrich Next ${enrichmentBatchSize} Pending`}
-                {/if}
-              </button>
+                    Enrich Bookmarks
+                  </h3>
+                  <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Automatically fetch descriptions, categories, and keywords for your bookmarks
+                  </p>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    on:click={handleRunEnrichment}
+                    disabled={runningEnrichment || (enrichmentStatus && enrichmentStatus.pendingCount === 0)}
+                    class="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 transition-colors"
+                  >
+                    {#if runningEnrichment}
+                      <span class="flex items-center gap-2">
+                        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Enriching...
+                      </span>
+                    {:else}
+                      Enrich Pending
+                    {/if}
+                  </button>
+                </div>
+              </div>
             </div>
             <div class="p-6">
+              <!-- Status Overview -->
               {#if enrichmentStatus}
-                <div class="mb-4 p-4 bg-purple-50 dark:bg-purple-900/10 rounded-lg border border-purple-200 dark:border-purple-800/30">
-                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div class="text-center">
-                      <div class="text-xl font-bold text-purple-700 dark:text-purple-300">{enrichmentStatus.pendingCount || enrichmentStatus.queueSize || 0}</div>
-                      <div class="text-xs text-purple-600 dark:text-purple-400">Pending Enrichment</div>
-                    </div>
-                    <div class="text-center">
-                      <div class="text-xl font-bold text-green-700 dark:text-green-300">{enrichmentStatus.enrichedCount || 0}</div>
-                      <div class="text-xs text-green-600 dark:text-green-400">Successfully Enriched</div>
-                    </div>
-                    <div class="text-center">
-                      <div class="text-xl font-bold text-blue-700 dark:text-blue-300">{enrichmentStatus.totalBookmarks || 0}</div>
-                      <div class="text-xs text-blue-600 dark:text-blue-400">Total HTTP Bookmarks</div>
-                    </div>
-                    <div class="text-center">
-                      <div class="text-xl font-bold {enrichmentStatus.enabled ? 'text-green-700 dark:text-green-400' : 'text-gray-500 dark:text-gray-500'}">
-                        {enrichmentStatus.enabled ? '✓' : '○'}
-                      </div>
-                      <div class="text-xs {enrichmentStatus.enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-500'}">
-                        {enrichmentStatus.enabled ? 'System Enabled' : 'System Disabled'}
-                      </div>
-                    </div>
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Enrichment Progress</span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
+                      {enrichmentStatus.enrichedCount || 0} of {enrichmentStatus.totalBookmarks || 0} enriched
+                    </span>
                   </div>
-                  {#if enrichmentStatus.pendingCount > 0 && enrichmentStatus.totalBookmarks > 0}
-                    <div class="mt-3">
-                      <div class="flex justify-between text-xs text-purple-600 dark:text-purple-400 mb-1">
-                        <span>Overall Coverage</span>
-                        <span>{((enrichmentStatus.enrichedCount / enrichmentStatus.totalBookmarks) * 100).toFixed(1)}%</span>
-                      </div>
-                      <div class="w-full bg-purple-200 rounded-full h-2">
-                        <div 
-                          class="bg-purple-600 h-2 rounded-full transition-all duration-300"
-                          style="width: {(enrichmentStatus.enrichedCount / enrichmentStatus.totalBookmarks) * 100}%"
-                        ></div>
-                      </div>
-                    </div>
+                  <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                    <div 
+                      class="h-3 rounded-full transition-all duration-300 {enrichmentStatus.pendingCount === 0 ? 'bg-green-500' : 'bg-purple-600'}"
+                      style="width: {enrichmentStatus.totalBookmarks > 0 ? (enrichmentStatus.enrichedCount / enrichmentStatus.totalBookmarks) * 100 : 0}%"
+                    ></div>
+                  </div>
+                  {#if enrichmentStatus.pendingCount > 0}
+                    <p class="text-xs text-purple-600 dark:text-purple-400 mt-2">
+                      {enrichmentStatus.pendingCount} bookmarks need enrichment
+                    </p>
+                  {:else}
+                    <p class="text-xs text-green-600 dark:text-green-400 mt-2">
+                      ✓ All bookmarks are enriched!
+                    </p>
                   {/if}
                 </div>
               {/if}
-              
-              <div class="mb-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-200 dark:border-gray-700">
-                <p class="font-medium mb-1 dark:text-gray-300">How it works:</p>
-                <ul class="list-disc list-inside space-y-1 text-xs">
-                  {#if forceReenrich}
-                    <li><strong>Force Mode:</strong> Will re-download metadata for {enrichmentBatchSize} bookmarks, starting with unenriched ones, then oldest checked.</li>
-                    <li>Use this to refresh data or fix broken metadata.</li>
-                  {:else}
-                    <li><strong>Standard Mode:</strong> Will process the next {enrichmentBatchSize} bookmarks that have <strong>never</strong> been enriched.</li>
-                    <li>Already enriched bookmarks are skipped to save resources.</li>
-                  {/if}
-                </ul>
-              </div>
-
-              <!-- Enrichment Configuration -->
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Batch Size
-                    <span class="text-xs text-gray-500 dark:text-gray-500 font-normal">(how many bookmarks to process)</span>
-                    <input 
-                      type="number" 
-                      min="5" 
-                      max="200" 
-                      bind:value={enrichmentBatchSize}
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-400"
-                      disabled={runningEnrichment}
-                    />
-                  </label>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Concurrency
-                    <span class="text-xs text-gray-500 dark:text-gray-500 font-normal">(parallel requests)</span>
-                    <input 
-                      type="number" 
-                      min="1" 
-                      max="20" 
-                      bind:value={enrichmentConcurrency}
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-400"
-                      disabled={runningEnrichment}
-                    />
-                  </label>
-                  <p class="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                    Higher = faster, but more resource intensive (recommended: 5-10)
-                  </p>
-                </div>
-                <div>
-                  <label class="flex items-start gap-2 cursor-pointer mt-2">
-                    <input 
-                      type="checkbox" 
-                      bind:checked={forceReenrich}
-                      class="mt-0.5 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 dark:border-gray-600 rounded"
-                      disabled={runningEnrichment}
-                    />
-                    <div>
-                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Force Re-enrich</span>
-                      <p class="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
-                        Re-fetch metadata for bookmarks even if already enriched. Bypasses the queue and processes {enrichmentBatchSize} bookmarks directly.
-                      </p>
-                      {#if forceReenrich}
-                        <p class="text-xs text-purple-600 dark:text-purple-400 mt-1 font-medium">
-                          ⚡ Will process unenriched bookmarks first, then oldest enriched
-                        </p>
-                      {/if}
-                    </div>
-                  </label>
-                </div>
-              </div>
               
               <!-- Real-time Progress Display -->
               {#if enrichmentProgress && runningEnrichment}
@@ -2448,7 +2412,7 @@
                     <div class="flex justify-between items-center mb-2">
                       <span class="text-sm font-medium text-blue-900 dark:text-blue-300">Processing...</span>
                       <span class="text-sm text-blue-700 dark:text-blue-400">
-                        {enrichmentProgress.completed || enrichmentProgress.current} / {enrichmentProgress.total} completed
+                        {enrichmentProgress.completed || enrichmentProgress.current} / {enrichmentProgress.total}
                       </span>
                     </div>
                     <div class="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
@@ -2458,14 +2422,10 @@
                       ></div>
                     </div>
                   </div>
-                  
                   {#if enrichmentProgress.title}
-                    <div class="text-xs text-blue-800 dark:text-blue-200 space-y-1">
-                      <div class="font-medium truncate" title="{enrichmentProgress.url}">
-                        {enrichmentProgress.status === 'processing' ? '⏳' : enrichmentProgress.status === 'completed' ? '✓' : '✗'} 
-                        {enrichmentProgress.title}
-                      </div>
-                      <div class="text-blue-600 dark:text-blue-400 truncate text-[10px]">{enrichmentProgress.url}</div>
+                    <div class="text-xs text-blue-800 dark:text-blue-200 truncate">
+                      {enrichmentProgress.status === 'processing' ? '⏳' : enrichmentProgress.status === 'completed' ? '✓' : '✗'} 
+                      {enrichmentProgress.title}
                     </div>
                   {/if}
                 </div>
@@ -2479,41 +2439,113 @@
                       <strong>Error:</strong> {enrichmentResult.error}
                     </div>
                   {:else}
-                    <div class="text-green-700 dark:text-green-400 text-sm space-y-1">
-                      <div><strong class="dark:text-green-300">Enrichment Complete!</strong></div>
-                      <div>Processed: {enrichmentResult.processed || 0} bookmarks</div>
-                      <div>Successful: {enrichmentResult.success || 0}</div>
+                    <div class="text-green-700 dark:text-green-400 text-sm">
+                      <strong class="dark:text-green-300">✓ Enrichment Complete!</strong>
+                      <span class="ml-2">Processed {enrichmentResult.success || 0} bookmarks</span>
                       {#if enrichmentResult.failed > 0}
-                        <div class="text-orange-600 dark:text-orange-400">Failed: {enrichmentResult.failed}</div>
-                      {/if}
-                      {#if enrichmentResult.skipped > 0}
-                        <div class="text-gray-600 dark:text-gray-400">Skipped (already enriched): {enrichmentResult.skipped}</div>
+                        <span class="text-orange-600 dark:text-orange-400 ml-2">({enrichmentResult.failed} failed)</span>
                       {/if}
                     </div>
                   {/if}
                 </div>
               {/if}
 
-              <!-- Progress Logs (collapsible) -->
-              {#if enrichmentLogs.length > 0}
+              <!-- Helpful tips -->
+              <div class="mt-4 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-200 dark:border-gray-700">
+                <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">💡 Tips:</p>
+                <ul class="list-disc list-inside space-y-0.5">
+                  <li>Click the ✨ icon on any bookmark in the list to enrich it individually</li>
+                  <li>Enrichment adds descriptions, categories, and keywords from the webpage</li>
+                  <li>Already enriched bookmarks are shown with a ✓ indicator</li>
+                </ul>
+              </div>
+              
+              <!-- Advanced Options (collapsible) -->
+              <details class="mt-4" open={runningEnrichment}>
+                <summary class="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 font-medium transition-colors">
+                  ⚙️ Advanced Options
+                </summary>
+                <div class="mt-3 p-4 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label for="enrichment-batch-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Batch Size
+                      </label>
+                      <input 
+                        id="enrichment-batch-size"
+                        type="number" 
+                        min="5" 
+                        max="500" 
+                        bind:value={enrichmentBatchSize}
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        disabled={runningEnrichment}
+                      />
+                      <p class="text-xs text-gray-500 mt-1">Bookmarks per run (5-500)</p>
+                    </div>
+                    <div>
+                      <label for="enrichment-concurrency" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Concurrency
+                      </label>
+                      <input 
+                        id="enrichment-concurrency"
+                        type="number" 
+                        min="1" 
+                        max="20" 
+                        bind:value={enrichmentConcurrency}
+                        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        disabled={runningEnrichment}
+                      />
+                      <p class="text-xs text-gray-500 mt-1">Parallel requests (1-20)</p>
+                    </div>
+                    <div class="flex items-start pt-6">
+                      <label class="flex items-start gap-2 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          bind:checked={forceReenrich}
+                          class="mt-0.5 h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 dark:border-gray-600 rounded"
+                          disabled={runningEnrichment}
+                        />
+                        <div>
+                          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Force Re-enrich</span>
+                          <p class="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
+                            Re-fetch even if already enriched
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <!-- Enrichment Info Summary -->
+                  <div class="mt-4 pt-3 border-t border-gray-200 dark:border-gray-600">
+                    <div class="flex items-center justify-between text-xs">
+                      <span class="text-gray-500 dark:text-gray-400">
+                        Will process up to <span class="font-medium text-gray-700 dark:text-gray-300">{enrichmentBatchSize}</span> bookmarks
+                        with <span class="font-medium text-gray-700 dark:text-gray-300">{enrichmentConcurrency}</span> parallel requests
+                      </span>
+                      <span class="text-gray-500 dark:text-gray-400">
+                        Est. time: ~{Math.ceil(enrichmentBatchSize / enrichmentConcurrency * 0.5)}s - {Math.ceil(enrichmentBatchSize / enrichmentConcurrency * 2)}s
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </details>
+              
+              <!-- Detailed Progress Logs -->
+              {#if enrichmentLogs && enrichmentLogs.length > 0}
                 <details class="mt-4">
-                  <summary class="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 font-medium transition-colors">View Detailed Logs ({enrichmentLogs.length})</summary>
-                  <div class="mt-2 max-h-64 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 rounded p-3 space-y-1 text-xs font-mono border border-gray-200 dark:border-gray-700">
-                    {#each enrichmentLogs.slice().reverse() as log}
-                      <div class="{log.status === 'completed' ? 'text-green-700 dark:text-green-400' : log.status === 'failed' || log.status === 'error' ? 'text-red-700 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}">
-                        <span class="text-gray-400 dark:text-gray-500">{new Date(log.timestamp).toLocaleTimeString()}</span> 
-                        [{log.current}/{log.total}] 
-                        {log.status === 'completed' ? '✓' : log.status === 'failed' || log.status === 'error' ? '✗' : '⏳'} 
-                        <span class="truncate inline-block max-w-md" title="{log.url}">{log.title || log.url}</span>
+                  <summary class="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 font-medium transition-colors">
+                    📋 Activity Log ({enrichmentLogs.length} entries)
+                  </summary>
+                  <div class="mt-2 max-h-48 overflow-y-auto bg-gray-900 dark:bg-gray-950 rounded border border-gray-700 p-3 font-mono text-xs">
+                    {#each enrichmentLogs.slice(-50).reverse() as log}
+                      <div class="py-0.5 {log.status === 'error' ? 'text-red-400' : log.status === 'success' ? 'text-green-400' : 'text-gray-400'}">
+                        <span class="text-gray-600">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                        {log.status === 'success' ? '✓' : log.status === 'error' ? '✗' : '⏳'}
+                        {log.title || log.url}
                       </div>
                     {/each}
                   </div>
                 </details>
-              {:else if !enrichmentResult}
-                <p class="text-gray-500 text-sm">
-                  Click "Run Enrichment" to fetch metadata for bookmarks that haven't been enriched yet. 
-                  Only new bookmarks without descriptions or categories will be processed.
-                </p>
               {/if}
             </div>
           </div>
@@ -3528,9 +3560,27 @@
                 <!-- Backup Section -->
                 <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/30">
                   <h4 class="font-medium text-gray-900 dark:text-gray-300 mb-3">Create Backup</h4>
-                  <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
                     Download a complete backup of your bookmarks including all enrichment data, categories, and metadata.
                   </p>
+                  
+                  <!-- Format Selection -->
+                  <fieldset class="mb-4">
+                    <legend class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Format</legend>
+                    <div class="flex gap-4">
+                      <label class="inline-flex items-center cursor-pointer">
+                        <input type="radio" bind:group={backupFormat} value="json" class="form-radio text-green-600 h-4 w-4" />
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">.json</span>
+                        <span class="ml-1 text-xs text-gray-500">(readable)</span>
+                      </label>
+                      <label class="inline-flex items-center cursor-pointer">
+                        <input type="radio" bind:group={backupFormat} value="db" class="form-radio text-green-600 h-4 w-4" />
+                        <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">.db</span>
+                        <span class="ml-1 text-xs text-gray-500">(compact)</span>
+                      </label>
+                    </div>
+                  </fieldset>
+                  
                   <button
                     on:click={handleDownloadBackup}
                     disabled={backupInProgress}
@@ -3546,7 +3596,7 @@
                       <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                       </svg>
-                      Download Backup
+                      Download Backup (.{backupFormat})
                     {/if}
                   </button>
                 </div>
@@ -3555,14 +3605,14 @@
                 <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900/30">
                   <h4 class="font-medium text-gray-900 dark:text-gray-300 mb-3">Restore Backup</h4>
                   <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    Restore from a backup file. Your current data will be auto-backed up first.
+                    Restore from a backup file. This will replace your current data.
                   </p>
                   
                   <label class="block">
                     <span class="sr-only">Choose backup file</span>
                     <input 
                       type="file" 
-                      accept=".json"
+                      accept=".json,.db"
                       on:change={handleFileSelect}
                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                     />
@@ -3596,48 +3646,6 @@
                     </div>
                   {/if}
                 </div>
-              </div>
-              
-              <!-- Auto-backups Section -->
-              <div class="mt-6 border-t border-gray-200 pt-6">
-                <div class="flex justify-between items-center mb-3">
-                  <h4 class="font-medium text-gray-900">Auto-Backups</h4>
-                  <button
-                    on:click={loadAutoBackups}
-                    class="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    Refresh
-                  </button>
-                </div>
-                <p class="text-sm text-gray-600 mb-3">
-                  Auto-backups are created before restore operations and enrichment runs. Last 3 are kept.
-                </p>
-                
-                {#if autoBackups.length === 0}
-                  <p class="text-gray-500 text-sm">No auto-backups yet. They will appear after your first restore or enrichment run.</p>
-                {:else}
-                  <div class="space-y-2">
-                    {#each autoBackups as backup, index}
-                      <div class="flex justify-between items-center p-3 bg-gray-50 rounded-md">
-                        <div>
-                          <span class="text-sm font-medium text-gray-900">
-                            {new Date(backup.createdAt).toLocaleString()}
-                          </span>
-                          <span class="text-xs text-gray-500 ml-2">
-                            ({backup.metadata?.totalBookmarks || 0} bookmarks, {backup.metadata?.enrichedCount || 0} enriched)
-                          </span>
-                        </div>
-                        <button
-                          on:click={() => handleRestoreAutoBackup(index)}
-                          disabled={restoreInProgress}
-                          class="text-sm px-3 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
-                        >
-                          Restore
-                        </button>
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
               </div>
             </div>
           </div>
@@ -3834,3 +3842,44 @@
     </div>
   </div>
 {/if}
+
+<!-- Undo Delete Toast -->
+{#if undoDeleteToast}
+  <div class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-up">
+    <div class="bg-gray-900 dark:bg-gray-700 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3">
+      <span class="text-sm">
+        Deleted "{undoDeleteToast.title.length > 30 ? undoDeleteToast.title.slice(0, 30) + '...' : undoDeleteToast.title}"
+      </span>
+      <button
+        on:click={handleUndoDelete}
+        class="px-3 py-1 text-sm font-medium text-blue-400 hover:text-blue-300 hover:bg-gray-800 dark:hover:bg-gray-600 rounded transition-colors"
+      >
+        Undo
+      </button>
+      <button
+        on:click={dismissUndoToast}
+        class="text-gray-400 hover:text-white transition-colors"
+        title="Dismiss"
+      >
+        ✕
+      </button>
+    </div>
+  </div>
+{/if}
+
+<style>
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translate(-50%, 20px);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  }
+  
+  .animate-slide-up {
+    animation: slide-up 0.2s ease-out;
+  }
+</style>

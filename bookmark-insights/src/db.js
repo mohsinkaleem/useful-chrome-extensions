@@ -194,6 +194,26 @@ export async function getAllBookmarks() {
   }
 }
 
+/**
+ * Get all bookmarks including reading list items
+ * This combines the IndexedDB bookmarks with Chrome's reading list
+ * @returns {Promise<Array>} Combined array of bookmarks and reading list items
+ */
+export async function getAllBookmarksWithReadingList() {
+  try {
+    const [bookmarks, readingListItems] = await Promise.all([
+      db.bookmarks.toArray(),
+      getReadingListItems()
+    ]);
+    
+    // Reading list items already have isReadingListItem: true from getReadingListItems
+    return [...bookmarks, ...readingListItems];
+  } catch (error) {
+    console.error('Error getting bookmarks with reading list:', error);
+    return [];
+  }
+}
+
 // Get bookmark by ID
 export async function getBookmark(id) {
   try {
@@ -571,6 +591,118 @@ export async function getEnrichmentQueueSize() {
     return await db.enrichmentQueue.count();
   } catch (error) {
     console.error('Error getting queue size:', error);
+    return 0;
+  }
+}
+
+// =============================================
+// Reading List API Functions
+// =============================================
+
+/**
+ * Get all items from Chrome's Reading List
+ * @returns {Promise<Array>} Array of reading list items
+ */
+export async function getReadingListItems() {
+  try {
+    if (!chrome.readingList) {
+      console.warn('Reading List API not available');
+      return [];
+    }
+    const items = await chrome.readingList.query({});
+    return items.map(item => ({
+      ...item,
+      id: `reading-list-${encodeURIComponent(item.url)}`, // Unique ID for reading list items
+      isReadingListItem: true,
+      dateAdded: item.creationTime,
+      lastUpdated: item.lastUpdateTime,
+      domain: (() => {
+        try {
+          return new URL(item.url).hostname;
+        } catch {
+          return 'unknown';
+        }
+      })()
+    }));
+  } catch (error) {
+    console.error('Error getting reading list items:', error);
+    return [];
+  }
+}
+
+/**
+ * Add an item to Chrome's Reading List
+ * @param {Object} entry - Entry with title, url, hasBeenRead
+ * @returns {Promise<boolean>} Success status
+ */
+export async function addToReadingList(entry) {
+  try {
+    if (!chrome.readingList) {
+      console.warn('Reading List API not available');
+      return false;
+    }
+    await chrome.readingList.addEntry({
+      title: entry.title,
+      url: entry.url,
+      hasBeenRead: entry.hasBeenRead || false
+    });
+    return true;
+  } catch (error) {
+    console.error('Error adding to reading list:', error);
+    return false;
+  }
+}
+
+/**
+ * Remove an item from Chrome's Reading List
+ * @param {string} url - URL of the item to remove
+ * @returns {Promise<boolean>} Success status
+ */
+export async function removeFromReadingList(url) {
+  try {
+    if (!chrome.readingList) {
+      console.warn('Reading List API not available');
+      return false;
+    }
+    await chrome.readingList.removeEntry({ url });
+    return true;
+  } catch (error) {
+    console.error('Error removing from reading list:', error);
+    return false;
+  }
+}
+
+/**
+ * Mark a reading list item as read/unread
+ * @param {string} url - URL of the item
+ * @param {boolean} hasBeenRead - Read status
+ * @returns {Promise<boolean>} Success status
+ */
+export async function updateReadingListItem(url, hasBeenRead) {
+  try {
+    if (!chrome.readingList) {
+      console.warn('Reading List API not available');
+      return false;
+    }
+    await chrome.readingList.updateEntry({ url, hasBeenRead });
+    return true;
+  } catch (error) {
+    console.error('Error updating reading list item:', error);
+    return false;
+  }
+}
+
+/**
+ * Get unread reading list items count
+ * @returns {Promise<number>} Count of unread items
+ */
+export async function getUnreadReadingListCount() {
+  try {
+    if (!chrome.readingList) return 0;
+    const items = await chrome.readingList.query({ hasBeenRead: false });
+    return items.length;
+  } catch (error) {
+    console.error('Error getting unread count:', error);
     return 0;
   }
 }
@@ -1525,16 +1657,66 @@ export async function createBackup() {
 }
 
 /**
- * Download backup as a JSON file
+ * Download backup as a file
+ * @param {string} format - The format to download: 'json' or 'db'
  */
-export async function downloadBackup() {
+export async function downloadBackup(format = 'json') {
   try {
     const backup = await createBackup();
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
     const date = new Date().toISOString().slice(0, 10);
-    const filename = `bookmark-insights-backup-${date}.json`;
+    
+    let blob, filename;
+    
+    if (format === 'db') {
+      // Export as binary format (.db) - JSON with optional gzip compression
+      // Add a magic header to identify the format: "BKMI" (Bookmark Insights)
+      const MAGIC_HEADER = 'BKMI'; // 4 bytes
+      const VERSION = 1; // 1 byte for version
+      
+      const jsonStr = JSON.stringify(backup);
+      const encoder = new TextEncoder();
+      const jsonBytes = encoder.encode(jsonStr);
+      
+      let isCompressed = false;
+      let payloadBytes = jsonBytes;
+      
+      // Try to compress using CompressionStream if available
+      if (typeof CompressionStream !== 'undefined') {
+        try {
+          const cs = new CompressionStream('gzip');
+          const writer = cs.writable.getWriter();
+          writer.write(jsonBytes);
+          writer.close();
+          const compressedData = await new Response(cs.readable).arrayBuffer();
+          // Only use compression if it's smaller
+          if (compressedData.byteLength < jsonBytes.byteLength) {
+            payloadBytes = new Uint8Array(compressedData);
+            isCompressed = true;
+          }
+        } catch (compressionError) {
+          console.warn('Compression failed, using uncompressed format:', compressionError);
+        }
+      }
+      
+      // Build the final binary: MAGIC (4) + VERSION (1) + FLAGS (1) + PAYLOAD
+      // FLAGS: bit 0 = isCompressed
+      const flags = isCompressed ? 1 : 0;
+      const headerBytes = encoder.encode(MAGIC_HEADER);
+      const finalData = new Uint8Array(4 + 1 + 1 + payloadBytes.length);
+      finalData.set(headerBytes, 0);
+      finalData[4] = VERSION;
+      finalData[5] = flags;
+      finalData.set(payloadBytes, 6);
+      
+      blob = new Blob([finalData], { type: 'application/octet-stream' });
+      filename = `bookmark-insights-backup-${date}.db`;
+    } else {
+      // Default JSON format
+      blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      filename = `bookmark-insights-backup-${date}.json`;
+    }
+    
+    const url = URL.createObjectURL(blob);
     
     // Create download link
     const a = document.createElement('a');
@@ -1550,6 +1732,67 @@ export async function downloadBackup() {
     console.error('Error downloading backup:', error);
     throw error;
   }
+}
+
+/**
+ * Parse a .db backup file and extract the JSON backup object
+ * Handles both new format (with BKMI magic header) and legacy formats
+ * @param {ArrayBuffer} arrayBuffer - The raw file data
+ * @returns {Promise<Object>} The parsed backup object
+ */
+export async function parseDbBackupFile(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const decoder = new TextDecoder();
+  
+  // Check for new format with magic header "BKMI"
+  if (bytes.length > 6) {
+    const magicHeader = decoder.decode(bytes.slice(0, 4));
+    if (magicHeader === 'BKMI') {
+      const version = bytes[4];
+      const flags = bytes[5];
+      const isCompressed = (flags & 1) === 1;
+      const payload = bytes.slice(6);
+      
+      let jsonStr;
+      if (isCompressed && typeof DecompressionStream !== 'undefined') {
+        try {
+          const ds = new DecompressionStream('gzip');
+          const writer = ds.writable.getWriter();
+          writer.write(payload);
+          writer.close();
+          const decompressedData = await new Response(ds.readable).arrayBuffer();
+          jsonStr = decoder.decode(decompressedData);
+        } catch (decompressError) {
+          throw new Error('Failed to decompress backup file: ' + decompressError.message);
+        }
+      } else {
+        jsonStr = decoder.decode(payload);
+      }
+      
+      return JSON.parse(jsonStr);
+    }
+  }
+  
+  // Legacy format: try gzip decompression first
+  let textData;
+  try {
+    if (typeof DecompressionStream !== 'undefined') {
+      const ds = new DecompressionStream('gzip');
+      const writer = ds.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      const decompressedData = await new Response(ds.readable).arrayBuffer();
+      textData = decoder.decode(decompressedData);
+    } else {
+      // No DecompressionStream, try as plain text
+      textData = decoder.decode(bytes);
+    }
+  } catch (decompressError) {
+    // Decompression failed, try as plain text
+    textData = decoder.decode(bytes);
+  }
+  
+  return JSON.parse(textData);
 }
 
 /**
@@ -1697,84 +1940,6 @@ export function validateBackup(backup) {
     version: backup.version || 'unknown',
     createdAt: backup.createdAt || 'unknown'
   };
-}
-
-/**
- * Create an automatic backup (called before risky operations)
- * Stores backup in chrome.storage.local with rotation (keeps last 3)
- */
-export async function createAutoBackup() {
-  try {
-    const backup = await createBackup();
-    
-    // Get existing auto-backups
-    const result = await chrome.storage.local.get(['autoBackups']);
-    let autoBackups = result.autoBackups || [];
-    
-    // Add new backup
-    autoBackups.unshift({
-      createdAt: backup.createdAt,
-      metadata: backup.metadata,
-      data: backup.data
-    });
-    
-    // Keep only last 3 auto-backups
-    if (autoBackups.length > 3) {
-      autoBackups = autoBackups.slice(0, 3);
-    }
-    
-    await chrome.storage.local.set({ autoBackups });
-    
-    console.log('Auto-backup created:', backup.metadata);
-    return { success: true, metadata: backup.metadata };
-  } catch (error) {
-    console.error('Error creating auto-backup:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * List available auto-backups
- */
-export async function listAutoBackups() {
-  try {
-    const result = await chrome.storage.local.get(['autoBackups']);
-    const autoBackups = result.autoBackups || [];
-    
-    return autoBackups.map((b, index) => ({
-      index,
-      createdAt: b.createdAt,
-      metadata: b.metadata
-    }));
-  } catch (error) {
-    console.error('Error listing auto-backups:', error);
-    return [];
-  }
-}
-
-/**
- * Restore from an auto-backup by index
- * @param {number} index - The index of the auto-backup to restore (0 = most recent)
- */
-export async function restoreFromAutoBackup(index = 0) {
-  try {
-    const result = await chrome.storage.local.get(['autoBackups']);
-    const autoBackups = result.autoBackups || [];
-    
-    if (index < 0 || index >= autoBackups.length) {
-      throw new Error(`Invalid backup index: ${index}. Available: 0-${autoBackups.length - 1}`);
-    }
-    
-    const backup = {
-      version: '2.1',
-      ...autoBackups[index]
-    };
-    
-    return await restoreFromBackup(backup);
-  } catch (error) {
-    console.error('Error restoring from auto-backup:', error);
-    throw error;
-  }
 }
 
 // ============================================================================

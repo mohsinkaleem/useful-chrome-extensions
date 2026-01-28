@@ -8,7 +8,8 @@
     "storage",
     "alarms",
     "tabs",
-    "sidePanel"
+    "sidePanel",
+    "readingList"
   ],
   "host_permissions": [
     "<all_urls>"

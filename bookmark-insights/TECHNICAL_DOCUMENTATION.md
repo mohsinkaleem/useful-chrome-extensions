@@ -1,9 +1,34 @@
 # Bookmark Insights - Technical Documentation
 
-**Version:** 3.2  
-**Last Updated:** January 23, 2026
+**Version:** 3.3  
+**Last Updated:** January 28, 2026
 
 ## Recent Updates (January 2026)
+
+### Dashboard Filter Error Fix & Enrichment UI Improvements (January 28, 2026)
+
+**Issue**: Dashboard page was throwing "Cannot read properties of undefined (reading 'length')" error when loading bookmarks. The SidePanel worked correctly.
+
+**Root Cause & Fix**:
+
+1. **Missing Filter Properties in Store** ([stores.js](src/stores.js))
+   - The `activeFilters` store was missing `types` and `creators` arrays in its initial state
+   - The `hasActiveFilters()` function in Dashboard.svelte was accessing these undefined properties without null checks
+   - Added `types: []` and `creators: []` to the store's initial state, `clearFilters()`, and `reset()` methods
+
+2. **Unsafe Property Access** ([Dashboard.svelte](src/Dashboard.svelte))
+   - Updated `hasActiveFilters()` function to check for undefined before accessing `.length` on all filter arrays
+   - Fixed UI conditional that displayed active filter chips to use safe property access with `&&` guards
+
+**Enrichment UI Improvements**:
+
+- Added **Concurrency Control** (1-20 parallel requests) input in Advanced Options
+- Added **Estimated Time** display based on batch size and concurrency settings
+- Added **Activity Log** panel showing real-time enrichment progress with timestamps
+- Advanced Options panel now auto-expands when enrichment is running
+- Improved input field styling and labels with proper accessibility attributes
+
+---
 
 ### Filter Reactivity & State Management Improvements
 
@@ -125,9 +150,9 @@ Manages all active filters with custom methods for manipulation:
 {
   domains: [],           // Array of domain strings
   folders: [],           // Array of folder path strings
-  platforms: [],         // Array of platform identifiers
-  creators: [],          // Array of { key, creator, platform } objects
+  topics: [],            // Array of topic strings
   types: [],             // Array of content type strings
+  creators: [],          // Array of { key, creator, platform } objects
   tags: [],              // Array of tag strings
   deadLinks: false,      // Boolean filter
   stale: false,          // Boolean filter

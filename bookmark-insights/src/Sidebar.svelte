@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
   import { getDomainsByRecency, getDomainsByCount, getUniqueFolders } from './db.js';
-  import { getContentTypeDisplayName } from './url-parsers.js';
   import { getTopicDisplayName, getTopicIcon } from './topics.js';
   import { activeFilters, allBookmarks } from './stores.js';
   
@@ -13,22 +12,16 @@
   let domainsByCount = [];
   let folders = [];
   let topics = [];
-  let creators = [];
-  let contentTypes = [];
   let dateCounts = { week: 0, twoWeek: 0, month: 0, threeMonth: 0, sixMonth: 0, year: 0, older: 0 };
   
   let domainSortMode = 'count'; // 'recency' or 'count'
   let domainDisplayLimit = 40; // Initial limit for domains
   let folderDisplayLimit = 10; // Initial limit for folders
-  let creatorDisplayLimit = 10; // Initial limit for creators
-  let contentTypeDisplayLimit = 10; // Initial limit for content types
   let topicDisplayLimit = 15; // Initial limit for topics
   
   // Collapsible section states
   let sectionsExpanded = {
     topics: true,
-    creators: true,
-    contentTypes: true,
     domains: true,
     folders: true
   };
@@ -107,8 +100,6 @@
     
     // Count topics
     const topicCounts = {};
-    const creatorCounts = {};
-    const typeCounts = {};
     
     bookmarks.forEach(b => {
       // Topics (each bookmark can have multiple)
@@ -116,31 +107,10 @@
       for (const topic of bookmarkTopics) {
         topicCounts[topic] = (topicCounts[topic] || 0) + 1;
       }
-      
-      // Creators (with platform prefix)
-      if (b.creator) {
-        const creatorKey = `${b.platform || 'other'}:${b.creator}`;
-        if (!creatorCounts[creatorKey]) {
-          creatorCounts[creatorKey] = { creator: b.creator, platform: b.platform || 'other', count: 0 };
-        }
-        creatorCounts[creatorKey].count++;
-      }
-      
-      // Content types
-      if (b.contentType) {
-        typeCounts[b.contentType] = (typeCounts[b.contentType] || 0) + 1;
-      }
     });
     
     topics = Object.entries(topicCounts)
       .map(([topic, count]) => ({ topic, count }))
-      .sort((a, b) => b.count - a.count);
-    
-    creators = Object.values(creatorCounts)
-      .sort((a, b) => b.count - a.count);
-    
-    contentTypes = Object.entries(typeCounts)
-      .map(([type, count]) => ({ type, count }))
       .sort((a, b) => b.count - a.count);
   }
 
@@ -148,11 +118,10 @@
   $: activeFiltersExist = $activeFilters.domains.length > 0 || 
                           $activeFilters.folders.length > 0 || 
                           $activeFilters.topics.length > 0 ||
-                          $activeFilters.creators.length > 0 ||
-                          $activeFilters.types.length > 0 ||
                           ($activeFilters.tags && $activeFilters.tags.length > 0) ||
                           $activeFilters.deadLinks ||
                           $activeFilters.stale ||
+                          $activeFilters.readingList ||
                           $activeFilters.dateRange !== null ||
                           $activeFilters.readingTimeRange !== null ||
                           $activeFilters.qualityScoreRange !== null ||
@@ -177,16 +146,6 @@
     ? searchResultStats.topics
     : topics;
 
-  // Use search result creators when available
-  $: displayCreators = useFilteredStats && searchResultStats?.creators
-    ? searchResultStats.creators
-    : creators;
-
-  // Use search result content types when available
-  $: displayContentTypes = useFilteredStats && searchResultStats?.contentTypes
-    ? searchResultStats.contentTypes
-    : contentTypes;
-
   // Use search result date counts when available
   $: displayDateCounts = useFilteredStats && searchResultStats?.dateCounts
     ? searchResultStats.dateCounts
@@ -198,14 +157,6 @@
   
   function loadMoreFolders() {
     folderDisplayLimit += 15;
-  }
-  
-  function loadMoreCreators() {
-    creatorDisplayLimit += 10;
-  }
-  
-  function loadMoreContentTypes() {
-    contentTypeDisplayLimit += 10;
   }
   
   function loadMoreTopics() {
@@ -243,15 +194,6 @@
   
   function toggleTopicFilter(topic) {
     activeFilters.toggleFilter('topics', topic);
-  }
-  
-  function toggleCreatorFilter(creator, platform) {
-    const key = `${platform}:${creator}`;
-    activeFilters.toggleFilter('creators', { key, creator, platform });
-  }
-  
-  function toggleContentTypeFilter(type) {
-    activeFilters.toggleFilter('types', type);
   }
 
   function setDateFilter(startDate, endDate, period) {
@@ -367,28 +309,6 @@
             </button>
           </div>
         {/each}
-        {#each $activeFilters.creators as creatorData}
-          <div class="flex items-center space-x-1 p-1.5 bg-pink-50 dark:bg-pink-900/30 rounded-md border border-pink-100 dark:border-pink-800">
-            <div class="text-[10px] text-pink-800 dark:text-pink-300">{creatorData.creator}</div>
-            <button 
-              on:click={() => toggleCreatorFilter(creatorData.creator, creatorData.platform)}
-              class="text-pink-600 dark:text-pink-400 hover:text-pink-800 dark:hover:text-pink-200 font-bold"
-            >
-              ×
-            </button>
-          </div>
-        {/each}
-        {#each $activeFilters.types as type}
-          <div class="flex items-center space-x-1 p-1.5 bg-orange-50 dark:bg-orange-900/30 rounded-md border border-orange-100 dark:border-orange-800">
-            <div class="text-[10px] text-orange-800 dark:text-orange-300">{getContentTypeDisplayName(type)}</div>
-            <button 
-              on:click={() => toggleContentTypeFilter(type)}
-              class="text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-200 font-bold"
-            >
-              ×
-            </button>
-          </div>
-        {/each}
         {#each $activeFilters.domains as domain}
           <div class="flex items-center space-x-1 p-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-md border border-blue-100 dark:border-blue-800">
             <div class="text-[10px] text-blue-800 dark:text-blue-300">{domain}</div>
@@ -429,8 +349,46 @@
             </button>
           </div>
         {/if}
+        {#if $activeFilters.readingList}
+          <div class="flex items-center space-x-1 p-1.5 bg-cyan-50 dark:bg-cyan-900/30 rounded-md border border-cyan-100 dark:border-cyan-800">
+            <div class="text-[10px] text-cyan-800 dark:text-cyan-300">📖 Reading List</div>
+            <button 
+              on:click={() => { activeFilters.setFilter('readingList', false); }}
+              class="text-cyan-600 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-200 font-bold"
+            >
+              ×
+            </button>
+          </div>
+        {/if}
       </div>
     {/if}
+  </div>
+
+  <!-- Quick Filters Section -->
+  <div class="mb-6">
+    <h4 class="text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2">
+      Quick Filters
+    </h4>
+    <div class="flex flex-wrap gap-2">
+      <button
+        on:click={() => activeFilters.setFilter('readingList', !$activeFilters.readingList)}
+        class="px-2 py-1 text-[11px] rounded border transition-colors flex items-center gap-1.5 {$activeFilters.readingList ? 'bg-cyan-50 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800' : 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+      >
+        <span>📖 Reading List</span>
+      </button>
+      <button
+        on:click={() => activeFilters.setFilter('deadLinks', !$activeFilters.deadLinks)}
+        class="px-2 py-1 text-[11px] rounded border transition-colors flex items-center gap-1.5 {$activeFilters.deadLinks ? 'bg-red-50 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800' : 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+      >
+        <span>💔 Dead Links</span>
+      </button>
+      <button
+        on:click={() => activeFilters.setFilter('stale', !$activeFilters.stale)}
+        class="px-2 py-1 text-[11px] rounded border transition-colors flex items-center gap-1.5 {$activeFilters.stale ? 'bg-orange-50 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' : 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+      >
+        <span>📦 Stale</span>
+      </button>
+    </div>
   </div>
 
   <div class="grid grid-cols-2 gap-x-6 gap-y-6">
@@ -555,75 +513,6 @@
               <button
                 on:click={loadMoreTopics}
                 class="w-full text-center px-2 py-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded border border-indigo-200 dark:border-indigo-800 mt-2"
-              >
-                Show more
-              </button>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    {/if}
-    
-    <!-- Top Creators Section -->
-    {#if displayCreators.length > 0}
-      <div class="mb-0">
-        <button
-          on:click={() => toggleSection('creators')}
-          class="w-full flex items-center justify-between text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2 hover:text-gray-900 dark:hover:text-gray-200"
-        >
-          <span>👤 Top Creators ({displayCreators.length})</span>
-          <span class="text-gray-400 dark:text-gray-500">{sectionsExpanded.creators ? '▼' : '▶'}</span>
-        </button>
-        {#if sectionsExpanded.creators}
-          <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
-            {#each displayCreators.slice(0, creatorDisplayLimit) as c}
-              {@const isSelected = isFilterActive('creators', `${c.platform}:${c.creator}`)}
-              <button
-                on:click={() => toggleCreatorFilter(c.creator, c.platform)}
-                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 dark:hover:bg-gray-700 rounded border transition-colors flex items-center gap-1.5 {isSelected ? 'bg-pink-50 dark:bg-pink-900/40 text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800' : 'text-gray-600 dark:text-gray-400 border-transparent dark:border-transparent'}"
-              >
-                <span class="font-medium">👤 {c.creator}</span>
-                <span class="text-[10px] text-gray-400 dark:text-gray-500">{c.count}</span>
-              </button>
-            {/each}
-            {#if displayCreators.length > creatorDisplayLimit}
-              <button
-                on:click={loadMoreCreators}
-                class="w-full text-center px-2 py-1 text-xs text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-900/40 rounded border border-pink-200 dark:border-pink-800 mt-2"
-              >
-                Show more
-              </button>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    {/if}
-    
-    <!-- Content Types Section -->
-    {#if displayContentTypes.length > 0}
-      <div class="mb-0">
-        <button
-          on:click={() => toggleSection('contentTypes')}
-          class="w-full flex items-center justify-between text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2 hover:text-gray-900 dark:hover:text-gray-200"
-        >
-          <span>📝 Content Types ({displayContentTypes.length})</span>
-          <span class="text-gray-400 dark:text-gray-500">{sectionsExpanded.contentTypes ? '▼' : '▶'}</span>
-        </button>
-        {#if sectionsExpanded.contentTypes}
-          <div class="flex gap-2 overflow-x-auto pb-2" style="max-height: 200px; flex-wrap: wrap;">
-            {#each displayContentTypes.slice(0, contentTypeDisplayLimit) as ct}
-              <button
-                on:click={() => toggleContentTypeFilter(ct.type)}
-                class="flex-shrink-0 px-2 py-1 text-[11px] hover:bg-gray-100 dark:hover:bg-gray-700 rounded border transition-colors flex items-center gap-1.5 {isFilterActive('types', ct.type) ? 'bg-orange-50 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' : 'text-gray-600 dark:text-gray-400 border-transparent dark:border-transparent'}"
-              >
-                <span class="font-medium">{getContentTypeDisplayName(ct.type)}</span>
-                <span class="text-[10px] text-gray-400 dark:text-gray-500">{ct.count}</span>
-              </button>
-            {/each}
-            {#if displayContentTypes.length > contentTypeDisplayLimit}
-              <button
-                on:click={loadMoreContentTypes}
-                class="w-full text-center px-2 py-1.5 text-xs text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/40 rounded border border-orange-200 dark:border-orange-800 mt-2"
               >
                 Show more
               </button>
