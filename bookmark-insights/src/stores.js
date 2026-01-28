@@ -3,7 +3,8 @@
 
 import { writable, derived } from 'svelte/store';
 import { 
-  getAllBookmarks, 
+  getAllBookmarks,
+  getAllBookmarksWithReadingList,
   getCachedMetric, 
   CACHE_DURATIONS,
   getStoredSimilarities 
@@ -359,7 +360,7 @@ function createBookmarksStore() {
             // Fetch fresh data
             fetchPromise = (async () => {
                 try {
-                    const bookmarks = await getAllBookmarks();
+                    const bookmarks = await getAllBookmarksWithReadingList();
                     set(bookmarks);
                     lastFetchTime = Date.now();
                     return bookmarks;
@@ -378,7 +379,7 @@ function createBookmarksStore() {
             // Force new fetch
             fetchPromise = (async () => {
                 try {
-                    const bookmarks = await getAllBookmarks();
+                    const bookmarks = await getAllBookmarksWithReadingList();
                     set(bookmarks);
                     lastFetchTime = Date.now();
                     return bookmarks;

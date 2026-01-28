@@ -96,6 +96,11 @@ header h1 {
   margin-bottom: 4px;
 }
 
+.site-actions {
+  display: flex;
+  align-items: center;
+}
+
 .site-info {
   font-size: 12px;
   background: none;
