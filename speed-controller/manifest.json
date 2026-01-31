@@ -52,17 +52,9 @@
       "description": "Toggle between 1x and last used speed"
     },
     "skip_forward": {
-      "suggested_key": {
-        "default": "Alt+Right",
-        "mac": "Alt+Right"
-      },
       "description": "Skip forward"
     },
     "skip_backward": {
-      "suggested_key": {
-        "default": "Alt+Left",
-        "mac": "Alt+Left"
-      },
       "description": "Skip backward"
     }
   },

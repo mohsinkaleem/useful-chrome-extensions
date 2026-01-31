@@ -238,11 +238,71 @@ class NetflixSpeedController {
   }
 
   skipVideo(video, seconds) {
-    const newTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
-    video.currentTime = newTime;
+    // Netflix uses DRM-protected streams. Directly setting video.currentTime
+    // can trigger DRM errors (like M7375). Instead, we try multiple approaches:
+    
+    // Approach 1: Try Netflix's internal player API (if available)
+    const netflixSeekSuccess = this.tryNetflixSeek(seconds);
+    
+    if (!netflixSeekSuccess) {
+      // Approach 2: Simulate keyboard events that Netflix handles natively
+      // Netflix's native shortcuts: Right Arrow = +10s, Left Arrow = -10s
+      this.simulateNetflixSkip(seconds);
+    }
     
     if (this.settings.showNotifications) {
       this.showSkipNotification(seconds);
+    }
+  }
+
+  tryNetflixSeek(seconds) {
+    try {
+      // Netflix stores its player in the videoPlayer object
+      const videoPlayer = window.netflix?.appContext?.state?.playerApp?.getAPI?.()?.videoPlayer;
+      if (videoPlayer) {
+        const sessionIds = videoPlayer.getAllPlayerSessionIds?.();
+        if (sessionIds && sessionIds.length > 0) {
+          const player = videoPlayer.getVideoPlayerBySessionId(sessionIds[0]);
+          if (player) {
+            const currentTime = player.getCurrentTime();
+            const newTime = currentTime + (seconds * 1000); // Netflix uses milliseconds
+            player.seek(newTime);
+            return true;
+          }
+        }
+      }
+    } catch (error) {
+      console.log('Netflix Speed Controller: Netflix API not available, using fallback');
+    }
+    return false;
+  }
+
+  simulateNetflixSkip(seconds) {
+    // Netflix handles Arrow keys for seeking: Right = +10s, Left = -10s
+    // We simulate multiple key presses to approximate the desired skip time
+    const direction = seconds > 0 ? 'ArrowRight' : 'ArrowLeft';
+    const absSeconds = Math.abs(seconds);
+    const keyPresses = Math.ceil(absSeconds / 10); // Netflix skips 10s per arrow key
+    
+    // Get the video container or player element for dispatching events
+    const playerContainer = document.querySelector('.watch-video--player-view') || 
+                           document.querySelector('[data-uia="player"]') ||
+                           document.querySelector('.nf-player-container') ||
+                           document.body;
+    
+    // Dispatch key events to trigger Netflix's native seeking
+    for (let i = 0; i < keyPresses; i++) {
+      setTimeout(() => {
+        const keydownEvent = new KeyboardEvent('keydown', {
+          key: direction,
+          code: direction,
+          keyCode: direction === 'ArrowRight' ? 39 : 37,
+          which: direction === 'ArrowRight' ? 39 : 37,
+          bubbles: true,
+          cancelable: true
+        });
+        playerContainer.dispatchEvent(keydownEvent);
+      }, i * 50); // Small delay between key presses
     }
   }
 
