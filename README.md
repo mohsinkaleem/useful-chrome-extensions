@@ -20,6 +20,36 @@ A powerful bookmark manager with smart search, insights, and maintenance tools.
 
 ---
 
+### 🍪 [Cookie Manager](./cookie-reader/README.md)
+
+A powerful yet simple Chrome extension to manage cookies, view global statistics, and export data.
+
+**Features:**
+
+- Manage current site data (cookies, storage)
+- View global cookie usage statistics
+- Export data to JSON
+- Support for partitioned cookies (CHIPS)
+
+**Status:** ✅ Complete
+
+---
+
+### 🌙 [DarkShift](./dark-reader/README.md)
+
+A lightweight Chrome extension that applies dark mode on a per-site basis with full customization controls.
+
+**Features:**
+
+- Per-site dark mode settings
+- Dual modes: Inversion or Filter only
+- Customizable brightness, contrast, and saturation
+- Smart image handling and performance optimization
+
+**Status:** ✅ Complete
+
+---
+
 ### 🔗 [Quick Links Manager](./quick-links/README.md)
 
 A beautiful and modern extension for storing and accessing your favorite links with ease.
@@ -34,22 +64,6 @@ A beautiful and modern extension for storing and accessing your favorite links w
 - Local storage for privacy
 
 **Status:** ✅ Complete (v1.0.0)
-
----
-
-### 🎬 [TubeFilter](./tubefilter/README.md)
-
-A simple and fast YouTube video filter extension to filter videos by various criteria.
-
-**Features:**
-
-- View count filtering (greater than, less than, range)
-- Duration filtering (short, medium, long, custom)
-- Title keyword filtering
-- Dynamic filtering with infinite scroll support
-- Non-intrusive, clean interface
-
-**Status:** ✅ Complete
 
 ---
 
@@ -78,7 +92,7 @@ A powerful, lightweight Chrome extension for managing tabs, windows, and browser
 - Real-time search and filter tabs
 - Multiple view modes (List, Compact, Grid)
 - Quick actions (close, bookmark, group tabs)
-- Automatic duplicate detection
+- Automatic duplicate detection and grouping
 - Session management and recovery
 - Resource monitoring
 
@@ -86,16 +100,20 @@ A powerful, lightweight Chrome extension for managing tabs, windows, and browser
 
 ---
 
-### 🤖 [Google AI Studio Enhancer](./google-aistudio/README.md)
+### 🎬 [TubeFilter](./tubefilter/README.md)
 
-Enhances the Google AI Studio interface with additional features and improvements.
+A simple and fast YouTube video filter extension to filter videos by various criteria.
 
 **Features:**
 
-- Interface enhancements for Google AI Studio
-- Custom styling and layout improvements
+- View count filtering (greater than, less than, range)
+- Duration filtering (short, medium, long, custom)
+- Upload time filtering (new!)
+- Title keyword filtering with regex support
+- Dynamic filtering with infinite scroll support
+- Non-intrusive, clean interface
 
-**Status:** 🔄 In Development
+**Status:** ✅ Complete
 
 ---
 
@@ -128,11 +146,12 @@ Each extension can be loaded individually:
 extensions/
 ├── README.md                    # This file
 ├── bookmark-insights/           # Bookmark manager with insights
+├── cookie-reader/               # Cookie manager and analytics
+├── dark-reader/                 # Per-site dark mode (DarkShift)
 ├── quick-links/                 # Quick links manager
-├── tubefilter/                  # YouTube video filter
 ├── speed-controller/            # Video speed controller
 ├── tab-manager/                 # Advanced tab manager
-└── google-aistudio/             # Google AI Studio enhancer
+└── tubefilter/                  # YouTube video filter (TubeFilter)
 ```
 
 ## 🔒 Privacy & Security
@@ -149,12 +168,13 @@ All extensions in this collection:
 
 | Extension | Status | Version | Last Updated |
 |-----------|--------|---------|--------------|
-| Bookmark Insights | ✅ Complete | 1.0.0 | 2025 |
-| Quick Links Manager | ✅ Complete | 1.0.0 | 2025 |
-| TubeFilter | ✅ Complete | 1.0.0 | 2025 |
-| Video Speed Controller | ✅ Complete | 1.0.0 | 2025 |
-| Advanced Tab Manager | ✅ Complete | 1.0.0 | 2025 |
-| Google AI Studio | 🔄 Development | 0.1.0 | 2025 |
+| Bookmark Insights | ✅ Complete | 1.0.0 | 2026 |
+| Cookie Manager | ✅ Complete | 1.0.0 | 2026 |
+| DarkShift | ✅ Complete | 1.0.0 | 2026 |
+| Quick Links Manager | ✅ Complete | 1.0.0 | 2026 |
+| TubeFilter | ✅ Complete | 1.0.0 | 2026 |
+| Video Speed Controller | ✅ Complete | 1.0.0 | 2026 |
+| Advanced Tab Manager | ✅ Complete | 1.0.0 | 2026 |
 
 ## 🚀 Future Plans
 
