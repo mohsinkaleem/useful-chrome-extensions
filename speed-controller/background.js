@@ -59,7 +59,8 @@ chrome.runtime.onInstalled.addListener((details) => {
       maxSpeed: 4.0,
       minSpeed: 0.25,
       showNotifications: true,
-      lastSpeed: 1.5
+      lastSpeed: 1.5,
+      skipSeconds: 30
     });
     
     console.log('Netflix Speed Controller: Installed successfully');

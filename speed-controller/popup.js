@@ -37,7 +37,8 @@ async function loadSettings() {
       'speedStep',
       'maxSpeed', 
       'minSpeed',
-      'showNotifications'
+      'showNotifications',
+      'skipSeconds'
     ]);
     
     if (settings.speedStep) {
@@ -48,6 +49,9 @@ async function loadSettings() {
     }
     if (settings.minSpeed) {
       document.getElementById('minSpeed').value = settings.minSpeed;
+    }
+    if (settings.skipSeconds) {
+      document.getElementById('skipSeconds').value = settings.skipSeconds;
     }
     if (settings.showNotifications !== undefined) {
       document.getElementById('showNotifications').checked = settings.showNotifications;
@@ -73,6 +77,7 @@ async function saveSettings() {
       speedStep: parseFloat(document.getElementById('speedStep').value),
       maxSpeed: parseFloat(document.getElementById('maxSpeed').value),
       minSpeed: parseFloat(document.getElementById('minSpeed').value),
+      skipSeconds: parseInt(document.getElementById('skipSeconds').value),
       showNotifications: document.getElementById('showNotifications').checked
     };
     

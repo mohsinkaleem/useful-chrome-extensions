@@ -9,7 +9,8 @@ class NetflixSpeedController {
       speedStep: 0.25,
       maxSpeed: 4.0,
       minSpeed: 0.25,
-      showNotifications: true
+      showNotifications: true,
+      skipSeconds: 30
     };
     this.videoCheckInterval = null;
     this.initialized = false;
@@ -21,7 +22,7 @@ class NetflixSpeedController {
     // Load settings from storage
     try {
       const stored = await chrome.storage.sync.get([
-        'speedStep', 'maxSpeed', 'minSpeed', 'showNotifications', 'lastSpeed'
+        'speedStep', 'maxSpeed', 'minSpeed', 'showNotifications', 'lastSpeed', 'skipSeconds'
       ]);
       this.settings = { ...this.settings, ...stored };
       if (stored.lastSpeed) {
@@ -200,6 +201,12 @@ class NetflixSpeedController {
       case 'reset_speed':
         this.setSpeed(video, 1.0);
         break;
+      case 'skip_forward':
+        this.skipVideo(video, this.settings.skipSeconds);
+        break;
+      case 'skip_backward':
+        this.skipVideo(video, -this.settings.skipSeconds);
+        break;
     }
   }
 
@@ -227,6 +234,15 @@ class NetflixSpeedController {
       // Save last speed to storage
       chrome.storage.sync.set({ lastSpeed: this.lastSpeed }).catch(() => {});
       this.setSpeed(video, 1.0);
+    }
+  }
+
+  skipVideo(video, seconds) {
+    const newTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+    video.currentTime = newTime;
+    
+    if (this.settings.showNotifications) {
+      this.showSkipNotification(seconds);
     }
   }
 
@@ -285,6 +301,52 @@ class NetflixSpeedController {
       border: 1px solid rgba(229, 9, 20, 0.3);
     `;
     notification.innerHTML = `⚡ Speed: <span style="color: white;">${speed}x</span>`;
+
+    document.body.appendChild(notification);
+
+    // Fade out and remove after 1.5 seconds
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.remove();
+        }
+      }, 300);
+    }, 1500);
+  }
+
+  showSkipNotification(seconds) {
+    // Remove existing notification
+    const existing = document.getElementById('netflix-speed-controller-notification');
+    if (existing) {
+      existing.remove();
+    }
+
+    const direction = seconds > 0 ? '⏩' : '⏪';
+    const absSeconds = Math.abs(seconds);
+
+    // Create notification element with Netflix-like styling
+    const notification = document.createElement('div');
+    notification.id = 'netflix-speed-controller-notification';
+    notification.style.cssText = `
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: #e50914;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-family: 'Netflix Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 18px;
+      font-weight: bold;
+      z-index: 2147483647;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(229, 9, 20, 0.3);
+    `;
+    notification.innerHTML = `${direction} <span style="color: white;">${absSeconds}s</span>`;
 
     document.body.appendChild(notification);
 
@@ -365,6 +427,20 @@ class NetflixSpeedController {
         e.preventDefault();
         e.stopPropagation();
         this.handleCommand('toggle_speed');
+      }
+      
+      // Alt + Right Arrow (skip forward)
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleCommand('skip_forward');
+      }
+      
+      // Alt + Left Arrow (skip backward)
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleCommand('skip_backward');
       }
     }, true);
   }
