@@ -9,6 +9,7 @@
   let isFilteringActive = false;
   let processedElements = new WeakSet();
   let filterTimeout = null;
+  let lastUrl = location.href;
   
   // Initialize the content script
   initialize();
@@ -17,16 +18,18 @@
     // Listen for messages from popup
     chrome.runtime.onMessage.addListener(handleMessage);
     
-    // Check session storage for tab-specific persistence
+    // Watch for URL changes (YouTube SPA navigation)
+    setupUrlChangeDetection();
+    
+    // Check session storage for tab-specific persistence (persists across URL changes)
     try {
       const savedSettings = sessionStorage.getItem('tubeFilterSettings');
+      
       if (savedSettings) {
         currentFilters = JSON.parse(savedSettings);
         isFilteringActive = true;
         console.log('TubeFilter: Restored filters from session');
-        // Start observing immediately
         setupMutationObserver();
-        // Applies filters to initial content
         applyFilters(); 
       }
     } catch (e) {
@@ -36,12 +39,73 @@
     console.log('TubeFilter: Content script initialized');
   }
 
+  function setupUrlChangeDetection() {
+    // YouTube uses History API for navigation
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    history.pushState = function() {
+      originalPushState.apply(this, arguments);
+      handleUrlChange();
+    };
+    
+    history.replaceState = function() {
+      originalReplaceState.apply(this, arguments);
+      handleUrlChange();
+    };
+    
+    window.addEventListener('popstate', handleUrlChange);
+    
+    // Also check periodically for URL changes (backup)
+    setInterval(() => {
+      if (location.href !== lastUrl) {
+        handleUrlChange();
+      }
+    }, 1000);
+  }
+  
+  function handleUrlChange() {
+    const newUrl = location.href;
+    
+    // URL changed - reset processed elements to re-evaluate new content
+    // but keep filters active (they persist across URL changes)
+    processedElements = new WeakSet();
+    
+    // Reapply filters on new page if filtering is active
+    if (isFilteringActive && currentFilters) {
+      console.log('TubeFilter: URL changed, reapplying filters');
+      // Small delay to let new content load
+      setTimeout(() => {
+        applyFilters();
+      }, 500);
+    }
+    
+    lastUrl = newUrl;
+  }
+  
+  function isSamePageType(url1, url2) {
+    try {
+      const getPageType = (url) => {
+        if (url.includes('/watch')) return 'watch';
+        if (url.includes('/results')) return 'search';
+        if (url.includes('/@')) return 'channel:' + url.match(/@[^/]+/)?.[0];
+        if (url.includes('/channel/')) return 'channel:' + url.match(/channel\/[^/]+/)?.[0];
+        return 'home';
+      };
+      return getPageType(url1) === getPageType(url2);
+    } catch (e) {
+      return false;
+    }
+  }
+
   function handleMessage(request, sender, sendResponse) {
     if (request.action === 'applyFilters') {
       currentFilters = request.filters;
       isFilteringActive = true;
-      // Save to session storage for this tab
-      try { sessionStorage.setItem('tubeFilterSettings', JSON.stringify(currentFilters)); } catch(e) {}
+      // Save to session storage for this tab (tab-specific, persists within tab only)
+      try { 
+        sessionStorage.setItem('tubeFilterSettings', JSON.stringify(currentFilters));
+      } catch(e) {}
       
       // Reset processed cache when filters change to re-evaluate everything
       processedElements = new WeakSet(); 
@@ -52,7 +116,9 @@
       currentFilters = null;
       isFilteringActive = false;
       // Remove from session storage
-      try { sessionStorage.removeItem('tubeFilterSettings'); } catch(e) {}
+      try { 
+        sessionStorage.removeItem('tubeFilterSettings');
+      } catch(e) {}
       
       processedElements = new WeakSet();
       if (observer) {
@@ -61,7 +127,11 @@
       }
       clearFilters();
       sendResponse({success: true});
+    } else if (request.action === 'getFilters') {
+      // Return current filters to popup (for loading saved state)
+      sendResponse({filters: currentFilters});
     }
+    return true; // Keep message channel open for async response
   }
 
   function setupMutationObserver() {
@@ -225,10 +295,19 @@
   }
   
   function shouldHideVideo(videoData, filters) {
+    const title = videoData.title;
+    const titleLower = title.toLowerCase();
+    
+    // Check exclude keywords first (always hide if any exclude keyword matches)
+    if (filters.excludeKeywords && Array.isArray(filters.excludeKeywords) && filters.excludeKeywords.length > 0) {
+      const hasExcluded = filters.excludeKeywords.some(keyword => titleLower.includes(keyword.toLowerCase()));
+      if (hasExcluded) {
+        return true;
+      }
+    }
+    
     // Check title keyword filter (enhanced for multiple keywords and regex)
     if (filters.titleKeywords && Array.isArray(filters.titleKeywords) && filters.titleKeywords.length > 0) {
-      const title = videoData.title;
-      const titleLower = title.toLowerCase();
       const keywordMode = filters.keywordMode || 'include';
       
       let keywordMatch = false;
@@ -275,7 +354,6 @@
     } 
     // Fallback for backward compatibility with old single keyword format
     else if (filters.titleKeyword && filters.titleKeyword.length > 0) {
-      const titleLower = videoData.title.toLowerCase();
       const keywordLower = filters.titleKeyword.toLowerCase();
       const containsKeyword = titleLower.includes(keywordLower);
       
