@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tab Manager Side Panel</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="icons.css">
   <style>
     /* Side Panel specific overrides */
     html {
@@ -89,9 +90,9 @@
       <div class="header-stats">
         <span id="tab-count">0</span>
         <span class="stat-sep">•</span>
-        <button id="merge-windows-btn" class="action-btn" style="display: none;" title="Merge Selected Windows">🔀 Merge</button>
-        <button id="auto-group-btn" class="action-btn small" title="Auto Group Tabs">✨</button>
-        <button id="theme-toggle" class="action-btn small" title="Toggle Dark Mode">🌙</button>
+        <button id="merge-windows-btn" class="action-btn" style="display: none;" title="Merge Selected Windows"><span class="icon icon-merge"></span> Merge</button>
+        <button id="auto-group-btn" class="action-btn small" title="Auto Group Tabs"><span class="icon icon-sparkle"></span></button>
+        <button id="theme-toggle" class="action-btn small" title="Toggle Dark Mode"><span class="icon icon-moon"></span></button>
       </div>
     </header>
 
@@ -106,12 +107,12 @@
       <div class="filter-chips-compact">
         <label class="filter-chip-icon" title="Filter audible tabs">
           <input type="checkbox" id="filter-audible" />
-          <span class="filter-icon">🔊</span>
+          <span class="filter-icon"><span class="icon icon-sound"></span></span>
         </label>
 
         <label class="filter-chip-icon" title="Show Duplicates">
           <input type="checkbox" id="filter-duplicates" />
-          <span class="filter-icon">🔁</span>
+          <span class="filter-icon"><span class="icon icon-duplicate"></span></span>
         </label>
       </div>
     </div>

@@ -31,6 +31,9 @@ class SidepanelApp {
     this.setupEventListeners();
     await this.loadAndRenderTabs();
     
+    // Auto-focus search bar
+    this.searchBar.focus();
+    
     this.tabEventManager.onChange(() => {
       this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
     });

@@ -1279,3 +1279,48 @@ body.dark-theme .window-group.drag-over {
   border-color: #64b5f6;
   background-color: rgba(33, 150, 243, 0.1);
 }
+
+/* Icon Integration Styles */
+.action-btn-inline .icon,
+.action-btn .icon,
+.view-btn .icon,
+.panel-icon .icon {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.action-btn-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel-icon {
+  display: flex;
+  align-items: center;
+}
+
+/* Ensure icons inherit proper colors in action buttons */
+.action-btn-inline .icon {
+  filter: brightness(10);
+}
+
+body.dark-theme .action-btn-inline .icon {
+  filter: brightness(10);
+}
+
+.action-btn-inline:disabled .icon {
+  opacity: 0.5;
+}

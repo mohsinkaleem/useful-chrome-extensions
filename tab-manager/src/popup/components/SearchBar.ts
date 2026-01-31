@@ -52,4 +52,8 @@ export class SearchBar {
   onSearch(callback: (query: string, filters: SearchFilters) => void) {
     this.callbacks.push(callback);
   }
+
+  focus() {
+    this.input?.focus();
+  }
 }

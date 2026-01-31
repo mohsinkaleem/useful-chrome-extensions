@@ -47,6 +47,9 @@ class TabManagerApp {
     // Initial load
     await this.loadAndRenderTabs();
     
+    // Auto-focus search bar
+    this.searchBar.focus();
+    
     // Listen for tab changes
     this.tabEventManager.onChange(() => {
       this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
