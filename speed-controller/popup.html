@@ -1,28 +1,50 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Netflix Speed Controller</title>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+    
     body {
-      width: 300px;
+      width: 320px;
       padding: 20px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Netflix Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin: 0;
+      background: #141414;
+      color: #fff;
     }
     
     .header {
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #333;
     }
     
     .header h1 {
       margin: 0;
       font-size: 18px;
-      color: #333;
+      color: #e50914;
+      font-weight: 700;
     }
     
     .shortcuts {
-      margin-bottom: 20px;
+      margin-bottom: 16px;
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    
+    .shortcuts-title {
+      font-size: 12px;
+      color: #808080;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
     }
     
     .shortcut {
@@ -30,7 +52,7 @@
       justify-content: space-between;
       align-items: center;
       padding: 8px 0;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid #2a2a2a;
     }
     
     .shortcut:last-child {
@@ -38,106 +60,148 @@
     }
     
     .shortcut-key {
-      background: #f5f5f5;
-      padding: 4px 8px;
+      background: #333;
+      padding: 4px 10px;
       border-radius: 4px;
       font-family: monospace;
       font-size: 12px;
-      color: #666;
+      color: #e50914;
+      border: 1px solid #444;
     }
     
     .shortcut-desc {
-      font-size: 14px;
-      color: #333;
+      font-size: 13px;
+      color: #b3b3b3;
     }
     
     .settings {
-      border-top: 1px solid #eee;
-      padding-top: 15px;
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    
+    .settings-title {
+      font-size: 12px;
+      color: #808080;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
     }
     
     .setting-group {
-      margin-bottom: 15px;
+      margin-bottom: 14px;
     }
     
     .setting-group label {
       display: block;
-      font-size: 14px;
-      color: #333;
-      margin-bottom: 5px;
+      font-size: 13px;
+      color: #b3b3b3;
+      margin-bottom: 6px;
     }
     
-    .setting-group input, .setting-group select {
+    .setting-group select {
       width: 100%;
-      padding: 6px 8px;
-      border: 1px solid #ddd;
+      padding: 8px 12px;
+      border: 1px solid #333;
       border-radius: 4px;
       font-size: 14px;
-      box-sizing: border-box;
+      background: #2a2a2a;
+      color: #fff;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23808080' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+    
+    .setting-group select:hover {
+      border-color: #e50914;
+    }
+    
+    .setting-group select:focus {
+      outline: none;
+      border-color: #e50914;
     }
     
     .checkbox-group {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      padding: 8px 0;
     }
     
     .checkbox-group input[type="checkbox"] {
-      width: auto;
+      width: 18px;
+      height: 18px;
+      accent-color: #e50914;
+      cursor: pointer;
+    }
+    
+    .checkbox-group label {
+      margin-bottom: 0;
+      cursor: pointer;
     }
     
     .save-btn {
       width: 100%;
-      padding: 10px;
-      background: #4CAF50;
+      padding: 12px;
+      background: #e50914;
       color: white;
       border: none;
       border-radius: 4px;
       font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
       transition: background-color 0.2s;
+      margin-top: 8px;
     }
     
     .save-btn:hover {
-      background: #45a049;
+      background: #f40612;
+    }
+    
+    .save-btn:active {
+      background: #c00812;
     }
     
     .status {
       margin-top: 10px;
       text-align: center;
       font-size: 12px;
-      color: #666;
+      color: #808080;
+      min-height: 16px;
     }
     
     .website-status {
-      margin-bottom: 15px;
-      padding: 10px;
-      border-radius: 4px;
-      font-size: 14px;
+      margin-bottom: 16px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
       text-align: center;
     }
     
     .supported {
-      background: #e8f5e8;
-      color: #2e7d32;
-      border: 1px solid #c8e6c9;
+      background: rgba(46, 204, 113, 0.15);
+      color: #2ecc71;
+      border: 1px solid rgba(46, 204, 113, 0.3);
     }
     
     .not-supported {
-      background: #fff3e0;
-      color: #f57c00;
-      border: 1px solid #ffcc02;
+      background: rgba(229, 9, 20, 0.15);
+      color: #e55039;
+      border: 1px solid rgba(229, 9, 20, 0.3);
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>🎬 Video Speed Controller</h1>
+    <h1>🎬 Netflix Speed Controller</h1>
   </div>
   
   <div id="website-status" class="website-status"></div>
   
   <div class="shortcuts">
+    <div class="shortcuts-title">Keyboard Shortcuts</div>
     <div class="shortcut">
       <span class="shortcut-desc">Increase Speed</span>
       <span class="shortcut-key">⌘⇧.</span>
@@ -153,8 +217,9 @@
   </div>
   
   <div class="settings">
+    <div class="settings-title">Settings</div>
     <div class="setting-group">
-      <label for="speedStep">Speed Step:</label>
+      <label for="speedStep">Speed Step</label>
       <select id="speedStep">
         <option value="0.1">0.1x</option>
         <option value="0.25" selected>0.25x</option>
@@ -163,7 +228,7 @@
     </div>
     
     <div class="setting-group">
-      <label for="maxSpeed">Maximum Speed:</label>
+      <label for="maxSpeed">Maximum Speed</label>
       <select id="maxSpeed">
         <option value="2">2x</option>
         <option value="3">3x</option>
@@ -173,7 +238,7 @@
     </div>
     
     <div class="setting-group">
-      <label for="minSpeed">Minimum Speed:</label>
+      <label for="minSpeed">Minimum Speed</label>
       <select id="minSpeed">
         <option value="0.1">0.1x</option>
         <option value="0.25" selected>0.25x</option>

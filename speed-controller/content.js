@@ -1,14 +1,18 @@
-// Content script for Video Speed Controller
-class VideoSpeedController {
+// Content script for Netflix Speed Controller
+// Netflix uses a custom video player that requires special handling
+
+class NetflixSpeedController {
   constructor() {
     this.currentSpeed = 1.0;
-    this.lastSpeed = 1.0;
+    this.lastSpeed = 1.5;
     this.settings = {
       speedStep: 0.25,
       maxSpeed: 4.0,
       minSpeed: 0.25,
       showNotifications: true
     };
+    this.videoCheckInterval = null;
+    this.initialized = false;
     
     this.init();
   }
@@ -17,24 +21,45 @@ class VideoSpeedController {
     // Load settings from storage
     try {
       const stored = await chrome.storage.sync.get([
-        'speedStep', 'maxSpeed', 'minSpeed', 'showNotifications'
+        'speedStep', 'maxSpeed', 'minSpeed', 'showNotifications', 'lastSpeed'
       ]);
       this.settings = { ...this.settings, ...stored };
+      if (stored.lastSpeed) {
+        this.lastSpeed = stored.lastSpeed;
+      }
     } catch (error) {
-      console.log('Using default settings');
+      console.log('Netflix Speed Controller: Using default settings');
     }
 
-    // Listen for keyboard commands and settings updates
+    // Listen for commands from background script
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (request.action === 'updateSettings') {
         this.settings = { ...this.settings, ...request.settings };
+        sendResponse({ success: true });
       } else {
         this.handleCommand(request.action);
+        sendResponse({ success: true });
       }
+      return true;
     });
 
-    // Monitor for video elements
+    // Start monitoring for video elements
+    this.startVideoMonitoring();
+    
+    // Also set up keyboard shortcuts as fallback
+    this.setupKeyboardShortcuts();
+    
+    console.log('Netflix Speed Controller: Initialized');
+  }
+
+  startVideoMonitoring() {
+    // Netflix dynamically loads video elements, so we need to keep checking
     this.observeVideos();
+    
+    // Also poll periodically as a fallback (Netflix can be tricky)
+    this.videoCheckInterval = setInterval(() => {
+      this.findAndSetupVideos();
+    }, 2000);
   }
 
   observeVideos() {
@@ -42,11 +67,28 @@ class VideoSpeedController {
     this.findAndSetupVideos();
 
     // Observer for dynamically added videos
-    const observer = new MutationObserver(() => {
-      this.findAndSetupVideos();
+    const observer = new MutationObserver((mutations) => {
+      // Check if any video elements were added
+      let shouldCheck = false;
+      for (const mutation of mutations) {
+        if (mutation.addedNodes.length > 0) {
+          for (const node of mutation.addedNodes) {
+            if (node.nodeName === 'VIDEO' || 
+                (node.nodeType === 1 && node.querySelector?.('video'))) {
+              shouldCheck = true;
+              break;
+            }
+          }
+        }
+        if (shouldCheck) break;
+      }
+      
+      if (shouldCheck) {
+        this.findAndSetupVideos();
+      }
     });
 
-    observer.observe(document.body, {
+    observer.observe(document.documentElement, {
       childList: true,
       subtree: true
     });
@@ -55,9 +97,14 @@ class VideoSpeedController {
   findAndSetupVideos() {
     const videos = document.querySelectorAll('video');
     videos.forEach(video => {
-      if (!video.dataset.speedControllerSetup) {
+      if (!video.dataset.netflixSpeedControllerSetup) {
         this.setupVideoHandlers(video);
-        video.dataset.speedControllerSetup = 'true';
+        video.dataset.netflixSpeedControllerSetup = 'true';
+        
+        // Apply current speed to new videos
+        if (this.currentSpeed !== 1.0) {
+          this.applySpeedToVideo(video, this.currentSpeed);
+        }
       }
     });
   }
@@ -65,40 +112,78 @@ class VideoSpeedController {
   setupVideoHandlers(video) {
     // Store original speed when video loads
     video.addEventListener('loadedmetadata', () => {
-      this.currentSpeed = video.playbackRate || 1.0;
+      // Re-apply speed when new content loads
+      if (this.currentSpeed !== 1.0) {
+        setTimeout(() => {
+          this.applySpeedToVideo(video, this.currentSpeed);
+        }, 100);
+      }
     });
 
-    // Track speed changes made by the website
-    video.addEventListener('ratechange', () => {
-      this.currentSpeed = video.playbackRate;
+    // Netflix sometimes resets playback rate, so we need to handle this
+    video.addEventListener('ratechange', (e) => {
+      // If Netflix resets the rate, re-apply our speed
+      if (video.playbackRate !== this.currentSpeed && this.currentSpeed !== 1.0) {
+        // Avoid infinite loop by checking if we triggered the change
+        if (!video.dataset.settingSpeed) {
+          video.dataset.settingSpeed = 'true';
+          setTimeout(() => {
+            this.applySpeedToVideo(video, this.currentSpeed);
+            delete video.dataset.settingSpeed;
+          }, 50);
+        }
+      }
+    });
+
+    // Handle when video starts playing
+    video.addEventListener('playing', () => {
+      if (this.currentSpeed !== 1.0) {
+        this.applySpeedToVideo(video, this.currentSpeed);
+      }
     });
   }
 
+  applySpeedToVideo(video, speed) {
+    try {
+      video.playbackRate = speed;
+    } catch (error) {
+      console.log('Netflix Speed Controller: Could not set playback rate', error);
+    }
+  }
+
   getActiveVideo() {
-    // Priority order: focused video, playing video, any video
     const videos = Array.from(document.querySelectorAll('video'));
     
-    // Check for focused video
-    const focusedVideo = videos.find(v => v === document.activeElement);
-    if (focusedVideo) return focusedVideo;
+    if (videos.length === 0) {
+      return null;
+    }
 
-    // Check for playing video
-    const playingVideo = videos.find(v => !v.paused && !v.ended);
+    // Netflix typically has one main video
+    // Find the one that's actually visible and playing or ready to play
+    const playingVideo = videos.find(v => !v.paused && !v.ended && v.readyState > 2);
     if (playingVideo) return playingVideo;
 
-    // Return first visible video
+    // Find any video that's visible
     const visibleVideo = videos.find(v => {
       const rect = v.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
+      return rect.width > 100 && rect.height > 100;
     });
+    if (visibleVideo) return visibleVideo;
 
-    return visibleVideo || videos[0];
+    // Return the largest video (most likely the main content)
+    return videos.reduce((largest, current) => {
+      const largestRect = largest?.getBoundingClientRect() || { width: 0, height: 0 };
+      const currentRect = current.getBoundingClientRect();
+      return (currentRect.width * currentRect.height > largestRect.width * largestRect.height) 
+        ? current : largest;
+    }, videos[0]);
   }
 
   handleCommand(command) {
     const video = this.getActiveVideo();
     if (!video) {
-      console.log('No video found');
+      console.log('Netflix Speed Controller: No video found');
+      this.showNoVideoNotification();
       return;
     }
 
@@ -112,12 +197,15 @@ class VideoSpeedController {
       case 'toggle_speed':
         this.toggleSpeed(video);
         break;
+      case 'reset_speed':
+        this.setSpeed(video, 1.0);
+        break;
     }
   }
 
   increaseSpeed(video) {
     const newSpeed = Math.min(
-      video.playbackRate + this.settings.speedStep,
+      Math.round((video.playbackRate + this.settings.speedStep) * 100) / 100,
       this.settings.maxSpeed
     );
     this.setSpeed(video, newSpeed);
@@ -125,24 +213,32 @@ class VideoSpeedController {
 
   decreaseSpeed(video) {
     const newSpeed = Math.max(
-      video.playbackRate - this.settings.speedStep,
+      Math.round((video.playbackRate - this.settings.speedStep) * 100) / 100,
       this.settings.minSpeed
     );
     this.setSpeed(video, newSpeed);
   }
 
   toggleSpeed(video) {
-    if (video.playbackRate === 1.0) {
+    if (Math.abs(video.playbackRate - 1.0) < 0.01) {
       this.setSpeed(video, this.lastSpeed);
     } else {
       this.lastSpeed = video.playbackRate;
+      // Save last speed to storage
+      chrome.storage.sync.set({ lastSpeed: this.lastSpeed }).catch(() => {});
       this.setSpeed(video, 1.0);
     }
   }
 
   setSpeed(video, speed) {
     const roundedSpeed = Math.round(speed * 100) / 100;
-    video.playbackRate = roundedSpeed;
+    
+    // Apply to all videos on the page (Netflix sometimes has multiple)
+    const allVideos = document.querySelectorAll('video');
+    allVideos.forEach(v => {
+      this.applySpeedToVideo(v, roundedSpeed);
+    });
+    
     this.currentSpeed = roundedSpeed;
 
     if (this.settings.showNotifications) {
@@ -154,7 +250,7 @@ class VideoSpeedController {
       chrome.runtime.sendMessage({
         action: 'showNotification',
         speed: roundedSpeed === 1.0 ? '1x' : `${roundedSpeed}x`
-      });
+      }).catch(() => {});
     } catch (error) {
       // Ignore if background script is not available
     }
@@ -162,30 +258,33 @@ class VideoSpeedController {
 
   showSpeedNotification(speed) {
     // Remove existing notification
-    const existing = document.getElementById('speed-controller-notification');
+    const existing = document.getElementById('netflix-speed-controller-notification');
     if (existing) {
       existing.remove();
     }
 
-    // Create notification element
+    // Create notification element with Netflix-like styling
     const notification = document.createElement('div');
-    notification.id = 'speed-controller-notification';
+    notification.id = 'netflix-speed-controller-notification';
     notification.style.cssText = `
       position: fixed;
-      top: 20px;
-      right: 20px;
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 10px 15px;
-      border-radius: 5px;
-      font-family: Arial, sans-serif;
-      font-size: 14px;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: #e50914;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-family: 'Netflix Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 18px;
       font-weight: bold;
-      z-index: 10000;
+      z-index: 2147483647;
       transition: opacity 0.3s ease;
       pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(229, 9, 20, 0.3);
     `;
-    notification.textContent = `Speed: ${speed}x`;
+    notification.innerHTML = `⚡ Speed: <span style="color: white;">${speed}x</span>`;
 
     document.body.appendChild(notification);
 
@@ -199,13 +298,95 @@ class VideoSpeedController {
       }, 300);
     }, 1500);
   }
+
+  showNoVideoNotification() {
+    if (!this.settings.showNotifications) return;
+    
+    const existing = document.getElementById('netflix-speed-controller-notification');
+    if (existing) {
+      existing.remove();
+    }
+
+    const notification = document.createElement('div');
+    notification.id = 'netflix-speed-controller-notification';
+    notification.style.cssText = `
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: #ffa500;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-family: 'Netflix Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      font-weight: bold;
+      z-index: 2147483647;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    `;
+    notification.textContent = '⚠️ No video playing';
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.remove();
+        }
+      }, 300);
+    }, 1500);
+  }
+
+  setupKeyboardShortcuts() {
+    // Fallback keyboard shortcuts in case Chrome commands don't work
+    document.addEventListener('keydown', (e) => {
+      // Only handle if on Netflix video page
+      if (!window.location.hostname.includes('netflix.com')) return;
+      
+      // Ctrl/Cmd + Shift + > (increase speed)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '>') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleCommand('increase_speed');
+      }
+      
+      // Ctrl/Cmd + Shift + < (decrease speed)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '<') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleCommand('decrease_speed');
+      }
+      
+      // Alt + T (toggle speed)
+      if (e.altKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleCommand('toggle_speed');
+      }
+    }, true);
+  }
 }
 
-// Initialize the controller when the page loads
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    new VideoSpeedController();
-  });
-} else {
-  new VideoSpeedController();
+// Initialize the controller
+let controller = null;
+
+function initController() {
+  if (!controller) {
+    controller = new NetflixSpeedController();
+  }
 }
+
+// Initialize when the page is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initController);
+} else {
+  initController();
+}
+
+// Also try to initialize when the window loads (for Netflix's lazy loading)
+window.addEventListener('load', () => {
+  setTimeout(initController, 500);
+});

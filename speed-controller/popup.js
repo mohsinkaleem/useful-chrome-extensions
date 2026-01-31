@@ -1,6 +1,6 @@
-// Popup script for Video Speed Controller
+// Popup script for Netflix Speed Controller
 document.addEventListener('DOMContentLoaded', async () => {
-  // Check if current tab is supported
+  // Check if current tab is Netflix
   await checkCurrentWebsite();
   
   // Load current settings
@@ -13,18 +13,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function checkCurrentWebsite() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const url = tab.url;
+    const url = tab?.url || '';
     const statusDiv = document.getElementById('website-status');
     
-    if (url.includes('youtube.com') || url.includes('netflix.com')) {
+    if (url.includes('netflix.com')) {
       statusDiv.className = 'website-status supported';
-      statusDiv.textContent = '✅ This website is supported';
+      statusDiv.textContent = '✅ You are on Netflix - extension active';
     } else {
       statusDiv.className = 'website-status not-supported';
-      statusDiv.textContent = '⚠️ This website is not supported yet';
+      statusDiv.textContent = '⚠️ Go to Netflix to use this extension';
     }
   } catch (error) {
     console.error('Error checking website:', error);
+    const statusDiv = document.getElementById('website-status');
+    statusDiv.className = 'website-status not-supported';
+    statusDiv.textContent = '⚠️ Unable to detect current website';
   }
 }
 
@@ -77,8 +80,8 @@ async function saveSettings() {
     
     // Show success message
     const status = document.getElementById('status');
-    status.textContent = 'Settings saved!';
-    status.style.color = '#4CAF50';
+    status.textContent = '✓ Settings saved!';
+    status.style.color = '#2ecc71';
     
     setTimeout(() => {
       status.textContent = '';
@@ -87,10 +90,12 @@ async function saveSettings() {
     // Send message to content script to update settings
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      await chrome.tabs.sendMessage(tab.id, {
-        action: 'updateSettings',
-        settings: settings
-      });
+      if (tab?.url?.includes('netflix.com')) {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: 'updateSettings',
+          settings: settings
+        });
+      }
     } catch (error) {
       // Content script might not be loaded
     }
@@ -98,7 +103,7 @@ async function saveSettings() {
   } catch (error) {
     console.error('Error saving settings:', error);
     const status = document.getElementById('status');
-    status.textContent = 'Error saving settings';
-    status.style.color = '#f44336';
+    status.textContent = '✗ Error saving settings';
+    status.style.color = '#e50914';
   }
 }

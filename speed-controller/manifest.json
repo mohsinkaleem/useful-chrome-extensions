@@ -1,21 +1,24 @@
 {
   "manifest_version": 3,
-  "name": "Video Speed Controller",
-  "version": "1.0",
-  "description": "Control video playback speed with keyboard shortcuts on YouTube and Netflix",
+  "name": "Netflix Speed Controller",
+  "version": "2.0",
+  "description": "Control Netflix video playback speed with keyboard shortcuts",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.netflix.com/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "*://*.youtube.com/*",
-        "*://*.netflix.com/*",
-        "file://*/*test.html"
+        "*://*.netflix.com/*"
       ],
       "js": ["content.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "background": {
@@ -23,7 +26,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Video Speed Controller"
+    "default_title": "Netflix Speed Controller"
   },
   "commands": {
     "increase_speed": {
