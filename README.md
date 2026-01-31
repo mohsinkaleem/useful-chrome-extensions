@@ -67,14 +67,13 @@ A beautiful and modern extension for storing and accessing your favorite links w
 
 ---
 
-### ⚡ [Video Speed Controller](./speed-controller/README.md)
+### ⚡ [Netflix Video Speed Controller](./speed-controller/README.md)
 
-A Chrome extension that allows you to control video playback speed using keyboard shortcuts on YouTube and Netflix.
+A Chrome extension that allows you to control video playback speed using keyboard shortcuts on Netflix.
 
 **Features:**
 
 - Keyboard shortcuts for speed control
-- Multi-platform support (YouTube, Netflix)
 - Fast & responsive with visual feedback
 - Customizable speed steps and limits
 - Persistent settings across sessions
@@ -149,7 +148,7 @@ extensions/
 ├── cookie-reader/               # Cookie manager and analytics
 ├── dark-reader/                 # Per-site dark mode (DarkShift)
 ├── quick-links/                 # Quick links manager
-├── speed-controller/            # Video speed controller
+├── speed-controller/            # Netflix video speed controller
 ├── tab-manager/                 # Advanced tab manager
 └── tubefilter/                  # YouTube video filter (TubeFilter)
 ```
