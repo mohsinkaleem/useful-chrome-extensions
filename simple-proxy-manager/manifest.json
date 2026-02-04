@@ -1,0 +1,36 @@
+{
+  "manifest_version": 2,
+  "name": "Simple Proxy Manager",
+  "version": "1.0.0",
+  "description": "Quickly switch and manage proxy profiles for Firefox",
+  
+  "permissions": [
+    "proxy",
+    "storage",
+    "webRequest",
+    "webRequestBlocking",
+    "<all_urls>"
+  ],
+  
+  "background": {
+    "scripts": ["background.js"]
+  },
+  
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon-48.png"
+    },
+    "default_title": "Simple Proxy Manager"
+  },
+  
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  }
+}

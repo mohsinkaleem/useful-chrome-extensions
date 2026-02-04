@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Proxy Manager Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🌐 Simple Proxy Manager</h1>
+      <p>Manage your proxy profiles</p>
+    </header>
+    
+    <main>
+      <section class="add-profile">
+        <h2>Add New Profile</h2>
+        <form id="profileForm">
+          <div class="form-group">
+            <label for="profileName">Profile Name</label>
+            <input type="text" id="profileName" placeholder="e.g., Office Proxy" required>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="proxyType">Type</label>
+              <select id="proxyType">
+                <option value="http">HTTP</option>
+                <option value="socks">SOCKS4</option>
+                <option value="socks5">SOCKS5</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="proxyHost">Host</label>
+              <input type="text" id="proxyHost" placeholder="proxy.example.com" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="proxyPort">Port</label>
+              <input type="number" id="proxyPort" placeholder="8080" min="1" max="65535" required>
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="proxyUsername">Username (optional)</label>
+              <input type="text" id="proxyUsername" placeholder="username">
+            </div>
+            
+            <div class="form-group">
+              <label for="proxyPassword">Password (optional)</label>
+              <input type="password" id="proxyPassword" placeholder="password">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label for="proxyBypass">No proxy for (optional)</label>
+            <input type="text" id="proxyBypass" placeholder="localhost, 127.0.0.1, .local">
+            <small class="help-text">Comma-separated list of hosts to bypass proxy</small>
+          </div>
+          
+          <div class="form-group" id="dnsProxyGroup" style="display: none;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="proxyDNS">
+              Proxy DNS when using SOCKS v5
+            </label>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="submitBtn">Add Profile</button>
+            <button type="button" class="btn btn-secondary" id="cancelBtn" style="display: none;">Cancel</button>
+          </div>
+        </form>
+      </section>
+      
+      <section class="profiles-section">
+        <h2>Saved Profiles</h2>
+        <div id="profilesList" class="profiles-list">
+          <!-- Profiles will be loaded here -->
+        </div>
+      </section>
+    </main>
+  </div>
+  
+  <script src="options.js"></script>
+</body>
+</html>
