@@ -66,6 +66,7 @@ Port: 1080
 - Switch profiles instantly with one click
 - Edit profiles by clicking ✏️ in settings
 - All settings stored locally
+- The extension works **independently** of Firefox's built-in proxy settings page — switching profiles here won't change `Settings → Network Settings`, and vice versa
 
 ## Keyboard Shortcut (Optional)
 

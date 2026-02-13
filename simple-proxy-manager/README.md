@@ -78,7 +78,7 @@ If your proxy requires authentication:
 ```
 simple-proxy-manager/
 ├── manifest.json          # Extension manifest (Manifest V2)
-├── background.js          # Background script handling proxy settings
+├── background.js          # Background script (proxy.onRequest listener)
 ├── popup.html            # Quick switcher popup UI
 ├── popup.js              # Popup logic
 ├── popup.css             # Popup styles
@@ -91,12 +91,24 @@ simple-proxy-manager/
 └── README.md             # This file
 ```
 
+## How It Works
+
+This extension uses the **`browser.proxy.onRequest`** API to intercept each network request and route it through the selected proxy profile. This is the Mozilla-recommended approach for Firefox extensions because:
+
+- **Independent of Firefox settings** — Switching profiles in the extension does not modify Firefox's built-in `Settings → Network Settings → Connection Settings` page, and changes made there won't override the extension
+- **No private browsing permission required** — Unlike `browser.proxy.settings.set()`, the `onRequest` approach works without needing access to private browsing windows
+- **Per-request control** — The extension evaluates each request against the active profile and bypass list, giving fine-grained routing control
+
+When "System Proxy" is selected, the extension returns `null` from the listener, which tells Firefox to fall back to its own native proxy settings. When "No Proxy (Direct)" is selected, it returns `{ type: 'direct' }` to bypass all proxies.
+
+Proxy authentication is handled via `browser.webRequest.onAuthRequired`, which only responds to proxy auth challenges (`isProxy: true`), not website authentication prompts.
+
 ## Why Manifest V2?
 
 This extension uses Manifest V2 because:
 - Firefox still fully supports Manifest V2
-- Firefox's Manifest V2 proxy API (`browser.proxy.settings`) is more powerful and flexible
-- Direct control over proxy configuration
+- Firefox's Manifest V2 proxy API (`browser.proxy.onRequest`) provides per-request proxy control
+- Direct, fine-grained control over proxy routing
 - Better suited for proxy management than Manifest V3's declarativeNetRequest
 
 ## Privacy
@@ -104,10 +116,12 @@ This extension uses Manifest V2 because:
 - All proxy profiles are stored locally in Firefox's storage
 - No data is sent to external servers
 - Credentials are stored securely in Firefox's local storage
+- The extension does **not** modify Firefox's global proxy settings page
 - The extension only requests necessary permissions:
-  - `proxy`: To manage proxy settings
+  - `proxy`: To intercept requests via `proxy.onRequest`
+  - `webRequest` / `webRequestBlocking`: To handle proxy authentication
   - `storage`: To save proxy profiles
-  - `<all_urls>`: Required by Firefox's proxy API
+  - `<all_urls>`: Required by Firefox's proxy and webRequest APIs
 
 ## Development
 
@@ -124,9 +138,15 @@ To modify the extension:
 - Check that the proxy settings are correct
 - Verify the proxy server is accessible
 - Check Firefox's Browser Console (Ctrl+Shift+J) for errors
+- Look for `Proxy error:` messages in the console — these come from `proxy.onError`
+
+**Proxy not changing when I switch profiles?**
+- Reload the extension in `about:debugging` and try again
+- Ensure the background script is running (check `about:debugging` → Inspect)
+- Note: This extension does **not** change Firefox's `Settings → Network Settings` page — it works independently via request interception
 
 **Can't connect to internet?**
-- Click "Direct Connection" to disable the proxy
+- Click "Direct Connection" or "System Proxy" to disable the extension's proxy
 - Verify proxy credentials if authentication is required
 - Check if the proxy server is online
 
