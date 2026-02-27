@@ -121,23 +121,6 @@ function checkUrlAndLoadFilters() {
   });
 }
 
-function getBaseUrl(url) {
-  if (!url) return '';
-  try {
-    const urlObj = new URL(url);
-    // For YouTube, consider the page type as base
-    if (urlObj.hostname.includes('youtube.com')) {
-      if (urlObj.pathname.includes('/watch')) return 'youtube-watch';
-      if (urlObj.pathname.includes('/results')) return 'youtube-search';
-      if (urlObj.pathname.includes('/@')) return 'youtube-channel:' + urlObj.pathname.split('/')[1];
-      return 'youtube-home';
-    }
-    return urlObj.origin + urlObj.pathname;
-  } catch (e) {
-    return url;
-  }
-}
-
 function setupRadioButtonListeners() {
   ['viewFilter', 'durationFilter', 'timeFilter'].forEach(filterName => {
     const radios = document.querySelectorAll(`input[name="${filterName}"]`);
@@ -539,19 +522,24 @@ function loadFiltersFromData(filters) {
         document.getElementById('timeLess').value = filters.timeFilter.lessValue || '';
         document.getElementById('timeLessUnit').value = filters.timeFilter.lessUnit || 'days';
         document.getElementById('timeGreater').value = filters.timeFilter.greaterValue || '';
-        document.getElementById('timeGreaterUnit').value = filters.timeFilter.greaterValue || 'days';
+        document.getElementById('timeGreaterUnit').value = filters.timeFilter.greaterUnit || 'days';
         document.getElementById('timeBetweenMin').value = filters.timeFilter.betweenMin || '';
         document.getElementById('timeBetweenMinUnit').value = filters.timeFilter.betweenMinUnit || 'days';
         document.getElementById('timeBetweenMax').value = filters.timeFilter.betweenMax || '';
         document.getElementById('timeBetweenMaxUnit').value = filters.timeFilter.betweenMaxUnit || 'days';
       }
       
-      // Restore title keywords
+      // Restore title keywords (rebuild with +/- prefixes)
       if (filters.titleKeywords && Array.isArray(filters.titleKeywords)) {
         if (filters.useRegex) {
             document.getElementById('titleKeywords').value = filters.titleKeywords[0] || '';
         } else {
-            document.getElementById('titleKeywords').value = filters.titleKeywords.join(', ');
+            const parts = [];
+            filters.titleKeywords.forEach(k => parts.push(k));
+            if (filters.excludeKeywords && Array.isArray(filters.excludeKeywords)) {
+              filters.excludeKeywords.forEach(k => parts.push('-' + k));
+            }
+            document.getElementById('titleKeywords').value = parts.join(', ');
         }
       } else if (filters.titleKeyword) {
         document.getElementById('titleKeywords').value = filters.titleKeyword;

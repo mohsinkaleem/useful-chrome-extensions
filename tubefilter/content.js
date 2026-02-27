@@ -83,21 +83,6 @@
     lastUrl = newUrl;
   }
   
-  function isSamePageType(url1, url2) {
-    try {
-      const getPageType = (url) => {
-        if (url.includes('/watch')) return 'watch';
-        if (url.includes('/results')) return 'search';
-        if (url.includes('/@')) return 'channel:' + url.match(/@[^/]+/)?.[0];
-        if (url.includes('/channel/')) return 'channel:' + url.match(/channel\/[^/]+/)?.[0];
-        return 'home';
-      };
-      return getPageType(url1) === getPageType(url2);
-    } catch (e) {
-      return false;
-    }
-  }
-
   function handleMessage(request, sender, sendResponse) {
     if (request.action === 'applyFilters') {
       currentFilters = request.filters;
