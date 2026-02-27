@@ -69,6 +69,16 @@ class QuickLinksManager {
             this.filterLinks(e.target.value);
         });
 
+        document.getElementById('search-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const firstLink = this.getFilteredLinks()[0];
+                if (firstLink) {
+                    this.openLink(firstLink.url);
+                }
+            }
+        });
+
         // Sort select
         document.getElementById('sort-select').addEventListener('change', (e) => {
             this.currentSort = e.target.value;
@@ -96,6 +106,13 @@ class QuickLinksManager {
         document.getElementById('link-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveLink();
+        });
+
+        document.getElementById('link-form').addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                this.saveLink({ openAfterSave: true });
+            }
         });
 
         // Close modal on outside click
@@ -159,7 +176,7 @@ class QuickLinksManager {
         try {
             // Check for pending link from context menu first
             const pendingResult = await chrome.storage.local.get(['pendingLink']);
-            if (pendingResult.pendingLink && Date.now() - pendingResult.pendingLink.timestamp < 5000) {
+            if (pendingResult.pendingLink && Date.now() - pendingResult.pendingLink.timestamp < 60000) {
                 // Auto-open modal with pending link data
                 this.showModal();
                 document.getElementById('link-title').value = pendingResult.pendingLink.title;
@@ -191,16 +208,18 @@ class QuickLinksManager {
         }
     }
 
-    async saveLink() {
+    async saveLink(options = {}) {
         const title = document.getElementById('link-title').value.trim();
-        const url = document.getElementById('link-url').value.trim();
+        const rawUrl = document.getElementById('link-url').value.trim();
         const category = document.getElementById('link-category').value;
         const description = document.getElementById('link-description').value.trim();
 
-        if (!title || !url) {
+        if (!title || !rawUrl) {
             alert('Please fill in all required fields');
             return;
         }
+
+        const url = this.normalizeUrl(rawUrl);
 
         // Validate URL
         try {
@@ -210,6 +229,18 @@ class QuickLinksManager {
             return;
         }
 
+        const duplicate = this.links.find(link =>
+            link.url === url && (!this.editingId || link.id !== this.editingId)
+        );
+        if (duplicate) {
+            alert('This URL already exists in your quick links');
+            return;
+        }
+
+        const existingLink = this.editingId
+            ? this.links.find(link => link.id === this.editingId)
+            : null;
+
         const now = new Date().toISOString();
         const linkData = {
             id: this.editingId || Date.now().toString(),
@@ -217,8 +248,9 @@ class QuickLinksManager {
             url,
             category,
             description,
+            manualOrder: typeof existingLink?.manualOrder === 'number' ? existingLink.manualOrder : this.links.length,
             createdAt: this.editingId ? 
-                this.links.find(l => l.id === this.editingId)?.createdAt : 
+                existingLink?.createdAt : 
                 now,
             updatedAt: now
         };
@@ -237,6 +269,10 @@ class QuickLinksManager {
         await this.saveLinks();
         this.hideModal();
         this.render();
+
+        if (options.openAfterSave) {
+            this.openLink(url);
+        }
     }
 
     async saveSortPreference() {
@@ -281,7 +317,7 @@ class QuickLinksManager {
     }
 
     getFilteredLinks() {
-        let filteredLinks = this.links;
+        let filteredLinks = [...this.links];
 
         // Filter by category
         if (this.currentCategory !== 'all') {
@@ -323,6 +359,13 @@ class QuickLinksManager {
         }
 
         return filteredLinks;
+    }
+
+    normalizeUrl(url) {
+        if (/^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(url)) {
+            return url;
+        }
+        return `https://${url}`;
     }
 
     render() {

@@ -8,9 +8,10 @@ A beautiful and modern Chrome extension for storing and accessing your favorite 
 - **Quick Access**: Store and access your most-used links instantly
 - **Category Organization**: Organize links into Work, Personal, Tools, and Social categories
 - **Smart Search**: Find links quickly with real-time search
+- **Fast Keyboard Flow**: Press `Enter` in search to open the first match instantly
 - **Auto-Fill**: Automatically fills current tab information when adding links
 - **Favicon Display**: Visual link identification with website favicons
-- **Context Menu**: Right-click to add current page to quick links
+- **Context Menu**: Right-click a page or a link to add it to quick links
 - **Local Storage**: All data stored locally for privacy and speed
 
 ## 🚀 Installation
@@ -41,10 +42,12 @@ The extension will be available on the Chrome Web Store.
 ### Organization
 - Use category tabs to filter links by type
 - Search for links using the search bar at the top
+- Press `Enter` in search to open the top filtered result
 - Links are automatically sorted by most recently added
 
 ### Keyboard Shortcuts
 - `Ctrl/Cmd + K`: Focus search bar
+- `Ctrl/Cmd + Enter` (in Add/Edit form): Save and open immediately
 - `Escape`: Close modal dialogs
 
 ## 🛠️ Technical Details

@@ -1,26 +1,13 @@
 // Background script for Quick Links Manager
-// This handles the service worker functionality
+// This handles service worker lifecycle and context menu actions
 
 chrome.runtime.onInstalled.addListener(() => {
-    console.log('Quick Links Manager installed');
-    
-    // Initialize storage with default data if needed
-    chrome.storage.local.get(['quickLinks'], (result) => {
-        if (!result.quickLinks) {
-            const defaultLinks = [
-                {
-                    id: '1',
-                    title: 'GitHub',
-                    url: 'https://github.com',
-                    category: 'tools',
-                    description: 'Code repository hosting',
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                }
-            ];
-            
-            chrome.storage.local.set({ quickLinks: defaultLinks });
-        }
+    chrome.contextMenus.removeAll(() => {
+        chrome.contextMenus.create({
+            id: 'add-to-quick-links',
+            title: 'Add to Quick Links',
+            contexts: ['page', 'link']
+        });
     });
 });
 
@@ -31,22 +18,18 @@ chrome.commands?.onCommand.addListener((command) => {
     }
 });
 
-// Context menu for adding current page (optional feature)
-chrome.runtime.onInstalled.addListener(() => {
-    chrome.contextMenus.create({
-        id: 'add-to-quick-links',
-        title: 'Add to Quick Links',
-        contexts: ['page']
-    });
-});
-
 chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === 'add-to-quick-links') {
+        const targetUrl = info.linkUrl || tab?.url;
+        const targetTitle = info.linkUrl ? 'Saved Link' : tab?.title;
+
+        if (!targetUrl) return;
+
         // Store the current page info for the popup to use
         chrome.storage.local.set({
             pendingLink: {
-                title: tab.title,
-                url: tab.url,
+                title: targetTitle || targetUrl,
+                url: targetUrl,
                 timestamp: Date.now()
             }
         });
