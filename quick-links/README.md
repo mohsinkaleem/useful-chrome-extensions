@@ -8,6 +8,7 @@ A beautiful and modern Chrome extension for storing and accessing your favorite 
 - **Quick Access**: Store and access your most-used links instantly
 - **Category Organization**: Organize links into Work, Personal, Tools, and Social categories
 - **Smart Search**: Find links quickly with real-time search
+- **Fuzzy Search**: Matches close terms and common misspellings
 - **Fast Keyboard Flow**: Press `Enter` in search to open the first match instantly
 - **Auto-Fill**: Automatically fills current tab information when adding links
 - **Favicon Display**: Visual link identification with website favicons

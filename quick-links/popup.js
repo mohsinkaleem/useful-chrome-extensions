@@ -326,11 +326,14 @@ class QuickLinksManager {
 
         // Filter by search term
         if (this.searchTerm) {
-            filteredLinks = filteredLinks.filter(link =>
-                link.title.toLowerCase().includes(this.searchTerm) ||
-                link.url.toLowerCase().includes(this.searchTerm) ||
-                (link.description && link.description.toLowerCase().includes(this.searchTerm))
-            );
+            filteredLinks = filteredLinks
+                .map(link => ({
+                    link,
+                    score: this.getSearchScore(link, this.searchTerm)
+                }))
+                .filter(item => item.score > 0)
+                .sort((a, b) => b.score - a.score)
+                .map(item => item.link);
         }
 
         // Apply sorting
@@ -359,6 +362,110 @@ class QuickLinksManager {
         }
 
         return filteredLinks;
+    }
+
+    getSearchScore(link, term) {
+        const title = (link.title || '').toLowerCase();
+        const url = (link.url || '').toLowerCase();
+        const description = (link.description || '').toLowerCase();
+        const domain = this.extractDomain(url).toLowerCase();
+
+        const fields = [title, domain, url, description];
+
+        for (const field of fields) {
+            if (field.includes(term)) {
+                if (field === title) return 100;
+                if (field === domain) return 90;
+                if (field === url) return 80;
+                return 70;
+            }
+        }
+
+        const words = `${title} ${domain} ${description}`
+            .split(/[^a-z0-9]+/)
+            .filter(Boolean);
+
+        let bestWordScore = 0;
+        for (const word of words) {
+            const score = this.getWordFuzzyScore(term, word);
+            if (score > bestWordScore) {
+                bestWordScore = score;
+            }
+            if (bestWordScore >= 60) {
+                break;
+            }
+        }
+
+        return bestWordScore;
+    }
+
+    getWordFuzzyScore(term, word) {
+        if (!term || !word) return 0;
+
+        if (this.isSubsequence(term, word)) {
+            return 55;
+        }
+
+        const maxDistance = term.length <= 4 ? 1 : 2;
+        const distance = this.levenshteinDistance(term, word, maxDistance);
+
+        if (distance === null) return 0;
+        if (distance > maxDistance) return 0;
+
+        const similarity = 1 - distance / Math.max(term.length, word.length);
+        return Math.round(40 + similarity * 20);
+    }
+
+    isSubsequence(needle, haystack) {
+        let needleIndex = 0;
+        for (let i = 0; i < haystack.length && needleIndex < needle.length; i++) {
+            if (haystack[i] === needle[needleIndex]) {
+                needleIndex += 1;
+            }
+        }
+        return needleIndex === needle.length;
+    }
+
+    levenshteinDistance(a, b, maxDistance = Infinity) {
+        const lengthDiff = Math.abs(a.length - b.length);
+        if (lengthDiff > maxDistance) {
+            return null;
+        }
+
+        const rows = a.length + 1;
+        const cols = b.length + 1;
+        let previousRow = new Array(cols);
+        let currentRow = new Array(cols);
+
+        for (let col = 0; col < cols; col++) {
+            previousRow[col] = col;
+        }
+
+        for (let row = 1; row < rows; row++) {
+            currentRow[0] = row;
+            let minInRow = currentRow[0];
+
+            for (let col = 1; col < cols; col++) {
+                const substitutionCost = a[row - 1] === b[col - 1] ? 0 : 1;
+                currentRow[col] = Math.min(
+                    previousRow[col] + 1,
+                    currentRow[col - 1] + 1,
+                    previousRow[col - 1] + substitutionCost
+                );
+
+                if (currentRow[col] < minInRow) {
+                    minInRow = currentRow[col];
+                }
+            }
+
+            if (minInRow > maxDistance) {
+                return null;
+            }
+
+            [previousRow, currentRow] = [currentRow, previousRow];
+        }
+
+        return previousRow[cols - 1];
     }
 
     normalizeUrl(url) {
