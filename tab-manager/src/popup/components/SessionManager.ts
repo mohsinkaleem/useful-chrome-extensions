@@ -20,6 +20,8 @@ export class SessionManager {
   private saveBtn: HTMLButtonElement | null;
   private closeBtn: HTMLButtonElement | null;
 
+  private static readonly MAX_SESSIONS = 50;
+
   constructor() {
     this.modal = document.getElementById('session-modal');
     this.sessionsList = document.getElementById('sessions-list');
@@ -78,10 +80,22 @@ export class SessionManager {
       }))
     };
     
-    // Save to storage
+    // Save to storage (with limit)
     const { sessions = [] } = await chrome.storage.local.get('sessions');
     sessions.push(session);
-    await chrome.storage.local.set({ sessions });
+    
+    // Enforce max sessions limit to prevent unbounded storage growth
+    while (sessions.length > SessionManager.MAX_SESSIONS) {
+      sessions.shift(); // Remove oldest
+    }
+    
+    try {
+      await chrome.storage.local.set({ sessions });
+    } catch (e) {
+      console.error('Failed to save session (storage quota may be exceeded):', e);
+      alert('Failed to save session. Storage may be full. Try deleting old sessions.');
+      return;
+    }
     
     // Clear input
     if (this.sessionNameInput) {
@@ -104,7 +118,7 @@ export class SessionManager {
       return;
     }
     
-    for (const session of sessions.reverse()) {
+    for (const session of [...sessions].reverse()) {
       const item = this.createSessionItem(session);
       this.sessionsList.appendChild(item);
     }
@@ -162,26 +176,39 @@ export class SessionManager {
   private async restoreSession(session: Session) {
     // Create windows with tabs and restore pinned state
     for (const windowData of session.windows) {
-      const validTabs = windowData.tabs.filter(tab => tab.url);
+      const validTabs = windowData.tabs.filter(tab => 
+        tab.url && 
+        !tab.url.startsWith('chrome://') && 
+        !tab.url.startsWith('chrome-extension://') &&
+        !tab.url.startsWith('edge://')
+      );
       if (validTabs.length === 0) continue;
       
-      // Create window with first tab
-      const newWindow = await chrome.windows.create({ url: validTabs[0].url });
-      if (!newWindow.id) continue;
-      
-      // Pin first tab if it was pinned
-      if (validTabs[0].pinned && newWindow.tabs?.[0]?.id) {
-        await chrome.tabs.update(newWindow.tabs[0].id, { pinned: true });
-      }
-      
-      // Create remaining tabs
-      for (let i = 1; i < validTabs.length; i++) {
-        const tabData = validTabs[i];
-        const newTab = await chrome.tabs.create({
-          windowId: newWindow.id,
-          url: tabData.url,
-          pinned: tabData.pinned
-        });
+      try {
+        // Create window with first tab
+        const newWindow = await chrome.windows.create({ url: validTabs[0].url });
+        if (!newWindow.id) continue;
+        
+        // Pin first tab if it was pinned
+        if (validTabs[0].pinned && newWindow.tabs?.[0]?.id) {
+          await chrome.tabs.update(newWindow.tabs[0].id, { pinned: true });
+        }
+        
+        // Create remaining tabs
+        for (let i = 1; i < validTabs.length; i++) {
+          const tabData = validTabs[i];
+          try {
+            await chrome.tabs.create({
+              windowId: newWindow.id,
+              url: tabData.url,
+              pinned: tabData.pinned
+            });
+          } catch (e) {
+            console.error(`Failed to restore tab ${tabData.url}:`, e);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to restore window:', e);
       }
     }
     

@@ -1,5 +1,6 @@
 // Tab list component
 import { normalizeUrl } from '../../shared/url-utils.js';
+import { bulkBookmarkTabs } from '../../shared/bookmark-utils.js';
 
 export class TabList {
   private container: HTMLElement | null;
@@ -116,7 +117,6 @@ export class TabList {
             const defaultName = `Window ${key} (${bookmarkableTabs.length} tabs)`;
             const name = prompt(`Bookmark tabs?`, defaultName);
             if (name) {
-              const { bulkBookmarkTabs } = await import('../../shared/bookmark-utils.js');
               await bulkBookmarkTabs(bookmarkableTabs, name);
             }
           } catch (e) { console.error(e); }

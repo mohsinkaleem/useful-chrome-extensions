@@ -2,8 +2,10 @@
 import { TabBalancer } from '../shared/tab-balancer.js';
 import { TabEventManager, getAllTabs, getTabsByWindow } from '../shared/tab-utils.js';
 import { findDuplicatesByUrl, getDuplicateGroups, normalizeUrl } from '../shared/url-utils.js';
+import { bulkBookmarkTabs } from '../shared/bookmark-utils.js';
+import { mergeSelectedWindows } from '../shared/window-utils.js';
 import { TabList } from './components/TabList.js';
-import { SearchBar } from './components/SearchBar.js';
+import { SearchBar, SearchFilters } from './components/SearchBar.js';
 import { QuickActions } from './components/QuickActions.js';
 import { MediaControls } from './components/MediaControls.js';
 import { SessionManager } from './components/SessionManager.js';
@@ -20,7 +22,9 @@ class TabManagerApp {
   private highlightDuplicates: boolean = false;
   private duplicateUrls: Set<string> = new Set();
   private currentSearchQuery: string = '';
-  private currentFilters: any = null;
+  private currentFilters: SearchFilters | null = null;
+  private balancer: TabBalancer;
+  private isRendering: boolean = false;
 
   constructor() {
     this.tabEventManager = new TabEventManager();
@@ -29,16 +33,20 @@ class TabManagerApp {
     this.quickActions = new QuickActions();
     this.mediaControls = new MediaControls();
     this.sessionManager = new SessionManager();
+    this.balancer = new TabBalancer();
     
     this.init();
   }
 
   private async init() {
-    // Load Theme
-    if (localStorage.getItem('theme') === 'dark') {
+    // Load Theme from synced storage
+    const { theme } = await chrome.storage.sync.get('theme');
+    if (theme === 'dark') {
       document.body.classList.add('dark-theme');
-      const btn = document.getElementById('theme-toggle');
-      if (btn) btn.textContent = '☀️';
+      const icon = document.querySelector('#theme-toggle .icon');
+      if (icon) {
+        icon.className = 'icon icon-md icon-sun';
+      }
     }
 
     // Setup event listeners
@@ -86,15 +94,15 @@ class TabManagerApp {
     });
 
     // Theme Toggle
-    document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    document.getElementById('theme-toggle')?.addEventListener('click', async () => {
       document.body.classList.toggle('dark-theme');
       const isDark = document.body.classList.contains('dark-theme');
-      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+      await chrome.storage.sync.set({ theme: isDark ? 'dark' : 'light' });
       
-      // Update icon
-      const btn = document.getElementById('theme-toggle');
-      if (btn) {
-        btn.textContent = isDark ? '☀️' : '🌙';
+      // Update icon class instead of destroying the span
+      const icon = document.querySelector('#theme-toggle .icon');
+      if (icon) {
+        icon.className = isDark ? 'icon icon-md icon-sun' : 'icon icon-md icon-moon';
       }
     });
 
@@ -176,8 +184,7 @@ class TabManagerApp {
       }
 
       try {
-        const balancer = new TabBalancer({ autoGroup: false });
-        await balancer.balanceWindows();
+        await this.balancer.balanceWindows();
       } catch (e) {
         console.error("Balance error:", e);
         alert("An error occurred while balancing windows.");
@@ -194,8 +201,7 @@ class TabManagerApp {
       const btn = document.getElementById('action-group-all');
       if (btn) (btn as HTMLButtonElement).disabled = true;
       try {
-        const balancer = new TabBalancer();
-        await balancer.groupAll();
+        await this.balancer.groupAll();
       } catch (e) {
         console.error("Grouping error:", e);
       } finally {
@@ -210,8 +216,7 @@ class TabManagerApp {
       const btn = document.getElementById('action-ungroup-all');
       if (btn) (btn as HTMLButtonElement).disabled = true;
       try {
-        const balancer = new TabBalancer();
-        await balancer.ungroupAll();
+        await this.balancer.ungroupAll();
       } catch (e) {
         console.error("Ungrouping error:", e);
       } finally {
@@ -245,7 +250,6 @@ class TabManagerApp {
         );
         
         if (name) {
-          const { bulkBookmarkTabs } = await import('../shared/bookmark-utils.js');
           const bookmarks = await bulkBookmarkTabs(bookmarkableTabs, name);
           alert(`✅ Successfully bookmarked ${bookmarks.length} tabs from ${windowCount} window(s) to folder "${name}"`);
         }
@@ -261,7 +265,12 @@ class TabManagerApp {
     });
   }
 
-  private async loadAndRenderTabs(searchQuery?: string, filters?: any) {
+  private async loadAndRenderTabs(searchQuery?: string, filters?: SearchFilters | null) {
+    // Prevent concurrent renders from fighting over DOM
+    if (this.isRendering) return;
+    this.isRendering = true;
+    
+    try {
     // Optimization: Get tabs by window only, then flatten to get all tabs
     // This saves one expensive chrome.tabs.query({}) call
     const tabsByWindow = await getTabsByWindow();
@@ -273,6 +282,13 @@ class TabManagerApp {
     // Calculate duplicate URLs for highlighting
     const duplicates = findDuplicatesByUrl(tabs);
     this.duplicateUrls = new Set(duplicates.keys());
+    
+    // Update duplicate count badge
+    const dupCountEl = document.getElementById('duplicate-count');
+    if (dupCountEl) {
+      const dupTabCount = tabs.filter(t => t.url && this.duplicateUrls.has(normalizeUrl(t.url))).length;
+      dupCountEl.textContent = String(dupTabCount);
+    }
     
     // Update stats
     this.updateStats(tabs, tabsByWindow.size);
@@ -321,6 +337,9 @@ class TabManagerApp {
     
     // Update media controls
     this.mediaControls.update(tabs);
+    } finally {
+      this.isRendering = false;
+    }
   }
 
   private updateStats(tabs: chrome.tabs.Tab[], windowCount: number) {
@@ -375,8 +394,6 @@ class TabManagerApp {
           );
           
           if (name) {
-            // Import and use bookmark utility
-            const { bulkBookmarkTabs } = await import('../shared/bookmark-utils.js');
             const bookmarks = await bulkBookmarkTabs(selectedTabObjs, name);
             alert(`✅ Successfully bookmarked ${bookmarks.length} tabs from ${windowCount} window(s) to folder "${name}"`);
           }
@@ -404,7 +421,7 @@ class TabManagerApp {
 
     for (const group of duplicateGroups) {
       // Keep the most recently accessed, close the rest
-      const sorted = group.tabs.sort((a, b) => 
+      const sorted = [...group.tabs].sort((a, b) => 
         (b.lastAccessed || 0) - (a.lastAccessed || 0)
       );
       const duplicateIds = sorted.slice(1).map(t => t.id).filter(Boolean) as number[];
@@ -412,45 +429,15 @@ class TabManagerApp {
     }
 
     if (toClose.length > 0) {
+      if (!confirm(`Close ${toClose.length} duplicate tab(s)?`)) return;
       await chrome.tabs.remove(toClose);
     }
   }
 
   private async mergeSelectedWindows() {
-    const selectedWindowIds = this.tabList.getSelectedWindows();
-    
-    if (selectedWindowIds.length < 2) {
-      alert('Please select at least 2 windows to merge');
-      return;
-    }
-
-    try {
-      // Use the first selected window as the target
-      const targetWindowId = selectedWindowIds[0];
-      const sourceWindowIds = selectedWindowIds.slice(1);
-
-      // Move all tabs from source windows to target window
-      for (const sourceWindowId of sourceWindowIds) {
-        const tabs = await chrome.tabs.query({ windowId: sourceWindowId });
-        const tabIds = tabs.map(t => t.id).filter((id): id is number => id !== undefined);
-        
-        if (tabIds.length > 0) {
-          await chrome.tabs.move(tabIds, { windowId: targetWindowId, index: -1 });
-        }
-      }
-
-      // Focus the target window
-      await chrome.windows.update(targetWindowId, { focused: true });
-
-      // Clear selection
-      this.tabList.clearWindowSelection();
-      
-      // Reload tabs
-      await this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
-    } catch (error) {
-      console.error('Error merging windows:', error);
-      alert('Failed to merge windows. Please try again.');
-    }
+    await mergeSelectedWindows(this.tabList, () => 
+      this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters)
+    );
   }
 }
 

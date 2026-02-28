@@ -10,18 +10,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 function stopAllMedia() {
-  // Stop all video elements
+  // Stop all video elements (pause only — don't reset position)
   const videos = document.querySelectorAll('video');
   videos.forEach(video => {
     video.pause();
-    video.currentTime = 0;
   });
 
-  // Stop all audio elements
+  // Stop all audio elements (pause only — don't reset position)
   const audios = document.querySelectorAll('audio');
   audios.forEach(audio => {
     audio.pause();
-    audio.currentTime = 0;
   });
 
   // Try to stop YouTube specifically

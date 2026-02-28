@@ -1,8 +1,9 @@
 // Sidepanel script
 import { TabEventManager, getAllTabs, getTabsByWindow } from '../shared/tab-utils.js';
 import { findDuplicatesByUrl, normalizeUrl } from '../shared/url-utils.js';
+import { mergeSelectedWindows } from '../shared/window-utils.js';
 import { TabList } from '../popup/components/TabList.js';
-import { SearchBar } from '../popup/components/SearchBar.js';
+import { SearchBar, SearchFilters } from '../popup/components/SearchBar.js';
 import { AutoGrouper } from '../background/auto-grouper.js';
 
 class SidepanelApp {
@@ -10,8 +11,9 @@ class SidepanelApp {
   private tabList: TabList;
   private searchBar: SearchBar;
   private currentSearchQuery: string = '';
-  private currentFilters: any = null;
+  private currentFilters: SearchFilters | null = null;
   private groupView: 'window' | 'domain' = 'window';
+  private isRendering: boolean = false;
 
   constructor() {
     this.tabEventManager = new TabEventManager();
@@ -23,9 +25,14 @@ class SidepanelApp {
   }
 
   private async init() {
-    // Load Theme
-    if (localStorage.getItem('theme') === 'dark') {
+    // Load Theme from synced storage
+    const { theme } = await chrome.storage.sync.get('theme');
+    if (theme === 'dark') {
         document.body.classList.add('dark-theme');
+        const icon = document.querySelector('#theme-toggle .icon');
+        if (icon) {
+          icon.className = 'icon icon-sun';
+        }
     }
 
     this.setupEventListeners();
@@ -52,10 +59,14 @@ class SidepanelApp {
     });
 
     this.tabList.onTabClick(async (tabId) => {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.windowId && tab.id) {
-         await chrome.windows.update(tab.windowId, { focused: true });
-         await chrome.tabs.update(tab.id, { active: true });
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab.windowId !== undefined && tab.id) {
+           await chrome.windows.update(tab.windowId, { focused: true });
+           await chrome.tabs.update(tab.id, { active: true });
+        }
+      } catch (e) {
+        console.error('Failed to switch tab:', e);
       }
     });
 
@@ -77,10 +88,14 @@ class SidepanelApp {
     });
 
     // Theme Toggle
-    document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    document.getElementById('theme-toggle')?.addEventListener('click', async () => {
         document.body.classList.toggle('dark-theme');
         const isDark = document.body.classList.contains('dark-theme');
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        await chrome.storage.sync.set({ theme: isDark ? 'dark' : 'light' });
+        const icon = document.querySelector('#theme-toggle .icon');
+        if (icon) {
+          icon.className = isDark ? 'icon icon-sun' : 'icon icon-moon';
+        }
     });
 
     // View Grouping
@@ -93,7 +108,12 @@ class SidepanelApp {
     }
   }
 
-  private async loadAndRenderTabs(query: string = '', filters: any = null) {
+  private async loadAndRenderTabs(query: string = '', filters: SearchFilters | null = null) {
+    // Prevent concurrent renders
+    if (this.isRendering) return;
+    this.isRendering = true;
+    
+    try {
     let tabs = await getAllTabs();
     
     // Calculate duplicates for all tabs (before filtering)
@@ -123,6 +143,10 @@ class SidepanelApp {
 
     if (filters?.audible) {
       tabs = tabs.filter(t => t.audible);
+    }
+
+    if (filters?.pinned) {
+      tabs = tabs.filter(t => t.pinned);
     }
     
     // Grouping Logic
@@ -167,6 +191,9 @@ class SidepanelApp {
     // Update count
     const countEl = document.getElementById('tab-count');
     if (countEl) countEl.textContent = `${tabs.length} tabs`;
+    } finally {
+      this.isRendering = false;
+    }
   }
 
   private async performSmartGrouping() {
@@ -179,40 +206,9 @@ class SidepanelApp {
   }
 
   private async mergeSelectedWindows() {
-    const selectedWindowIds = this.tabList.getSelectedWindows();
-    
-    if (selectedWindowIds.length < 2) {
-      alert('Please select at least 2 windows to merge');
-      return;
-    }
-
-    try {
-      // Use the first selected window as the target
-      const targetWindowId = selectedWindowIds[0];
-      const sourceWindowIds = selectedWindowIds.slice(1);
-
-      // Move all tabs from source windows to target window
-      for (const sourceWindowId of sourceWindowIds) {
-        const tabs = await chrome.tabs.query({ windowId: sourceWindowId });
-        const tabIds = tabs.map(t => t.id).filter((id): id is number => id !== undefined);
-        
-        if (tabIds.length > 0) {
-          await chrome.tabs.move(tabIds, { windowId: targetWindowId, index: -1 });
-        }
-      }
-
-      // Focus the target window
-      await chrome.windows.update(targetWindowId, { focused: true });
-
-      // Clear selection
-      this.tabList.clearWindowSelection();
-      
-      // Reload tabs
-      await this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
-    } catch (error) {
-      console.error('Error merging windows:', error);
-      alert('Failed to merge windows. Please try again.');
-    }
+    await mergeSelectedWindows(this.tabList, () =>
+      this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters)
+    );
   }
 }
 

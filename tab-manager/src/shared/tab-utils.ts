@@ -46,7 +46,7 @@ export async function getActiveTab(): Promise<TabInfo | null> {
 export class TabEventManager {
   private listeners: Set<() => void> = new Set();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private debounceDelay: number = 150; // ms
+  private readonly debounceDelay: number = 300; // ms
 
   constructor() {
     this.setupListeners();
@@ -80,10 +80,9 @@ export class TabEventManager {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
-    // Increased debounce to 300ms to batch more updates for large tab counts
     this.debounceTimer = setTimeout(() => {
       this.notifyListeners();
-    }, 300);
+    }, this.debounceDelay);
   }
 
   private notifyListeners() {

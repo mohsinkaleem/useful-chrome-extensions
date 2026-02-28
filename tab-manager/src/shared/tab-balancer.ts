@@ -81,15 +81,17 @@ export class TabBalancer {
   }
 
   private buildState(windows: WindowInfo[]): WindowState[] {
-    return windows.map(w => {
-      const tabs = (w.tabs || []) as TabInfo[];
-      return {
-        id: w.id!,
-        tabs: tabs,
-        tabCount: tabs.length,
-        primaryDomain: this.getDominantDomain(tabs)
-      };
-    });
+    return windows
+      .filter(w => w.id !== undefined)
+      .map(w => {
+        const tabs = (w.tabs || []) as TabInfo[];
+        return {
+          id: w.id as number,
+          tabs: tabs,
+          tabCount: tabs.length,
+          primaryDomain: this.getDominantDomain(tabs)
+        };
+      });
   }
 
   private getDominantDomain(tabs: TabInfo[]): string | null {
@@ -269,18 +271,20 @@ export class TabBalancer {
       }
 
       for (const [groupId, groupTabs] of groups) {
+        const validTabs = groupTabs.filter(t => t.id !== undefined);
+        if (validTabs.length === 0) continue;
         units.push({
-          tabIds: groupTabs.map(t => t.id!),
-          tabs: groupTabs,
-          domain: this.getDominantDomain(groupTabs), 
+          tabIds: validTabs.map(t => t.id as number),
+          tabs: validTabs,
+          domain: this.getDominantDomain(validTabs), 
           groupId: groupId,
-          size: groupTabs.length
+          size: validTabs.length
         });
-        groupTabs.forEach(t => processedTabs.add(t.id!));
+        validTabs.forEach(t => processedTabs.add(t.id as number));
       }
     }
 
-    const backendLooseTabs = window.tabs.filter(t => !processedTabs.has(t.id!));
+    const backendLooseTabs = window.tabs.filter(t => t.id !== undefined && !processedTabs.has(t.id));
     const looseByDomain = new Map<string, TabInfo[]>();
     const looseMisc: TabInfo[] = [];
 
@@ -296,18 +300,21 @@ export class TabBalancer {
     
     // ... (rest is same-ish)
     for (const [domain, tabs] of looseByDomain) {
+        const validTabs = tabs.filter(t => t.id !== undefined);
+        if (validTabs.length === 0) continue;
         units.push({
-            tabIds: tabs.map(t => t.id!),
-            tabs: tabs,
+            tabIds: validTabs.map(t => t.id as number),
+            tabs: validTabs,
             domain: domain,
             groupId: -1,
-            size: tabs.length
+            size: validTabs.length
         });
     }
 
     for (const tab of looseMisc) {
+        if (tab.id === undefined) continue;
         units.push({
-            tabIds: [tab.id!],
+            tabIds: [tab.id],
             tabs: [tab],
             domain: null,
             groupId: -1,
@@ -414,7 +421,7 @@ export class TabBalancer {
       for (const win of windows) {
           if (win.type !== 'normal' || !win.tabs) continue;
           
-          const tabIds = win.tabs.map(t => t.id!).filter(id => id !== undefined);
+          const tabIds = win.tabs.map(t => t.id).filter((id): id is number => id !== undefined);
           if (tabIds.length > 0) {
               try {
                   await chrome.tabs.ungroup(tabIds);
@@ -432,11 +439,11 @@ export class TabBalancer {
           
           const byDomain = new Map<string, number[]>();
           for (const tab of win.tabs) {
-              if (tab.url) {
+              if (tab.url && tab.id !== undefined) {
                   const d = extractDomain(tab.url);
                   if (d) {
                     if (!byDomain.has(d)) byDomain.set(d, []);
-                    byDomain.get(d)!.push(tab.id!);
+                    byDomain.get(d)!.push(tab.id);
                   }
               }
           }

@@ -14,9 +14,13 @@ export class AutoGrouper {
   private rules: GroupingRule[] = [];
   private enabled: boolean = false;
   private initialized: Promise<void>;
+  private initFailed: boolean = false;
 
   constructor() {
-    this.initialized = this.init();
+    this.initialized = this.init().catch(e => {
+      console.error('AutoGrouper initialization failed:', e);
+      this.initFailed = true;
+    });
   }
 
   private async init() {
@@ -97,12 +101,14 @@ export class AutoGrouper {
   }
 
   async onTabCreated(tab: chrome.tabs.Tab) {
-    await this.initialized; // Wait for rules to be loaded
+    await this.initialized;
+    if (this.initFailed) return;
     await this.applyRules(tab);
   }
 
   async onTabUpdated(tab: chrome.tabs.Tab) {
-    await this.initialized; // Wait for rules to be loaded
+    await this.initialized;
+    if (this.initFailed) return;
     await this.applyRules(tab);
   }
 

@@ -53,6 +53,5 @@
       "js": ["dist/content/content-script.js"],
       "run_at": "document_idle"
     }
-  ],
-  "host_permissions": ["<all_urls>"]
+  ]
 }

@@ -61,22 +61,34 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     case 'group-by-domain':
       if (tab?.url) {
-        const domain = new URL(tab.url).hostname;
-        const tabs = await chrome.tabs.query({});
-        const sameDomain = tabs.filter(t => {
-          try {
-            return t.url && new URL(t.url).hostname === domain;
-          } catch {
-            return false;
+        try {
+          const domain = new URL(tab.url).hostname;
+          // Group tabs by domain within each window separately
+          const allWindows = await chrome.windows.getAll({ populate: true });
+          for (const win of allWindows) {
+            if (!win.tabs || !win.id) continue;
+            const sameDomainInWindow = win.tabs.filter(t => {
+              try {
+                return t.url && new URL(t.url).hostname === domain;
+              } catch {
+                return false;
+              }
+            });
+            const ids = sameDomainInWindow.map(t => t.id).filter(Boolean) as number[];
+            if (ids.length > 1) {
+              try {
+                const groupId = await chrome.tabs.group({ tabIds: ids });
+                await chrome.tabGroups.update(groupId, {
+                  title: domain,
+                  collapsed: false
+                });
+              } catch (e) {
+                console.error(`Failed to group tabs in window ${win.id}:`, e);
+              }
+            }
           }
-        });
-        const ids = sameDomain.map(t => t.id).filter(Boolean) as number[];
-        if (ids.length > 1) {
-          const groupId = await chrome.tabs.group({ tabIds: ids });
-          await chrome.tabGroups.update(groupId, {
-            title: domain,
-            collapsed: false
-          });
+        } catch (e) {
+          console.error('Failed to group by domain:', e);
         }
       }
       break;
