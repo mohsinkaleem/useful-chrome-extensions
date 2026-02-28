@@ -12,6 +12,7 @@
   } from './db.js';
   import { searchBookmarks } from './search.js';
   import { getFaviconUrl, formatDate } from './utils.js';
+  import { darkMode, initDarkMode, toggleDarkMode } from './darkModeStore.js';
   
   let bookmarks = [];
   let readingList = [];
@@ -20,9 +21,6 @@
   let searchQuery = '';
   let currentFilter = null;
   let displayLimit = 30;
-  
-  // Dark mode state
-  let darkMode = false;
   
   // View mode: 'all' | 'reading-list' | 'quick-access' | 'browse'
   let viewMode = 'all';
@@ -41,17 +39,14 @@
   let undoTimeout = null;
   
   onMount(async () => {
-    // Load dark mode preference
-    const stored = await chrome.storage.local.get('darkMode');
-    darkMode = stored.darkMode || false;
-    applyDarkMode(darkMode);
+    await initDarkMode();
     
     try {
-      await Promise.all([
+      const [allBooks] = await Promise.all([
         loadBookmarks(),
-        loadReadingList(),
-        loadNavigationData()
+        loadReadingList()
       ]);
+      await loadNavigationData(allBooks);
     } catch (err) {
       error = err.message;
     } finally {
@@ -66,24 +61,11 @@
     }
   });
   
-  function applyDarkMode(enabled) {
-    if (enabled) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }
-  
-  async function toggleDarkMode() {
-    darkMode = !darkMode;
-    applyDarkMode(darkMode);
-    await chrome.storage.local.set({ darkMode });
-  }
-  
   async function loadBookmarks() {
     const allBooks = await getAllBookmarks();
     // Sort by date descending (most recent first)
     bookmarks = allBooks.sort((a, b) => b.dateAdded - a.dateAdded);
+    return allBooks;
   }
   
   async function loadReadingList() {
@@ -95,8 +77,10 @@
     }
   }
   
-  async function loadNavigationData() {
-    const allBooks = await getAllBookmarks();
+  async function loadNavigationData(allBooks = null) {
+    if (!allBooks) {
+      allBooks = bookmarks;
+    }
     
     // Calculate top domains
     const domainCounts = {};
@@ -286,9 +270,9 @@
         <button
           on:click={toggleDarkMode}
           class="p-1.5 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={$darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {#if darkMode}
+          {#if $darkMode}
             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
             </svg>
@@ -479,7 +463,7 @@
               {#each readingList.filter(r => !r.hasBeenRead) as item}
                 <div class="group flex items-start gap-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
                   <img 
-                    src="https://www.google.com/s2/favicons?domain={item.domain}&sz=32"
+                    src="{getFaviconUrl({ url: item.url, domain: item.domain, faviconUrl: null })}"
                     alt=""
                     class="w-4 h-4 mt-0.5 flex-shrink-0 rounded"
                   />
@@ -530,7 +514,7 @@
               {#each readingList.filter(r => r.hasBeenRead) as item}
                 <div class="group flex items-start gap-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors opacity-60">
                   <img 
-                    src="https://www.google.com/s2/favicons?domain={item.domain}&sz=32"
+                    src="{getFaviconUrl({ url: item.url, domain: item.domain, faviconUrl: null })}"
                     alt=""
                     class="w-4 h-4 mt-0.5 flex-shrink-0 rounded"
                   />

@@ -83,6 +83,29 @@ export async function getTableRecords(tableName, options = {}) {
     fieldFilter = null // { field: 'category', hasValue: true/false }
   } = options;
   
+  const needsClientFilter = searchQuery || fieldFilter;
+  
+  // Fast path: no filtering needed, use Dexie's native pagination
+  if (!needsClientFilter && !sortBy) {
+    const totalCount = await db[tableName].count();
+    const totalPages = Math.ceil(totalCount / pageSize);
+    const records = await db[tableName]
+      .offset(page * pageSize)
+      .limit(pageSize)
+      .toArray();
+    
+    return {
+      records,
+      totalCount,
+      page,
+      pageSize,
+      totalPages,
+      hasMore: (page + 1) * pageSize < totalCount,
+      hasPrev: page > 0
+    };
+  }
+  
+  // Slow path: need to load all for client-side filtering/sorting
   let records = await db[tableName].toArray();
   
   // Apply field filter (show only records with/without a specific field)
@@ -401,23 +424,43 @@ export function downloadJSON(data, filename) {
 }
 
 /**
- * Estimate database size in bytes
+ * Estimate database size using Storage API or sampling
  */
 async function estimateDatabaseSize() {
-  let totalSize = 0;
+  // Try Storage Manager API first (most accurate, no full load)
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const estimate = await navigator.storage.estimate();
+      const usedBytes = estimate.usage || 0;
+      if (usedBytes > 1024 * 1024) {
+        return `~${(usedBytes / (1024 * 1024)).toFixed(1)} MB`;
+      }
+      return `~${(usedBytes / 1024).toFixed(0)} KB`;
+    } catch (e) {
+      // Fall through to sampling method
+    }
+  }
   
+  // Fallback: estimate from record counts and sample sizes
+  let totalSize = 0;
   const tableNames = Object.keys(TABLE_META);
   
   for (const tableName of tableNames) {
     try {
-      const records = await db[tableName].toArray();
-      totalSize += JSON.stringify(records).length;
+      const count = await db[tableName].count();
+      if (count === 0) continue;
+      
+      // Sample up to 10 records to estimate average size
+      const sampleSize = Math.min(count, 10);
+      const sample = await db[tableName].limit(sampleSize).toArray();
+      const sampleBytes = JSON.stringify(sample).length;
+      const avgRecordSize = sampleBytes / sampleSize;
+      totalSize += avgRecordSize * count;
     } catch (e) {
       // Table might not exist yet
     }
   }
   
-  // Format as human readable
   if (totalSize > 1024 * 1024) {
     return `~${(totalSize / (1024 * 1024)).toFixed(1)} MB`;
   }

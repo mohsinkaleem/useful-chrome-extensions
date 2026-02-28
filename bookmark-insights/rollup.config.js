@@ -8,33 +8,6 @@ const production = !process.env.ROLLUP_WATCH;
 
 export default [
   {
-    input: 'src/popup.js',
-    output: {
-      sourcemap: !production,
-      format: 'es',
-      file: 'public/popup.js',
-      inlineDynamicImports: true
-    },
-    plugins: [
-      svelte({
-        compilerOptions: {
-          dev: !production
-        }
-      }),
-      css({ output: 'popup.css' }),
-      resolve({
-        browser: true,
-        dedupe: ['svelte'],
-        preferBuiltins: false
-      }),
-      commonjs(),
-      production && terser()
-    ],
-    watch: {
-      clearScreen: false
-    }
-  },
-  {
     input: 'src/sidepanel.js',
     output: {
       sourcemap: !production,

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "split_view_instant",
+  "version": "1.0",
+  "description": "Opens links in a side-by-side split window when Alt-clicked.",
+  "permissions": [
+    "tabs", 
+    "storage",
+    "windows"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

@@ -62,15 +62,13 @@
   import { activeFilters, searchQuery as searchQueryStore, allBookmarks, selectedBookmarks } from './stores.js';
   import { parseSearchQuery } from './search.js';
   import { debounce } from './utils.js';
+  import { darkMode, initDarkMode, toggleDarkMode } from './darkModeStore.js';
   
   Chart.register(...registerables);
   
   let bookmarks = [];
   let loading = true;
   let error = null;
-  
-  // Dark mode state
-  let darkMode = false;
   
   // Initialize currentView from URL hash for persistence across refreshes
   function getViewFromHash() {
@@ -195,27 +193,9 @@
   let undoDeleteToast = null;
   let undoDeleteTimeout = null;
   
-  // Dark mode functions
-  function applyDarkMode(enabled) {
-    if (enabled) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }
-  
-  async function toggleDarkMode() {
-    darkMode = !darkMode;
-    applyDarkMode(darkMode);
-    await chrome.storage.local.set({ darkMode });
-  }
-  
   onMount(async () => {
     try {
-      // Load dark mode preference
-      const stored = await chrome.storage.local.get('darkMode');
-      darkMode = stored.darkMode || false;
-      applyDarkMode(darkMode);
+      await initDarkMode();
       
       // Handle hash changes for navigation
       window.addEventListener('hashchange', () => {
@@ -870,13 +850,15 @@
       
       // Enhanced similar bookmarks with fuzzy matching
       // Try to load from cache first to show pre-computed results
+      // Set onlyFromCache: true to avoid automatic analysis on load
       loadingEnhancedSimilar = true;
       findSimilarBookmarksEnhancedFuzzy({ 
         minSimilarity: 0.4, 
         maxPairs: 100,
         prioritizeSameDomain: true,
         forceRefresh: false,
-        useCache: true
+        useCache: true,
+        onlyFromCache: true
       }).then(result => {
         if (result.fromCache && result.pairs.length > 0) {
           enhancedSimilarPairs = result.pairs;
@@ -1905,9 +1887,9 @@
           <button
             on:click={toggleDarkMode}
             class="p-2 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={$darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            {#if darkMode}
+            {#if $darkMode}
               <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
               </svg>
@@ -2929,8 +2911,19 @@
                     <div class="p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800">
                       <div class="flex items-start justify-between">
                         <div class="flex-1 min-w-0">
-                          <div class="text-sm font-medium text-gray-800 dark:text-gray-400 truncate">{bookmark.title}</div>
-                          <div class="text-xs text-gray-500 dark:text-gray-400 truncate">{bookmark.url}</div>
+                          <a 
+                            href={bookmark.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            class="block group"
+                          >
+                            <div class="text-sm font-medium text-gray-800 dark:text-gray-400 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                              {bookmark.title}
+                            </div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400 truncate group-hover:underline">
+                              {bookmark.url}
+                            </div>
+                          </a>
                           <div class="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-3">
                             <span>Last checked: {bookmark.lastChecked ? new Date(bookmark.lastChecked).toLocaleDateString() : 'Unknown'}</span>
                             {#if bookmark.domain}

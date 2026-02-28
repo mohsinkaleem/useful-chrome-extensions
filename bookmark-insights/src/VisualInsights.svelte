@@ -1,5 +1,5 @@
 <script>
-  import { onMount, createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { Chart, registerables } from 'chart.js';
   import InsightCard from './InsightCard.svelte';
   import {
@@ -45,6 +45,13 @@
   
   onMount(async () => {
     await loadAllInsights();
+  });
+  
+  onDestroy(() => {
+    categoryChart?.destroy();
+    contentTypeChart?.destroy();
+    platformChart?.destroy();
+    dateAddedChart?.destroy();
   });
   
   async function loadAllInsights() {

@@ -224,18 +224,35 @@ export function getSortFunction(key) {
 }
 
 /**
+ * Escape HTML entities to prevent XSS
+ * @param {string} text - Raw text to escape
+ * @returns {string} HTML-safe string
+ */
+export function escapeHtml(text) {
+  if (!text) return text;
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, (char) => map[char]);
+}
+
+/**
  * Highlight search terms in text
  * @param {string} text - The text to highlight
  * @param {Object} parsedQuery - The parsed search query
  * @returns {string} HTML string with highlighted terms
  */
 export function highlightText(text, parsedQuery) {
-  if (!text || !parsedQuery) return text;
+  if (!text || !parsedQuery) return escapeHtml(text);
   
   const { positive, phrases, regular, regexPatterns } = parsedQuery;
   const terms = [...(positive || []), ...(phrases || []), ...(regular || [])];
   
-  if (terms.length === 0 && (!regexPatterns || regexPatterns.length === 0)) return text;
+  if (terms.length === 0 && (!regexPatterns || regexPatterns.length === 0)) return escapeHtml(text);
   
   // Find all ranges to highlight
   const ranges = [];
@@ -291,15 +308,20 @@ export function highlightText(text, parsedQuery) {
     mergedRanges.push(current);
   }
   
-  // Apply highlighting from back to front
-  let result = text;
-  for (let i = mergedRanges.length - 1; i >= 0; i--) {
+  // Apply highlighting: escape HTML in segments, wrap matches in <mark>
+  // Build result from front to back, escaping non-match segments
+  let result = '';
+  let lastIndex = 0;
+  for (let i = 0; i < mergedRanges.length; i++) {
     const { start, end } = mergedRanges[i];
-    const before = result.slice(0, start);
-    const match = result.slice(start, end);
-    const after = result.slice(end);
-    result = `${before}<mark class="bg-yellow-200 text-gray-900 rounded-sm px-0.5">${match}</mark>${after}`;
+    // Escape the text before this match
+    result += escapeHtml(text.slice(lastIndex, start));
+    // Escape the matched text and wrap in mark tag
+    result += `<mark class="bg-yellow-200 text-gray-900 rounded-sm px-0.5">${escapeHtml(text.slice(start, end))}</mark>`;
+    lastIndex = end;
   }
+  // Escape any remaining text after the last match
+  result += escapeHtml(text.slice(lastIndex));
   
   return result;
 }

@@ -209,10 +209,10 @@
                     class="w-full text-left p-3 rounded-lg border transition-colors {selectedCreator?.creator === repo.repoName ? 'bg-gray-800 dark:bg-gray-700 text-white border-gray-700 dark:border-gray-600' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'}"
                   >
                     <div class="flex items-center justify-between mb-1">
-                      <span class="font-medium truncate text-gray-100">🐙 {repo.repoName}</span>
-                      <span class="text-sm opacity-75 dark:text-gray-300">{repo.totalCount}</span>
+                      <span class="font-medium truncate {selectedCreator?.creator === repo.repoName ? 'text-gray-100' : 'text-gray-900 dark:text-gray-100'}">🐙 {repo.repoName}</span>
+                      <span class="text-sm {selectedCreator?.creator === repo.repoName ? 'opacity-75' : 'text-gray-500 dark:text-gray-300'}">{repo.totalCount}</span>
                     </div>
-                    <div class="text-xs opacity-75 dark:text-gray-400 flex flex-wrap gap-2">
+                    <div class="text-xs {selectedCreator?.creator === repo.repoName ? 'opacity-75' : 'text-gray-500 dark:text-gray-400'} flex flex-wrap gap-2">
                       {#if repo.breakdown.issue > 0}
                         <span>🐛 {repo.breakdown.issue} issues</span>
                       {/if}

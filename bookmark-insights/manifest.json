@@ -31,8 +31,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["dashboard.html", "sidepanel.html"],
-      "matches": ["<all_urls>"]
+      "resources": ["dashboard.html"],
+      "matches": ["chrome-extension://*"]
     }
   ]
 }

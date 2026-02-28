@@ -1,5 +1,5 @@
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
   
   const dispatch = createEventDispatcher();
   
@@ -12,12 +12,6 @@
   
   // Parse query to show visual feedback
   $: parsedQuery = parseQueryForDisplay(value);
-  
-  onMount(() => {
-    // No initialization needed
-  });
-  
-
   
   function parseQueryForDisplay(query) {
     if (!query) return { positive: [], negative: [], phrases: [], regular: [], regexPatterns: [] };
@@ -68,9 +62,7 @@
     }, 200);
   }
   
-  function handleFocus() {
-    // No history to show
-  }
+
   
   function handleKeyDown(event) {
     if (event.key === 'Escape') {
@@ -106,7 +98,6 @@
         type="text"
         bind:value
         on:input={handleInput}
-        on:focus={handleFocus}
         on:keydown={handleKeyDown}
         placeholder={placeholder}
         class="block w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg leading-5 bg-white dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
@@ -198,7 +189,7 @@
         </div>
         <div class="flex items-start gap-3">
           <code class="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 rounded text-xs whitespace-nowrap">/regex/</code>
-          <span class="text-gray-600">Regular expression pattern</span>
+          <span class="text-gray-600 dark:text-gray-400">Regular expression pattern</span>
         </div>
       </div>
       
@@ -212,86 +203,86 @@
         </h5>
         <div class="space-y-2 text-sm">
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-xs whitespace-nowrap">category:tech</code>
-            <span class="text-gray-600">📁 Filter by category</span>
-          </div>
-          <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-xs whitespace-nowrap">domain:github.com</code>
-            <span class="text-gray-600">🌐 Filter by domain</span>
-          </div>
-          <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-xs whitespace-nowrap">folder:"Work/Projects"</code>
-            <span class="text-gray-600">📂 Filter by folder path</span>
-          </div>
-          <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-xs whitespace-nowrap">accessed:yes</code>
-            <span class="text-gray-600">👆 Has been accessed (yes/no)</span>
-          </div>
-          <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-xs whitespace-nowrap">stale:yes</code>
-            <span class="text-gray-600">⏰ Old & never accessed</span>
-          </div>
-          <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-teal-100 text-teal-800 rounded text-xs whitespace-nowrap">enriched:yes</code>
-            <span class="text-gray-600">✨ Has metadata (yes/no)</span>
-          </div>
-          <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs whitespace-nowrap">dead:yes</code>
-            <span class="text-gray-600">💀 Dead links (yes/no)</span>
+            <code class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap">category:tech</code>
+          <span class="text-gray-600 dark:text-gray-400">📁 Filter by category</span>
+        </div>
+        <div class="flex items-start gap-3">
+          <code class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap">domain:github.com</code>
+          <span class="text-gray-600 dark:text-gray-400">🌐 Filter by domain</span>
+        </div>
+        <div class="flex items-start gap-3">
+          <code class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap">folder:"Work/Projects"</code>
+          <span class="text-gray-600 dark:text-gray-400">📂 Filter by folder path</span>
+        </div>
+        <div class="flex items-start gap-3">
+          <code class="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 rounded text-xs whitespace-nowrap">accessed:yes</code>
+          <span class="text-gray-600 dark:text-gray-400">👆 Has been accessed (yes/no)</span>
+        </div>
+        <div class="flex items-start gap-3">
+          <code class="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 rounded text-xs whitespace-nowrap">stale:yes</code>
+          <span class="text-gray-600 dark:text-gray-400">⏰ Old & never accessed</span>
+        </div>
+        <div class="flex items-start gap-3">
+          <code class="px-1.5 py-0.5 bg-teal-100 dark:bg-teal-900/40 text-teal-800 dark:text-teal-300 rounded text-xs whitespace-nowrap">enriched:yes</code>
+          <span class="text-gray-600 dark:text-gray-400">✨ Has metadata (yes/no)</span>
+        </div>
+        <div class="flex items-start gap-3">
+          <code class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs whitespace-nowrap">dead:yes</code>
+          <span class="text-gray-600 dark:text-gray-400">💀 Dead links (yes/no)</span>
           </div>
         </div>
       </div>
       
       <!-- Platform Filters Section -->
-      <div class="mt-4 pt-3 border-t border-gray-100">
-        <h5 class="font-medium text-gray-800 mb-2 flex items-center gap-2 text-sm">
+      <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+        <h5 class="font-medium text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2 text-sm">
           <span class="text-lg">📱</span>
           Platform Filters
         </h5>
         <div class="space-y-2 text-sm">
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">platform:youtube</code>
-            <span class="text-gray-600">📺 Filter by platform (youtube, github, medium, etc.)</span>
+            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">platform:youtube</code>
+            <span class="text-gray-600 dark:text-gray-400">📺 Filter by platform (youtube, github, medium, etc.)</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">channel:@mkbhd</code>
-            <span class="text-gray-600">📺 YouTube channel (with or without @)</span>
+            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">channel:@mkbhd</code>
+            <span class="text-gray-600 dark:text-gray-400">📺 YouTube channel (with or without @)</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">repo:facebook/react</code>
-            <span class="text-gray-600">💻 GitHub repository (owner/repo)</span>
+            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">repo:facebook/react</code>
+            <span class="text-gray-600 dark:text-gray-400">💻 GitHub repository (owner/repo)</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">author:username</code>
-            <span class="text-gray-600">✍️ Blog/article author</span>
+            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">author:username</code>
+            <span class="text-gray-600 dark:text-gray-400">✍️ Blog/article author</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">type:video</code>
-            <span class="text-gray-600">📝 Content type (video, issue, article, repo, pr)</span>
+            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">type:video</code>
+            <span class="text-gray-600 dark:text-gray-400">📝 Content type (video, issue, article, repo, pr)</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">hasimage:yes</code>
-            <span class="text-gray-600">🖼️ Has thumbnail image (yes/no)</span>
+            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">hasimage:yes</code>
+            <span class="text-gray-600 dark:text-gray-400">🖼️ Has thumbnail image (yes/no)</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 text-pink-800 rounded text-xs whitespace-nowrap">playlist:PLxxx</code>
-            <span class="text-gray-600">🎵 YouTube playlist ID</span>
+            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">playlist:PLxxx</code>
+            <span class="text-gray-600 dark:text-gray-400">🎵 YouTube playlist ID</span>
           </div>
         </div>
       </div>
       
-      <div class="mt-4 pt-3 border-t border-gray-100">
-        <p class="text-xs text-gray-500">
-          <strong>Example:</strong> <code class="bg-gray-100 px-1 rounded">javascript +tutorial -video "best practices"</code>
+      <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+          <strong>Example:</strong> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">javascript +tutorial -video "best practices"</code>
         </p>
-        <p class="text-xs text-gray-500 mt-1">
-          <strong>With filters:</strong> <code class="bg-gray-100 px-1 rounded">domain:github.com category:development enriched:yes</code>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <strong>With filters:</strong> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">domain:github.com category:development enriched:yes</code>
         </p>
-        <p class="text-xs text-gray-500 mt-1">
-          <strong>Platform:</strong> <code class="bg-gray-100 px-1 rounded">platform:youtube channel:@fireship type:video</code>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <strong>Platform:</strong> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">platform:youtube channel:@fireship type:video</code>
         </p>
-        <p class="text-xs text-gray-500 mt-1">
-          <strong>Regex:</strong> <code class="bg-gray-100 px-1 rounded">/react.*hooks?/</code>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <strong>Regex:</strong> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">/react.*hooks?/</code>
         </p>
       </div>
     </div>

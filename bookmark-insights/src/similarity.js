@@ -4,18 +4,12 @@
 
 import { getAllBookmarks, getCache, setCache, getCachedMetric, CACHE_DURATIONS, getBookmark, getBookmarksByDomain, getBookmarksByCategory, storeSimilarities, getStoredSimilarities } from './db.js';
 import { STOP_WORDS } from './utils.js';
-// import { allBookmarks as bookmarksStore } from './stores.js';
 
 /**
- * Get bookmarks using cached store when possible
- * Falls back to direct db call if store not available
+ * Get bookmarks from database
  */
 async function getBookmarksCached() {
-  // try {
-  //   return await bookmarksStore.getCached();
-  // } catch (error) {
-    return await getAllBookmarks();
-  // }
+  return await getAllBookmarks();
 }
 
 // Calculate TF-IDF scores for a document
@@ -742,7 +736,8 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
     requireHighCoverage = false,
     minCoveragePercent = 40,
     useCache = true,
-    forceRefresh = false
+    forceRefresh = false,
+    onlyFromCache = false
   } = options;
   
   try {
@@ -759,6 +754,11 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
           cachedAt: cached.timestamp,
           cacheAge: Date.now() - cached.timestamp
         };
+      }
+
+      // If we only want from cache and none found, return empty
+      if (onlyFromCache) {
+        return { pairs: [], stats: null, fromCache: false, noCache: true };
       }
     }
     

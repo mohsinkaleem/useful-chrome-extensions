@@ -446,7 +446,6 @@ function createActiveFiltersStore() {
             } else {
                 return { ...state, [category]: null };
             }
-            return state;
         }),
         toggleFilter: (category, value) => update(state => {
              if (Array.isArray(state[category])) {
@@ -479,19 +478,8 @@ function createActiveFiltersStore() {
             hasPublishedDate: null,
             readingList: false
         }),
-        reset: () => set({
-            domains: [],
-            folders: [],
-            topics: [],
-            tags: [],
-            deadLinks: false,
-            stale: false,
-            dateRange: null,
-            readingTimeRange: null,
-            qualityScoreRange: null,
-            hasPublishedDate: null,
-            readingList: false
-        })
+        /** @deprecated Use clearFilters() instead */
+        reset: function() { this.clearFilters(); }
     };
 }
 
