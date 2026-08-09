@@ -1,16 +1,8 @@
 // Core tab and window data types and utilities
 
-export interface TabInfo extends chrome.tabs.Tab {
-  windowTitle?: string;
-}
+export type TabInfo = chrome.tabs.Tab;
 
 export interface WindowInfo extends chrome.windows.Window {}
-
-export interface TabGroup {
-  id: number;
-  tabs: TabInfo[];
-  windowId: number;
-}
 
 // Get all tabs across all windows
 export async function getAllTabs(): Promise<TabInfo[]> {
@@ -34,12 +26,6 @@ export async function getTabsByWindow(): Promise<Map<number, TabInfo[]>> {
   }
   
   return tabsByWindow;
-}
-
-// Get currently active tab
-export async function getActiveTab(): Promise<TabInfo | null> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab || null;
 }
 
 // Tab event listeners with debouncing
@@ -88,31 +74,4 @@ export class TabEventManager {
   private notifyListeners() {
     this.listeners.forEach(listener => listener());
   }
-}
-
-// Utility functions
-export function sortTabsByLastAccessed(tabs: TabInfo[]): TabInfo[] {
-  return [...tabs].sort((a, b) => {
-    const timeA = a.lastAccessed || 0;
-    const timeB = b.lastAccessed || 0;
-    return timeB - timeA;
-  });
-}
-
-export function getTabDomain(tab: TabInfo): string | null {
-  if (!tab.url) return null;
-  try {
-    const url = new URL(tab.url);
-    return url.hostname;
-  } catch {
-    return null;
-  }
-}
-
-export function isTabDiscarded(tab: TabInfo): boolean {
-  return tab.discarded || false;
-}
-
-export function isTabAudible(tab: TabInfo): boolean {
-  return tab.audible || false;
 }

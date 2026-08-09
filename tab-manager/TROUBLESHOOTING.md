@@ -11,7 +11,7 @@
 **Solution**: 
 1. Run `npm run package`
 2. Reload extension from the `extension/` folder (not root)
-3. Size should be ~124KB
+3. Size should be ~172KB
 
 ---
 
@@ -21,34 +21,20 @@
 
 **Cause**: Events are debounced to prevent UI thrashing.
 
-**Solution**: This is intentional. Changes appear within 150ms. If tabs still don't update:
+**Solution**: This is intentional. Changes appear within 300ms. If tabs still don't update:
 1. Check browser console for errors
 2. Try reloading the extension
 3. Verify service worker is running (chrome://extensions → Service Worker link)
 
 ---
 
-### Content Script Not Working
+### Media Controls Only Mute, They Don't Pause
 
-**Problem**: Media controls don't stop YouTube/Spotify playback.
+**Problem**: Clicking mute silences a YouTube/Spotify tab but playback continues.
 
-**Cause**: Content script only runs on specific media sites.
+**Cause**: This is by design. The extension has **no content scripts and no host permissions**, so it cannot reach into a page to call `video.pause()`. It uses `chrome.tabs.update({ muted })`, which is the only thing available without injecting code into third-party sites.
 
-**Current supported sites**:
-- youtube.com
-- spotify.com
-- twitch.tv
-- soundcloud.com
-- vimeo.com
-- netflix.com
-- music.youtube.com
-
-**Solution**: If you need support for another site, add it to `manifest.json`:
-```json
-"content_scripts": [{
-  "matches": ["*://*.newsite.com/*", ...]
-}]
-```
+**Solution**: Use the → button to jump to the tab and pause it there.
 
 ---
 
@@ -57,44 +43,35 @@
 **Problem**: Some tabs don't restore when loading a session.
 
 **Cause**: 
-- Chrome internal pages (`chrome://`) can't be opened programmatically
+- Chrome internal pages (`chrome://`, `edge://`, `about:`) can't be opened programmatically
 - Some URLs may have changed or be invalid
 
-**Solution**: Sessions skip `chrome://` URLs. This is a Chrome security restriction.
+**Solution**: Sessions skip internal URLs. This is a Chrome security restriction. Pinned state, tab groups (title and colour) and window geometry are restored for everything else.
 
 ---
 
-### Auto-Grouping Not Working
+### Tabs Aren't Grouped Automatically
 
-**Problem**: New tabs aren't automatically grouped.
+**Problem**: New tabs are not put into groups as they open.
 
-**Cause**: Auto-grouping is **disabled by default**.
+**Cause**: There is no automatic grouping. Grouping is always an explicit action.
 
-**Solution**:
-1. Auto-grouping must be enabled in code (no UI toggle yet)
-2. Check `auto-grouper.ts` → `setEnabled(true)`
-3. Verify rules match your domains
+**Solution**: Use one of:
+- **Group by domain** button in the popup action bar
+- **✨ Smart grouping** in the side panel (domain, then title similarity)
+- **Group tabs by domain** in the page right-click menu
+
+All of these leave existing groups and pinned tabs untouched, and merge into a same-named group rather than creating a duplicate.
 
 ---
 
-### Memory Estimates Seem Wrong
+### Balance Windows Didn't Move Anything
 
-**Problem**: Estimated memory doesn't match Task Manager.
+**Problem**: Clicking balance reports "Windows are already balanced".
 
-**Explanation**: Chrome removed the `chrome.processes` API. We use intelligent estimation based on:
+**Cause**: Every window is already within the min/max range (10–30 tabs), or the only tabs available to move belong to a window's dominant domain, which is never split.
 
-| Factor | Memory Impact |
-|--------|--------------|
-| Base active tab | 30 MB |
-| Discarded tab | 5 MB |
-| YouTube (playing) | +150 MB |
-| Google Meet/Zoom | +200 MB |
-| Gmail | +80 MB |
-| Active tab | +20 MB |
-| Audible tab | +50 MB |
-| Tab open > 24h | +30 MB |
-
-These are approximations based on typical Chrome memory usage patterns.
+**Solution**: Expected behaviour. A single window holding 80 tabs of the same site is deliberately left intact.
 
 ---
 
@@ -102,11 +79,31 @@ These are approximations based on typical Chrome memory usage patterns.
 
 **Problem**: Bookmarks created in wrong location.
 
-**Previous cause**: Hardcoded folder ID `'1'` which may not exist.
+**Previous cause**: Hardcoded folder ID `'1'`, and later a folder-title heuristic that failed on non-English Chrome.
 
-**Current fix**: We dynamically detect the Bookmarks Bar folder. If it still fails:
+**Current fix**: The bookmarks bar is resolved as the first child of the bookmark root, which is locale-independent. If it still fails:
 1. Check browser console for errors
-2. Bookmarks should appear in the first available folder
+2. Bookmarks fall back to folder ID `'1'`
+
+---
+
+### Favicons Are Blank or Generic
+
+**Problem**: Some tabs show a plain grey square or Chrome's default globe.
+
+**Cause**: Favicons are read from Chrome's local cache via the `favicon` permission rather than fetched from each site. A page Chrome has not cached an icon for yet shows the generic icon.
+
+**Solution**: Expected. This is deliberate — fetching `tab.favIconUrl` directly would issue a live request to every third-party origin in the list and leak extension usage to those sites.
+
+---
+
+### Side Panel Shortcut Does Nothing
+
+**Problem**: `Ctrl/Cmd+Shift+E` doesn't open the side panel.
+
+**Cause**: Chrome silently drops a suggested shortcut if another extension already claims it.
+
+**Solution**: Assign a free shortcut at `chrome://extensions/shortcuts`.
 
 ---
 

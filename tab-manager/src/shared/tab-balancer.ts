@@ -1,18 +1,17 @@
+import { getAllWindows, WindowInfo, TabInfo } from './tab-utils.js';
+import { extractBaseDomain } from './url-utils.js';
+import { groupAllByDomain, ungroupAll } from './grouping.js';
 
-import { getAllWindows, WindowInfo, TabInfo } from './tab-utils';
-import { extractDomain, extractBaseDomain } from './url-utils';
-
-interface BalancingConfig {
+export interface BalancingConfig {
   maxTabs: number;
   minTabs: number;
   respectGrouping: boolean;
-  autoGroup: boolean;
 }
 
 interface MoveOperation {
   tabIds: number[];
   targetWindowId: number | 'new';
-  groupId?: number; // If these tabs belonged to a group, we might want to preserve it
+  groupId?: number;
 }
 
 interface WindowState {
@@ -20,6 +19,7 @@ interface WindowState {
   tabs: TabInfo[];
   tabCount: number;
   primaryDomain: string | null;
+  domains: Set<string>;
 }
 
 interface MoveableUnit {
@@ -38,46 +38,39 @@ export class TabBalancer {
       maxTabs: 30,
       minTabs: 10,
       respectGrouping: true,
-      autoGroup: false,
       ...config
     };
   }
 
-  async balanceWindows() {
+  getConfig(): Readonly<BalancingConfig> {
+    return this.config;
+  }
+
+  async balanceWindows(): Promise<number> {
     const windows = await getAllWindows();
     const normalWindows = windows.filter(w => w.type === 'normal' && w.id !== undefined);
-    
-    // Build Simulation State
+
     const simWindows = this.buildState(normalWindows);
     const moves: MoveOperation[] = [];
-
-    // Track windows that are decided to be emptied/closed
     const doomedWindows = new Set<number>();
 
-    // 1. Relieve Overloaded Windows
+    // 1. Relieve overloaded windows
     for (const win of simWindows) {
       if (win.tabCount > this.config.maxTabs) {
         this.planRelief(win, simWindows, moves, doomedWindows);
       }
     }
 
-    // 2. Fill Underloaded Windows & Consolidate Small Windows
-    // Sort logic removed, we iterate simWindows and check threshold inside to allow updates    
+    // 2. Fill under-loaded windows, consolidating small ones away entirely where possible
     for (const win of simWindows) {
       if (doomedWindows.has(win.id)) continue;
-      
-      if (win.tabCount < this.config.minTabs && win.tabCount > 0) { 
-          this.planConsolidation(win, simWindows, moves, doomedWindows);
+      if (win.tabCount > 0 && win.tabCount < this.config.minTabs) {
+        this.planConsolidation(win, simWindows, moves, doomedWindows);
       }
     }
 
-    // 3. Execute Moves
     await this.executeMoves(moves);
-
-    // 4. Auto Group if requested
-    if (this.config.autoGroup) {
-       await this.autoGroupTabs();
-    }
+    return moves.reduce((sum, m) => sum + m.tabIds.length, 0);
   }
 
   private buildState(windows: WindowInfo[]): WindowState[] {
@@ -87,24 +80,35 @@ export class TabBalancer {
         const tabs = (w.tabs || []) as TabInfo[];
         return {
           id: w.id as number,
-          tabs: tabs,
+          tabs,
           tabCount: tabs.length,
-          primaryDomain: this.getDominantDomain(tabs)
+          primaryDomain: this.getDominantDomain(tabs),
+          domains: this.collectDomains(tabs)
         };
       });
   }
 
+  private collectDomains(tabs: TabInfo[]): Set<string> {
+    const domains = new Set<string>();
+    for (const tab of tabs) {
+      const domain = tab.url ? extractBaseDomain(tab.url) : null;
+      if (domain) domains.add(domain);
+    }
+    return domains;
+  }
+
   private getDominantDomain(tabs: TabInfo[]): string | null {
     const counts = new Map<string, number>();
-    for (const t of tabs) {
-      if (!t.url) continue;
-      const d = extractBaseDomain(t.url); // Use base domain for better grouping (google.com includes mail.google.com)
-      if (d) counts.set(d, (counts.get(d) || 0) + 1);
+    for (const tab of tabs) {
+      if (!tab.url) continue;
+      // Base domain so mail.google.com and docs.google.com count together.
+      const domain = extractBaseDomain(tab.url);
+      if (domain) counts.set(domain, (counts.get(domain) || 0) + 1);
     }
-    
-    let bestDomain = null;
+
+    let bestDomain: string | null = null;
     let max = 0;
-    for (const [domain, count] of counts.entries()) {
+    for (const [domain, count] of counts) {
       if (count > max) {
         max = count;
         bestDomain = domain;
@@ -113,352 +117,282 @@ export class TabBalancer {
     return bestDomain;
   }
 
-  private planRelief(source: WindowState, allWindows: WindowState[], moves: MoveOperation[], doomedWindows: Set<number>) {
-    // Strategy: Move least frequent domains first (outliers).
-    // Exception Policy: If the window is dominated by a single domain (> 50 tabs of same domain),
-    // we do not split that domain, even if it exceeds the limit.
-    
+  // Applies a planned move to the simulation so later decisions see up-to-date counts.
+  private applyToSim(target: WindowState, unit: MoveableUnit) {
+    target.tabCount += unit.size;
+    target.tabs.push(...unit.tabs);
+    if (unit.domain) target.domains.add(unit.domain);
+  }
+
+  private planRelief(
+    source: WindowState,
+    allWindows: WindowState[],
+    moves: MoveOperation[],
+    doomedWindows: Set<number>
+  ) {
+    // Move the window's outlier domains out first and never split its dominant domain —
+    // a window of 80 YouTube tabs is left intact rather than torn in half.
     const units = this.getMoveableUnits(source);
-    
-    const dominantUnits: MoveableUnit[] = [];
-    const otherUnits: MoveableUnit[] = [];
+    const outliers = units.filter(u => !source.primaryDomain || u.domain !== source.primaryDomain);
+    outliers.sort((a, b) => a.size - b.size);
 
-    for (const unit of units) {
-      const unitDomain = unit.domain; 
-      
-      if (source.primaryDomain && unitDomain === source.primaryDomain) {
-        dominantUnits.push(unit);
-      } else {
-        otherUnits.push(unit);
-      }
-    }
-
-    // Sort other units by size (ascending) to move small "outliers" first
-    otherUnits.sort((a, b) => a.size - b.size);
-
-    // Candidates are ONLY the non-dominant domains initially
-    // If we clear all outliers and still exceed maxTabs (e.g. 80 Youtube tabs), 
-    // the Exception Policy says we leave them alone. So we do NOT add dominantUnits to candidates.
-    const candidates = [...otherUnits];
-    
     let currentCount = source.tabCount;
 
-    while (currentCount > this.config.maxTabs && candidates.length > 0) {
-      const unit = candidates.shift()!;
-      
+    while (currentCount > this.config.maxTabs && outliers.length > 0) {
+      const unit = outliers.shift()!;
       const target = this.findBestTarget(unit, allWindows, source, doomedWindows);
-      
-      // If we found a target (even new), move it.
-      if (target) {
-        // Record move
-        moves.push({
-          tabIds: unit.tabIds,
-          targetWindowId: target === 'new' ? 'new' : target.id,
-          groupId: unit.groupId !== -1 ? unit.groupId : undefined
-        });
+      if (!target) continue;
 
-        // Update Sim
-        currentCount -= unit.size;
-        source.tabCount = currentCount;
+      moves.push({
+        tabIds: unit.tabIds,
+        targetWindowId: target === 'new' ? 'new' : target.id,
+        groupId: unit.groupId !== -1 ? unit.groupId : undefined
+      });
 
-        if (target !== 'new') {
-          target.tabCount += unit.size;
-          target.tabs.push(...unit.tabs); 
-        }
+      currentCount -= unit.size;
+      source.tabCount = currentCount;
+
+      if (target !== 'new') {
+        this.applyToSim(target, unit);
       }
     }
   }
 
-  private planConsolidation(target: WindowState, allWindows: WindowState[], moves: MoveOperation[], doomedWindows: Set<number>) {
-    // ... logic same ...
-    
+  private planConsolidation(
+    target: WindowState,
+    allWindows: WindowState[],
+    moves: MoveOperation[],
+    doomedWindows: Set<number>
+  ) {
     const units = this.getMoveableUnits(target);
-    
-    // Try to empty this window
+    const proposed: Array<{ op: MoveOperation; dest: WindowState; unit: MoveableUnit }> = [];
     let fullyMoved = true;
-    const proposedMoves: MoveOperation[] = [];
-    
+
     for (const unit of units) {
-        const dest = this.findBestTarget(unit, allWindows, target, doomedWindows);
-        
-        // Ensure we don't merge into a doomed window (already checked via doomedWindows passing?)
-        // findBestTarget should check doomedWindows.
-        
-        if (!dest || dest === 'new') {
-            // If the only option is 'new', we aren't really complying with "minimize window count" by closing one to open another.
-             fullyMoved = false;
-             break;
-        }
-        
-        proposedMoves.push({
-             tabIds: unit.tabIds,
-             targetWindowId: dest.id,
-             groupId: unit.groupId !== -1 ? unit.groupId : undefined
-        });
+      const dest = this.findBestTarget(unit, allWindows, target, doomedWindows);
+      // Emptying this window only to open a new one does not reduce the window count.
+      if (!dest || dest === 'new') {
+        fullyMoved = false;
+        break;
+      }
+
+      proposed.push({
+        op: {
+          tabIds: unit.tabIds,
+          targetWindowId: dest.id,
+          groupId: unit.groupId !== -1 ? unit.groupId : undefined
+        },
+        dest,
+        unit
+      });
     }
 
-    if (fullyMoved && proposedMoves.length > 0) {
-        moves.push(...proposedMoves);
-        doomedWindows.add(target.id);
-        target.tabCount = 0; 
-        
-        for (const pm of proposedMoves) {
-             const dest = allWindows.find(w => w.id === pm.targetWindowId);
-             if (dest) {
-                 dest.tabCount += pm.tabIds.length;
-             }
-        }
-        return; 
+    if (fullyMoved && proposed.length > 0) {
+      for (const { op, dest, unit } of proposed) {
+        moves.push(op);
+        this.applyToSim(dest, unit);
+      }
+      doomedWindows.add(target.id);
+      target.tabCount = 0;
+      return;
     }
 
     this.refillWindow(target, allWindows, moves, doomedWindows);
   }
 
-  private refillWindow(target: WindowState, allWindows: WindowState[], moves: MoveOperation[], doomedWindows: Set<number>) {
-    // ...
-    // ...
-    // Note: Don't take from doomed windows.
-    // Logic below handles it? 
-    // "const donors = allWindows.filter(...)" - Yes, I updated filter previously.
-    // Just ensuring we pass doomedWindows down or check it.
-    
+  private refillWindow(
+    target: WindowState,
+    allWindows: WindowState[],
+    moves: MoveOperation[],
+    doomedWindows: Set<number>
+  ) {
     let needed = this.config.minTabs - target.tabCount;
     if (needed <= 0) return;
 
-    const donors = allWindows.filter(w => w.id !== target.id && !doomedWindows.has(w.id) && w.tabCount > this.config.minTabs);
-    
+    const donors = allWindows.filter(
+      w => w.id !== target.id && !doomedWindows.has(w.id) && w.tabCount > this.config.minTabs
+    );
+
     for (const donor of donors) {
       if (needed <= 0) break;
-      
-      const units = this.getMoveableUnits(donor);
-      const matchingUnits = units.filter(u => u.domain && this.hasDomain(target, u.domain));
-      
+
+      const matchingUnits = this.getMoveableUnits(donor).filter(
+        u => u.domain && target.domains.has(u.domain)
+      );
+
       for (const unit of matchingUnits) {
         if (needed <= 0) break;
-        if (donor.tabCount - unit.size < this.config.minTabs) continue; 
+        if (donor.tabCount - unit.size < this.config.minTabs) continue;
 
         moves.push({
           tabIds: unit.tabIds,
           targetWindowId: target.id,
           groupId: unit.groupId !== -1 ? unit.groupId : undefined
         });
-        
-        target.tabCount += unit.size;
-        target.tabs.push(...unit.tabs);
+
+        this.applyToSim(target, unit);
         donor.tabCount -= unit.size;
         needed -= unit.size;
       }
     }
   }
 
+  // A unit is the smallest thing worth moving as a whole: a tab group, or all the
+  // loose tabs sharing a base domain. Pinned tabs are never moved.
   private getMoveableUnits(window: WindowState): MoveableUnit[] {
     const units: MoveableUnit[] = [];
-    const processedTabs = new Set<number>();
+    const claimed = new Set<number>();
+    const movable = window.tabs.filter(t => t.id !== undefined && !t.pinned);
 
-    // 1. Groups
-    // ...
-
-    // 2. Loose Tabs
-    // update logic to use extractBaseDomain for looseByDomain grouping
-    
     if (this.config.respectGrouping) {
       const groups = new Map<number, TabInfo[]>();
-      for (const tab of window.tabs) {
-        if (tab.groupId && tab.groupId !== -1) {
-          if (!groups.has(tab.groupId)) groups.set(tab.groupId, []);
-          groups.get(tab.groupId)!.push(tab);
-        }
+      for (const tab of movable) {
+        if (tab.groupId === undefined || tab.groupId === -1) continue;
+        if (!groups.has(tab.groupId)) groups.set(tab.groupId, []);
+        groups.get(tab.groupId)!.push(tab);
       }
 
       for (const [groupId, groupTabs] of groups) {
-        const validTabs = groupTabs.filter(t => t.id !== undefined);
-        if (validTabs.length === 0) continue;
         units.push({
-          tabIds: validTabs.map(t => t.id as number),
-          tabs: validTabs,
-          domain: this.getDominantDomain(validTabs), 
-          groupId: groupId,
-          size: validTabs.length
+          tabIds: groupTabs.map(t => t.id as number),
+          tabs: groupTabs,
+          domain: this.getDominantDomain(groupTabs),
+          groupId,
+          size: groupTabs.length
         });
-        validTabs.forEach(t => processedTabs.add(t.id as number));
+        groupTabs.forEach(t => claimed.add(t.id as number));
       }
     }
 
-    const backendLooseTabs = window.tabs.filter(t => t.id !== undefined && !processedTabs.has(t.id));
     const looseByDomain = new Map<string, TabInfo[]>();
-    const looseMisc: TabInfo[] = [];
+    for (const tab of movable) {
+      if (claimed.has(tab.id as number)) continue;
+      const domain = tab.url ? extractBaseDomain(tab.url) : null;
 
-    for (const tab of backendLooseTabs) {
-        const d = tab.url ? extractBaseDomain(tab.url) : null; // Use Base Domain
-        if (d) {
-            if (!looseByDomain.has(d)) looseByDomain.set(d, []);
-            looseByDomain.get(d)!.push(tab);
-        } else {
-            looseMisc.push(tab);
-        }
+      if (domain) {
+        if (!looseByDomain.has(domain)) looseByDomain.set(domain, []);
+        looseByDomain.get(domain)!.push(tab);
+      } else {
+        units.push({ tabIds: [tab.id as number], tabs: [tab], domain: null, groupId: -1, size: 1 });
+      }
     }
-    
-    // ... (rest is same-ish)
+
     for (const [domain, tabs] of looseByDomain) {
-        const validTabs = tabs.filter(t => t.id !== undefined);
-        if (validTabs.length === 0) continue;
-        units.push({
-            tabIds: validTabs.map(t => t.id as number),
-            tabs: validTabs,
-            domain: domain,
-            groupId: -1,
-            size: validTabs.length
-        });
-    }
-
-    for (const tab of looseMisc) {
-        if (tab.id === undefined) continue;
-        units.push({
-            tabIds: [tab.id],
-            tabs: [tab],
-            domain: null,
-            groupId: -1,
-            size: 1
-        });
+      units.push({
+        tabIds: tabs.map(t => t.id as number),
+        tabs,
+        domain,
+        groupId: -1,
+        size: tabs.length
+      });
     }
 
     return units;
   }
 
-  private findBestTarget(unit: MoveableUnit, allWindows: WindowState[], source: WindowState, doomedWindows: Set<number>): WindowState | 'new' | null {
-    // 1. Matching domain AND has space
-    const matchAndFits = allWindows.find(w => 
-      w.id !== source.id && 
-      !doomedWindows.has(w.id) &&
-      unit.domain && 
-      this.hasDomain(w, unit.domain) &&
-      w.tabCount + unit.size <= this.config.maxTabs
-    );
-
-    if (matchAndFits) return matchAndFits;
-
-    // 2. If we have a matching domain window but it's FULL, we prefer opening a NEW window 
-    // rather than dumping into a generic window?
-    // Actually, "Best Fit" (fill under-utilized windows) is good for reducing window count.
-    
-    // 3. Best fit (not doomed, has space)
-    // We prefer windows that are relatively empty (closest to minTabs?) or just any that fits?
-    // Any that fits is fine.
-    const bestFit = allWindows.find(w => 
-        w.id !== source.id && 
+  private findBestTarget(
+    unit: MoveableUnit,
+    allWindows: WindowState[],
+    source: WindowState,
+    doomedWindows: Set<number>
+  ): WindowState | 'new' | null {
+    const fits = allWindows.filter(
+      w =>
+        w.id !== source.id &&
         !doomedWindows.has(w.id) &&
         w.tabCount + unit.size <= this.config.maxTabs
     );
 
-    // Only use best fit if we aren't creating a "mess" of domains?
-    // Use best fit if the unit is small/misc.
-    if (bestFit) return bestFit;
+    if (fits.length === 0) return 'new';
 
-    return 'new';
-  }
+    // Prefer a window that already holds this domain; among candidates take the
+    // emptiest, which spreads load instead of piling onto whichever window came first.
+    const byEmptiest = (a: WindowState, b: WindowState) => a.tabCount - b.tabCount;
 
-  // update hasDomain to use base domain
-  private hasDomain(window: WindowState, domain: string): boolean {
-      if (window.primaryDomain === domain) return true;
-      return window.tabs.some(t => t.url && extractBaseDomain(t.url) === domain);
+    if (unit.domain) {
+      const domainMatches = fits.filter(w => w.domains.has(unit.domain as string));
+      if (domainMatches.length > 0) {
+        return domainMatches.sort(byEmptiest)[0];
+      }
+    }
+
+    return fits.sort(byEmptiest)[0];
   }
 
   private async executeMoves(moves: MoveOperation[]) {
-    // Process 'new' windows first to get IDs?
-    // Process existing target moves.
-    
+    if (moves.length === 0) return;
+
+    // Moving a tab to another window drops its group, so read the title and colour
+    // before anything moves and re-apply them afterwards.
+    const groupMeta = new Map<number, { title?: string; color: chrome.tabGroups.ColorEnum }>();
+    if (this.config.respectGrouping) {
+      for (const move of moves) {
+        if (move.groupId === undefined || groupMeta.has(move.groupId)) continue;
+        try {
+          const group = await chrome.tabGroups.get(move.groupId);
+          groupMeta.set(move.groupId, { title: group.title, color: group.color });
+        } catch {
+          // Group no longer exists — nothing to restore.
+        }
+      }
+    }
+
     const movesByTarget = new Map<number | 'new', MoveOperation[]>();
-    for (const m of moves) {
-        if (!movesByTarget.has(m.targetWindowId)) movesByTarget.set(m.targetWindowId, []);
-        movesByTarget.get(m.targetWindowId)!.push(m);
+    for (const move of moves) {
+      if (!movesByTarget.has(move.targetWindowId)) movesByTarget.set(move.targetWindowId, []);
+      movesByTarget.get(move.targetWindowId)!.push(move);
     }
 
     for (const [targetId, ops] of movesByTarget) {
-        const allTabIds = ops.flatMap(o => o.tabIds);
-        if (allTabIds.length === 0) continue;
+      const allTabIds = ops.flatMap(o => o.tabIds);
+      if (allTabIds.length === 0) continue;
 
-        let finalTargetId: number;
+      let finalTargetId: number;
 
+      try {
         if (targetId === 'new') {
-            // Create window with first tab
-            const firstTab = allTabIds[0];
-            const created = await chrome.windows.create({ tabId: firstTab });
-            if (!created || !created.id) continue;
-            finalTargetId = created.id;
-            
-            // Move rest
-            const remaining = allTabIds.slice(1);
-            if (remaining.length > 0) {
-                await chrome.tabs.move(remaining, { windowId: finalTargetId, index: -1 });
-            }
-        } else {
-             finalTargetId = targetId as number;
-             await chrome.tabs.move(allTabIds, { windowId: finalTargetId, index: -1 });
-        }
+          const created = await chrome.windows.create({ tabId: allTabIds[0] });
+          if (!created?.id) continue;
+          finalTargetId = created.id;
 
-        // Restore groups?
-        if (this.config.respectGrouping) {
-            // Re-group tabs that were grouped
-            for (const op of ops) {
-                if (op.groupId !== undefined && op.groupId !== -1) {
-                    try {
-                         await chrome.tabs.group({ tabIds: op.tabIds });
-                    } catch (e) {
-                        console.error("Failed to regroup", e);
-                    }
-                }
-            }
+          const remaining = allTabIds.slice(1);
+          if (remaining.length > 0) {
+            await chrome.tabs.move(remaining, { windowId: finalTargetId, index: -1 });
+          }
+        } else {
+          finalTargetId = targetId;
+          await chrome.tabs.move(allTabIds, { windowId: finalTargetId, index: -1 });
         }
+      } catch (e) {
+        console.error('Failed to move tabs:', e);
+        continue;
+      }
+
+      if (!this.config.respectGrouping) continue;
+
+      for (const op of ops) {
+        if (op.groupId === undefined) continue;
+        try {
+          const newGroupId = await chrome.tabs.group({
+            tabIds: op.tabIds,
+            createProperties: { windowId: finalTargetId }
+          });
+          const meta = groupMeta.get(op.groupId);
+          if (meta) {
+            await chrome.tabGroups.update(newGroupId, { title: meta.title, color: meta.color });
+          }
+        } catch (e) {
+          console.error('Failed to restore tab group after move:', e);
+        }
+      }
     }
   }
 
   async groupAll() {
-      await this.autoGroupTabs();
+    await groupAllByDomain();
   }
 
   async ungroupAll() {
-      const windows = await getAllWindows();
-      for (const win of windows) {
-          if (win.type !== 'normal' || !win.tabs) continue;
-          
-          const tabIds = win.tabs.map(t => t.id).filter((id): id is number => id !== undefined);
-          if (tabIds.length > 0) {
-              try {
-                  await chrome.tabs.ungroup(tabIds);
-              } catch (e) {
-                  console.error("Ungroup failed for window " + win.id, e);
-              }
-          }
-      }
-  }
-
-  private async autoGroupTabs() {
-      const windows = await getAllWindows();
-      for (const win of windows) {
-          if (win.type !== 'normal' || !win.tabs) continue;
-          
-          const byDomain = new Map<string, number[]>();
-          for (const tab of win.tabs) {
-              if (tab.url && tab.id !== undefined) {
-                  const d = extractDomain(tab.url);
-                  if (d) {
-                    if (!byDomain.has(d)) byDomain.set(d, []);
-                    byDomain.get(d)!.push(tab.id);
-                  }
-              }
-          }
-
-          for (const [domain, tabIds] of byDomain.entries()) {
-              if (tabIds.length >= 2) {
-                  try {
-                    const groupId = await chrome.tabs.group({ tabIds: tabIds });
-                    // Optional: could set title here if needed
-                    // await chrome.tabGroups.update(groupId, { title: domain });
-                  } catch (e) {
-                      console.error("Auto-group failed", e);
-                  }
-              }
-          }
-      }
+    await ungroupAll();
   }
 }

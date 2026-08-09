@@ -1,6 +1,34 @@
 // Tab list component
-import { normalizeUrl } from '../../shared/url-utils.js';
+import { normalizeUrl, isChromeInternalUrl } from '../../shared/url-utils.js';
 import { bulkBookmarkTabs } from '../../shared/bookmark-utils.js';
+import { confirmDialog, promptDialog, showToast } from '../../shared/dialogs.js';
+
+const GROUP_COLOR_HEX: Record<chrome.tabGroups.ColorEnum, string> = {
+  grey: '#5f6368',
+  blue: '#1a73e8',
+  red: '#d93025',
+  yellow: '#f9ab00',
+  green: '#188038',
+  pink: '#d01884',
+  purple: '#9334e6',
+  cyan: '#007b83',
+  orange: '#fa903e'
+};
+
+// Chrome's own favicon cache: avoids a live request to each third-party origin
+// (and the browsing-data leak that comes with it).
+function faviconUrl(pageUrl: string, size = 32): string {
+  const url = new URL(chrome.runtime.getURL('/_favicon/'));
+  url.searchParams.set('pageUrl', pageUrl);
+  url.searchParams.set('size', String(size));
+  return url.toString();
+}
+
+const FALLBACK_ICON =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect fill="#c4c7c5" width="16" height="16" rx="3"/></svg>'
+  );
 
 export class TabList {
   private container: HTMLElement | null;
@@ -12,6 +40,8 @@ export class TabList {
   private showCheckboxes: boolean = true;
   private selectedWindows: Set<number> = new Set();
   private windowSelectionCallbacks: Array<(selectedWindowIds: number[]) => void> = [];
+  private collapsedGroups: Set<number | string> = new Set();
+  private tabGroups: Map<number, chrome.tabGroups.TabGroup> = new Map();
 
   constructor() {
     this.container = document.getElementById('tabs-container');
@@ -26,14 +56,19 @@ export class TabList {
     this.showCheckboxes = enabled;
   }
 
+  setTabGroups(groups: chrome.tabGroups.TabGroup[]) {
+    this.tabGroups = new Map(groups.map(g => [g.id, g]));
+  }
+
   render(groups: Map<number | string, chrome.tabs.Tab[]>, viewMode: 'list' | 'compact' | 'grid') {
     if (!this.container) return;
     
-    // Clean up
-    const existingTooltips = document.querySelectorAll('.tab-tooltip');
-    existingTooltips.forEach(tooltip => tooltip.remove());
-    
     this.container.innerHTML = '';
+
+    if (groups.size === 0) {
+      this.container.appendChild(this.createEmptyState());
+      return;
+    }
     
     const fragment = document.createDocumentFragment();
     
@@ -43,6 +78,22 @@ export class TabList {
     }
     
     this.container.appendChild(fragment);
+  }
+
+  private createEmptyState(): HTMLElement {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+
+    const title = document.createElement('div');
+    title.className = 'empty-state-title';
+    title.textContent = 'No tabs match';
+
+    const hint = document.createElement('div');
+    hint.className = 'empty-state-hint';
+    hint.textContent = 'Try clearing the search box or the active filters.';
+
+    empty.append(title, hint);
+    return empty;
   }
 
   private createGroup(key: number | string, tabs: chrome.tabs.Tab[], viewMode: string): HTMLElement {
@@ -94,11 +145,11 @@ export class TabList {
     
     // Add collapse indicator
     const arrow = document.createElement('span');
-    arrow.textContent = '▼ ';
-    arrow.style.transition = 'transform 0.2s';
+    arrow.className = 'collapse-arrow';
+    arrow.textContent = '\u25BC';
     
     const displayTitle = typeof key === 'number' ? `Window ${key}` : `${key}`;
-    const titleText = document.createTextNode(`${displayTitle} (${tabs.length})`);
+    const titleText = document.createTextNode(` ${displayTitle} (${tabs.length})`);
 
     title.appendChild(arrow);
     title.appendChild(titleText);
@@ -108,33 +159,48 @@ export class TabList {
     
     // Only show window-specific actions if key is a window ID (number)
     if (typeof key === 'number') {
-        const bookmarkBtn = this.createButton('★', async () => {
-          // ... (existing bookmark logic)
-          // Simplified for brevity of replacement, assuming reused logic context
-           try {
-            const bookmarkableTabs = tabs.filter(t => t.url && !t.url.startsWith('chrome://'));
-            if (bookmarkableTabs.length === 0) return;
-            const defaultName = `Window ${key} (${bookmarkableTabs.length} tabs)`;
-            const name = prompt(`Bookmark tabs?`, defaultName);
-            if (name) {
-              await bulkBookmarkTabs(bookmarkableTabs, name);
+        const bookmarkBtn = this.createButton('\u2605', async () => {
+          try {
+            const bookmarkableTabs = tabs.filter(t => t.url && !isChromeInternalUrl(t.url));
+            if (bookmarkableTabs.length === 0) {
+              showToast('No bookmarkable tabs in this window', 'error');
+              return;
             }
-          } catch (e) { console.error(e); }
+            const name = await promptDialog({
+              title: 'Bookmark window',
+              message: `Save ${bookmarkableTabs.length} tabs into a new bookmark folder.`,
+              defaultValue: `Window ${key} (${bookmarkableTabs.length} tabs)`,
+              confirmLabel: 'Bookmark'
+            });
+            if (!name) return;
+            const saved = await bulkBookmarkTabs(bookmarkableTabs, name);
+            showToast(`Bookmarked ${saved.length} tabs to "${name}"`, 'success');
+          } catch (e) {
+            console.error('Failed to bookmark window:', e);
+            showToast('Failed to bookmark window', 'error');
+          }
         });
+        bookmarkBtn.title = 'Bookmark all tabs in this window';
         actions.appendChild(bookmarkBtn);
 
-        const closeBtn = this.createButton('✕', async () => {
-          if(confirm('Close window?')) await chrome.windows.remove(key);
+        const closeBtn = this.createButton('\u2715', async () => {
+          const ok = await confirmDialog({
+            title: 'Close window?',
+            message: `${tabs.length} tab(s) will be closed.`,
+            confirmLabel: 'Close window',
+            danger: true
+          });
+          if (ok) await chrome.windows.remove(key);
         });
+        closeBtn.title = 'Close this window';
         actions.appendChild(closeBtn);
     } else {
         // Group Actions (e.g. for Domain groups)
         const newGroupBtn = this.createButton('New Group', async () => {
-             const ids = tabs.map(t => t.id).filter(id => id !== undefined) as number[];
-             if (ids.length > 0) {
-                 const groupId = await chrome.tabs.group({ tabIds: ids });
-                 await chrome.tabGroups.update(groupId, { title: String(key) });
-             }
+             const ids = tabs.map(t => t.id).filter((id): id is number => id !== undefined);
+             if (ids.length === 0) return;
+             const groupId = await chrome.tabs.group({ tabIds: ids });
+             await chrome.tabGroups.update(groupId, { title: String(key) });
         });
         actions.appendChild(newGroupBtn);
     }
@@ -175,12 +241,21 @@ export class TabList {
     group.appendChild(tabList);
     
     // Toggle Collapse - set up after tabList is created
-    title.style.cursor = 'pointer';
+    const applyCollapsed = (collapsed: boolean) => {
+        tabList.classList.toggle('collapsed', collapsed);
+        arrow.classList.toggle('collapsed', collapsed);
+    };
+    applyCollapsed(this.collapsedGroups.has(key));
+
     title.onclick = (e) => {
         e.stopPropagation();
-        const isHidden = tabList.style.display === 'none';
-        tabList.style.display = isHidden ? '' : 'none';
-        arrow.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+        const collapsed = !this.collapsedGroups.has(key);
+        applyCollapsed(collapsed);
+        if (collapsed) {
+          this.collapsedGroups.add(key);
+        } else {
+          this.collapsedGroups.delete(key);
+        }
     };
     
     return group;
@@ -239,13 +314,13 @@ export class TabList {
       };
     }
     
-    // Favicon - use a visible default
+    // Favicon - served from Chrome's cache rather than the page's own origin
     const favicon = document.createElement('img');
     favicon.className = 'tab-favicon';
-    const defaultIcon = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect fill="%23ccc" width="16" height="16" rx="2"/></svg>');
-    favicon.src = tab.favIconUrl || defaultIcon;
+    favicon.alt = '';
+    favicon.src = tab.url ? faviconUrl(tab.url) : FALLBACK_ICON;
     favicon.onerror = () => {
-      favicon.src = defaultIcon;
+      favicon.src = FALLBACK_ICON;
     };
     
     // Tab info
@@ -292,6 +367,11 @@ export class TabList {
     // Badges
     const badges = document.createElement('div');
     badges.className = 'tab-badges';
+
+    const group = tab.groupId !== undefined ? this.tabGroups.get(tab.groupId) : undefined;
+    if (group) {
+      badges.appendChild(this.createGroupChip(group));
+    }
     
     if (tab.audible) {
       badges.appendChild(this.createBadge('🔊', 'audible'));
@@ -348,6 +428,16 @@ export class TabList {
     return badge;
   }
 
+  private createGroupChip(group: chrome.tabGroups.TabGroup): HTMLElement {
+    const chip = document.createElement('span');
+    chip.className = 'badge group-chip';
+    chip.style.background = GROUP_COLOR_HEX[group.color] ?? GROUP_COLOR_HEX.grey;
+    chip.textContent = group.title || '';
+    chip.title = `Tab group: ${group.title || 'Untitled'}`;
+    if (!group.title) chip.classList.add('group-chip-dot');
+    return chip;
+  }
+
   private createButton(text: string, onClick: () => void): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.className = 'window-btn';
@@ -387,6 +477,11 @@ export class TabList {
 
   getSelectedWindows(): number[] {
     return Array.from(this.selectedWindows);
+  }
+
+  clearSelection() {
+    this.selectedTabs.clear();
+    this.notifySelectionChange();
   }
 
   clearWindowSelection() {

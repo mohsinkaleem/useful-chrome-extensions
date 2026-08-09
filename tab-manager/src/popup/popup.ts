@@ -1,9 +1,10 @@
 // Main popup script
 import { TabBalancer } from '../shared/tab-balancer.js';
 import { TabEventManager, getAllTabs, getTabsByWindow } from '../shared/tab-utils.js';
-import { findDuplicatesByUrl, getDuplicateGroups, normalizeUrl } from '../shared/url-utils.js';
+import { findDuplicatesByUrl, getDuplicateGroups, normalizeUrl, isChromeInternalUrl } from '../shared/url-utils.js';
 import { bulkBookmarkTabs } from '../shared/bookmark-utils.js';
 import { mergeSelectedWindows } from '../shared/window-utils.js';
+import { confirmDialog, promptDialog, showToast } from '../shared/dialogs.js';
 import { TabList } from './components/TabList.js';
 import { SearchBar, SearchFilters } from './components/SearchBar.js';
 import { QuickActions } from './components/QuickActions.js';
@@ -25,6 +26,7 @@ class TabManagerApp {
   private currentFilters: SearchFilters | null = null;
   private balancer: TabBalancer;
   private isRendering: boolean = false;
+  private pendingRender: boolean = false;
 
   constructor() {
     this.tabEventManager = new TabEventManager();
@@ -77,7 +79,6 @@ class TabManagerApp {
     document.getElementById('open-sidepanel')?.addEventListener('click', async () => {
        const win = await chrome.windows.getCurrent();
        if (win.id) {
-           // @ts-ignore
            await chrome.sidePanel.open({ windowId: win.id });
            window.close();
        }
@@ -119,14 +120,9 @@ class TabManagerApp {
 
     // Window selection changes
     this.tabList.onWindowSelectionChange((selectedWindowIds) => {
-      const mergeBtn = document.getElementById('merge-windows-btn');
-      if (mergeBtn) {
-        if (selectedWindowIds.length >= 2) {
-          mergeBtn.style.display = 'inline-block';
-        } else {
-          mergeBtn.style.display = 'none';
-        }
-      }
+      document
+        .getElementById('merge-windows-btn')
+        ?.classList.toggle('hidden', selectedWindowIds.length < 2);
     });
 
     // Merge windows button
@@ -166,61 +162,69 @@ class TabManagerApp {
         await chrome.tabs.update(tabId, { active: true });
       } catch (e) {
         console.error('Failed to switch tab:', e);
-        alert('Failed to switch to tab. The window may have been closed.');
+        showToast('Could not switch to that tab — the window may have been closed', 'error');
       }
     });
 
     // Balance Windows
     document.getElementById('action-balance-windows')?.addEventListener('click', async () => {
-      const msg = "Start balancing windows?\n\nThis will rearrange tabs to respect <10 and >30 limits, consolidating small windows.";
-      
-      if (!confirm(msg)) return;
+      const { minTabs, maxTabs } = this.balancer.getConfig();
+      const ok = await confirmDialog({
+        title: 'Balance windows?',
+        message: `Tabs will be rearranged so each window holds between ${minTabs} and ${maxTabs} tabs. Small windows are consolidated and tab groups are preserved.`,
+        confirmLabel: 'Balance'
+      });
+      if (!ok) return;
        
-      const btn = document.getElementById('action-balance-windows');
-      const originalText = btn?.textContent || '⚖️';
-      if (btn) {
-          btn.textContent = '...';
-          (btn as HTMLButtonElement).disabled = true;
-      }
+      const btn = document.getElementById('action-balance-windows') as HTMLButtonElement | null;
+      if (btn) btn.disabled = true;
 
       try {
-        await this.balancer.balanceWindows();
+        const moved = await this.balancer.balanceWindows();
+        showToast(moved > 0 ? `Rebalanced ${moved} tabs` : 'Windows are already balanced', 'success');
       } catch (e) {
-        console.error("Balance error:", e);
-        alert("An error occurred while balancing windows.");
+        console.error('Balance error:', e);
+        showToast('Failed to balance windows', 'error');
       } finally {
-        if (btn) {
-            btn.textContent = originalText;
-            (btn as HTMLButtonElement).disabled = false;
-        }
+        if (btn) btn.disabled = false;
       }
     });
 
     // Group All
     document.getElementById('action-group-all')?.addEventListener('click', async () => {
-      const btn = document.getElementById('action-group-all');
-      if (btn) (btn as HTMLButtonElement).disabled = true;
+      const btn = document.getElementById('action-group-all') as HTMLButtonElement | null;
+      if (btn) btn.disabled = true;
       try {
         await this.balancer.groupAll();
+        showToast('Grouped ungrouped tabs by domain', 'success');
       } catch (e) {
-        console.error("Grouping error:", e);
+        console.error('Grouping error:', e);
+        showToast('Failed to group tabs', 'error');
       } finally {
-        if (btn) (btn as HTMLButtonElement).disabled = false;
+        if (btn) btn.disabled = false;
       }
     });
 
     // Ungroup All
     document.getElementById('action-ungroup-all')?.addEventListener('click', async () => {
-      if (!confirm("Ungroup ALL tabs in all windows?")) return;
+      const ok = await confirmDialog({
+        title: 'Ungroup all tabs?',
+        message: 'Every tab group in every window will be dissolved.',
+        confirmLabel: 'Ungroup all',
+        danger: true
+      });
+      if (!ok) return;
       
-      const btn = document.getElementById('action-ungroup-all');
-      if (btn) (btn as HTMLButtonElement).disabled = true;
+      const btn = document.getElementById('action-ungroup-all') as HTMLButtonElement | null;
+      if (btn) btn.disabled = true;
       try {
         await this.balancer.ungroupAll();
+        showToast('All tab groups removed', 'success');
       } catch (e) {
-        console.error("Ungrouping error:", e);
+        console.error('Ungrouping error:', e);
+        showToast('Failed to ungroup tabs', 'error');
       } finally {
-        if (btn) (btn as HTMLButtonElement).disabled = false;
+        if (btn) btn.disabled = false;
       }
     });
 
@@ -233,29 +237,29 @@ class TabManagerApp {
     document.getElementById('action-bookmark-all')?.addEventListener('click', async () => {
       try {
         const allTabs = await getAllTabs();
-        const bookmarkableTabs = allTabs.filter(t => t.url && !t.url.startsWith('chrome://'));
+        const bookmarkableTabs = allTabs.filter(t => t.url && !isChromeInternalUrl(t.url));
         
         if (bookmarkableTabs.length === 0) {
-          alert('No tabs available to bookmark.');
+          showToast('No tabs available to bookmark', 'error');
           return;
         }
         
         const tabsByWindow = await getTabsByWindow();
         const windowCount = tabsByWindow.size;
         
-        const defaultName = `All Tabs (${windowCount} windows) - ${new Date().toLocaleDateString()}`;
-        const name = prompt(
-          `Bookmark ${bookmarkableTabs.length} tabs from ${windowCount} window(s)?\n\nEnter folder name:`,
-          defaultName
-        );
+        const name = await promptDialog({
+          title: 'Bookmark all tabs',
+          message: `Save ${bookmarkableTabs.length} tabs from ${windowCount} window(s) into a new folder.`,
+          defaultValue: `All Tabs (${windowCount} windows) - ${new Date().toLocaleDateString()}`,
+          confirmLabel: 'Bookmark'
+        });
         
-        if (name) {
-          const bookmarks = await bulkBookmarkTabs(bookmarkableTabs, name);
-          alert(`✅ Successfully bookmarked ${bookmarks.length} tabs from ${windowCount} window(s) to folder "${name}"`);
-        }
+        if (!name) return;
+        const bookmarks = await bulkBookmarkTabs(bookmarkableTabs, name);
+        showToast(`Bookmarked ${bookmarks.length} tabs to "${name}"`, 'success');
       } catch (e) {
         console.error('Failed to bookmark all tabs:', e);
-        alert('❌ Failed to bookmark tabs. See console for details.');
+        showToast('Failed to bookmark tabs', 'error');
       }
     });
 
@@ -266,8 +270,11 @@ class TabManagerApp {
   }
 
   private async loadAndRenderTabs(searchQuery?: string, filters?: SearchFilters | null) {
-    // Prevent concurrent renders from fighting over DOM
-    if (this.isRendering) return;
+    // Coalesce concurrent renders so no update is silently dropped
+    if (this.isRendering) {
+      this.pendingRender = true;
+      return;
+    }
     this.isRendering = true;
     
     try {
@@ -333,12 +340,17 @@ class TabManagerApp {
     
     // Pass highlight info to TabList
     this.tabList.setDuplicateHighlight(this.highlightDuplicates, this.duplicateUrls);
+    this.tabList.setTabGroups(await chrome.tabGroups.query({}));
     this.tabList.render(filteredByWindow, this.currentView);
     
     // Update media controls
     this.mediaControls.update(tabs);
     } finally {
       this.isRendering = false;
+      if (this.pendingRender) {
+        this.pendingRender = false;
+        await this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
+      }
     }
   }
 
@@ -364,7 +376,7 @@ class TabManagerApp {
     document.getElementById(`view-${mode}`)?.classList.add('active');
     
     // Re-render
-    this.loadAndRenderTabs();
+    this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
   }
 
   private async handleQuickAction(action: string, tabs: number[]) {
@@ -372,6 +384,8 @@ class TabManagerApp {
       case 'close':
         await chrome.tabs.remove(tabs);
         this.selectedTabs.clear();
+        this.tabList.clearSelection();
+        showToast(`Closed ${tabs.length} tab(s)`, 'success');
         break;
       case 'bookmark':
         try {
@@ -379,7 +393,7 @@ class TabManagerApp {
           const selectedTabObjs = allTabs.filter(t => t.id && tabs.includes(t.id));
           
           if (selectedTabObjs.length === 0) {
-            alert('No tabs selected to bookmark.');
+            showToast('No tabs selected to bookmark', 'error');
             return;
           }
           
@@ -387,19 +401,19 @@ class TabManagerApp {
           const windowIds = new Set(selectedTabObjs.map(t => t.windowId).filter(Boolean));
           const windowCount = windowIds.size;
           
-          const defaultName = `Selected Tabs (${selectedTabObjs.length}) - ${new Date().toLocaleDateString()}`;
-          const name = prompt(
-            `Bookmark ${selectedTabObjs.length} selected tab(s) from ${windowCount} window(s)?\n\nEnter folder name:`,
-            defaultName
-          );
+          const name = await promptDialog({
+            title: 'Bookmark selected tabs',
+            message: `Save ${selectedTabObjs.length} tab(s) from ${windowCount} window(s) into a new folder.`,
+            defaultValue: `Selected Tabs (${selectedTabObjs.length}) - ${new Date().toLocaleDateString()}`,
+            confirmLabel: 'Bookmark'
+          });
           
-          if (name) {
-            const bookmarks = await bulkBookmarkTabs(selectedTabObjs, name);
-            alert(`✅ Successfully bookmarked ${bookmarks.length} tabs from ${windowCount} window(s) to folder "${name}"`);
-          }
+          if (!name) return;
+          const bookmarks = await bulkBookmarkTabs(selectedTabObjs, name);
+          showToast(`Bookmarked ${bookmarks.length} tabs to "${name}"`, 'success');
         } catch (e) {
           console.error('Failed to bookmark selected tabs:', e);
-          alert('❌ Failed to bookmark tabs. See console for details.');
+          showToast('Failed to bookmark tabs', 'error');
         }
         break;
       case 'group':
@@ -424,14 +438,28 @@ class TabManagerApp {
       const sorted = [...group.tabs].sort((a, b) => 
         (b.lastAccessed || 0) - (a.lastAccessed || 0)
       );
-      const duplicateIds = sorted.slice(1).map(t => t.id).filter(Boolean) as number[];
+      const duplicateIds = sorted
+        .slice(1)
+        .map(t => t.id)
+        .filter((id): id is number => id !== undefined);
       toClose.push(...duplicateIds);
     }
 
-    if (toClose.length > 0) {
-      if (!confirm(`Close ${toClose.length} duplicate tab(s)?`)) return;
-      await chrome.tabs.remove(toClose);
+    if (toClose.length === 0) {
+      showToast('No duplicate tabs found', 'info');
+      return;
     }
+
+    const ok = await confirmDialog({
+      title: `Close ${toClose.length} duplicate tab(s)?`,
+      message: 'The most recently used copy of each URL is kept.',
+      confirmLabel: 'Close duplicates',
+      danger: true
+    });
+    if (!ok) return;
+
+    await chrome.tabs.remove(toClose);
+    showToast(`Closed ${toClose.length} duplicate tab(s)`, 'success');
   }
 
   private async mergeSelectedWindows() {

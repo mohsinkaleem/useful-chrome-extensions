@@ -2,179 +2,204 @@
 
 ## Architecture Overview
 
-The extension follows a modular architecture with clear separation of concerns:
-
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Chrome Extension                         │
+│                    Chrome Extension (MV3)                   │
 ├─────────────────────────────────────────────────────────────┤
 │  Background (Service Worker)                                │
-│  ├── service-worker.ts    Context menus, event coordination│
-│  └── auto-grouper.ts      Rule-based tab grouping          │
+│  └── service-worker.ts     Context menus, badge, commands   │
 ├─────────────────────────────────────────────────────────────┤
 │  Popup / Side Panel                                         │
-│  ├── popup.ts             Main controller                   │
-│  ├── sidepanel.ts         Side panel controller (Chrome 114+)│
-│  └── components/          UI components (7 modules)         │
-├─────────────────────────────────────────────────────────────┤
-│  Content Script                                             │
-│  └── content-script.ts    Media control on specific sites  │
+│  ├── popup.ts              Popup controller                 │
+│  ├── sidepanel.ts          Side panel controller (Chrome 114+)│
+│  └── components/           UI components (5 modules)        │
 ├─────────────────────────────────────────────────────────────┤
 │  Shared Utilities                                           │
-│  ├── tab-utils.ts         Tab queries, events              │
-│  ├── url-utils.ts         URL normalization, duplicates    │
-│  └── bookmark-utils.ts    Bookmark operations              │
+│  ├── tab-utils.ts          Tab queries, debounced events    │
+│  ├── url-utils.ts          URL normalization, duplicates    │
+│  ├── grouping.ts           Domain + title-similarity grouping│
+│  ├── tab-balancer.ts       Window balancing                 │
+│  ├── bookmark-utils.ts     Bookmark operations              │
+│  ├── window-utils.ts       Window merging                   │
+│  └── dialogs.ts            In-page confirm/prompt/toast     │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+There is **no content script layer**. Media control is done with `chrome.tabs.update({ muted })`, so the extension declares no host permissions and injects nothing into pages.
 
 ## Component Details
 
 ### Background Layer
 
 #### service-worker.ts
-- Initializes on extension install
-- Creates context menu items
-- Handles context menu clicks
-- Forwards tab events to AutoGrouper
-- Keeps service worker alive via message listener
+- Creates the three context menu items on install
+- Handles context menu clicks: close duplicates, bookmark tab, group by domain
+- Maintains the action badge tab count (debounced 200 ms), recomputed on `onStartup` because badge text does not survive a browser restart
+- Handles the `open_side_panel` command
+- Sets `sidePanel.setPanelBehavior({ openPanelOnActionClick: false })` so the toolbar icon still opens the popup
 
-#### auto-grouper.ts
-- Manages grouping rules (stored in `chrome.storage.sync`)
-- Supports three rule types: `domain`, `pattern`, `keyword`
-- Waits for initialization before processing tabs (fixes race condition)
-- Default rules: YouTube (red), GitHub (grey), Google Docs (blue), Gmail (yellow)
+The service worker registers **no** `chrome.runtime.onMessage` listener. Message-pinging does not keep an MV3 worker alive, and an unconditional `return true` leaks the response port for every message in the extension.
 
 ### Popup Layer
 
 #### popup.ts (Main Controller)
 - Coordinates all UI components
-- Manages view modes (list/compact/grid)
-- Handles tab selection state
-- Orchestrates search, filtering, and duplicate detection
+- Manages view modes (list/compact/grid) — switching preserves the active search and filters
+- Owns tab selection state and clears both its own and `TabList`'s copy after a bulk close
+- Coalesces renders: a tab event arriving during a render sets `pendingRender` and one follow-up render runs in the `finally` block
 
 #### sidepanel.ts (Side Panel Controller)
-- Persistent side panel interface (Chrome 114+)
-- Two view modes: **By Window** or **By Domain**
-- Shares components with popup (TabList, SearchBar)
-- Real-time duplicate highlighting
-- Auto-grouping integration via ✨ button
-- Dark mode with persistent theme storage
-- Automatically updates on tab changes
+- Persistent side panel (Chrome 114+)
+- Two view modes: **By Window** or **By Domain** (domain view sorted by tab count)
+- Shares `TabList` and `SearchBar` with the popup
+- Calls `groupAllBySimilarity()` from `shared/grouping.ts` directly — it does not instantiate any background-layer class
 
 #### Components
 
 | Component | Responsibility |
 |-----------|----------------|
-| `TabList.ts` | Renders tabs grouped by window, tooltips, selection |
-| `SearchBar.ts` | Search input with debounce, filter checkboxes |
-| `QuickActions.ts` | Close/bookmark/group buttons for selected tabs |
-| `MediaControls.ts` | Playing tabs list with mute/navigation |
-| `SessionManager.ts` | Modal for save/restore sessions |
+| `TabList.ts` | Renders tabs by window or domain, selection, collapse state, drag & drop, group chips |
+| `SearchBar.ts` | Search input with 300 ms debounce, filter checkboxes |
+| `QuickActions.ts` | Close/bookmark/group buttons, enabled only with a selection |
+| `MediaControls.ts` | Audible tab list with mute and jump-to-tab |
+| `SessionManager.ts` | Modal for saving and restoring sessions |
 
-### Content Script
-
-#### content-script.ts
-- **Only injected on media sites** (YouTube, Spotify, Twitch, SoundCloud, Vimeo, Netflix)
-- Listens for `stopMedia` message
-- Pauses all `<video>` and `<audio>` elements
-- Special handling for YouTube and Spotify players
+`TabList` keeps `collapsedGroups` across renders, so a group the user collapsed stays collapsed when the debounced re-render fires.
 
 ### Shared Utilities
 
 #### tab-utils.ts
 ```typescript
-// Key exports:
-getAllTabs()              // Get all tabs across windows
-getTabsByWindow()         // Get tabs grouped by window ID
-getActiveTab()            // Get currently focused tab
+getAllTabs()              // All tabs across all windows
+getAllWindows()           // All windows with tabs populated
+getTabsByWindow()         // Map<windowId, TabInfo[]>
 TabEventManager           // Debounced tab event listener
 ```
 
-**TabEventManager** - Debounced event handling:
-- 150ms debounce prevents UI thrashing
-- Only triggers on meaningful changes (status, title, url, audible, pinned, discarded)
-- Ignores noisy events like favicon updates
-
-**estimateTabMemory()** - Centralized memory estimation:
-- Base: 30MB for active tabs, 5MB for discarded
-- Bonuses by domain: YouTube (+150MB), Meet/Zoom (+200MB), Gmail (+80MB), etc.
-- Bonuses by state: active (+20MB), audible (+50MB), old (+30MB)
+**TabEventManager** — debounced event handling:
+- 300 ms debounce prevents UI thrashing
+- Fires only on `title`, `url`, `audible`, `pinned` and `discarded` changes
+- `status` is deliberately excluded: it fires on every load completion and caused a full re-render per page load
 
 #### url-utils.ts
 ```typescript
-// Key exports:
-extractDomain(url)        // Get hostname from URL
-normalizeUrl(url)         // Remove fragments for comparison
-findDuplicatesByUrl(tabs) // Map of URL -> duplicate tabs
-getDuplicateGroups(tabs)  // Structured duplicate info
+extractDomain(url)        // hostname
+extractBaseDomain(url)    // registrable domain, with hosting-platform exceptions
+normalizeUrl(url)         // strips the fragment, for duplicate comparison
+findDuplicatesByUrl(tabs) // Map<normalizedUrl, tabs[]>
+getDuplicateGroups(tabs)  // structured duplicate info, sorted by count
+isChromeInternalUrl(url)  // chrome://, chrome-extension://, edge://, about:
 ```
+
+`isChromeInternalUrl` is the single source of truth for "can this tab be bookmarked / grouped / restored" — the check is not re-inlined anywhere.
+
+#### grouping.ts
+```typescript
+groupAllByDomain()        // group ungrouped tabs by base domain
+groupAllBySimilarity()    // domain first, then title clusters on the remainder
+groupWindowByDomain(id, tabs)
+applyCluster(windowId, label, tabIds)
+ungroupAll()
+colorForLabel(label)      // deterministic colour from the label
+```
+
+Pure helpers, usable without the Chrome APIs and the natural place to add unit tests:
+
+```typescript
+clusterByDomain(tabs)     // Map<domain, tabIds>
+clusterByTitle(tabs)      // Map<label, tabIds>, Jaccard similarity > 0.6
+tokenize(str)             // lowercase words longer than 2 chars
+calculateSimilarity(a, b) // Jaccard index over token sets
+generateClusterName(titles)
+```
+
+Behavioural rules that matter:
+- **Existing groups are never touched.** Only tabs with `groupId === TAB_GROUP_ID_NONE` are considered.
+- **Pinned and internal tabs are skipped.**
+- **`applyCluster` merges** into an existing group with the same title in that window rather than creating a second one.
+- **Duplicate cluster labels are disambiguated** with a numeric suffix, so two unrelated clusters that both generate `Group` do not overwrite each other.
+
+#### tab-balancer.ts
+
+`balanceWindows()` runs in three phases and returns the number of tabs moved:
+
+1. **Relieve** windows over `maxTabs` by moving out their outlier domains, smallest unit first. The window's dominant domain is never split.
+2. **Consolidate** windows under `minTabs`. If every unit can go to an existing window, the window is marked doomed and emptied; otherwise it is topped up from donor windows that hold matching domains.
+3. **Execute** the planned moves.
+
+Key implementation details:
+- A **moveable unit** is a tab group, or all loose tabs sharing a base domain. Pinned tabs are excluded.
+- `findBestTarget()` is genuine best-fit: it filters to windows that fit, prefers ones already holding the unit's domain, and among candidates picks the **emptiest** — not `Array.find()`'s first match.
+- `WindowState.domains` is a precomputed `Set`, so `findBestTarget` is O(1) per candidate rather than re-parsing every URL in every window.
+- Planning runs entirely against a simulation (`applyToSim`), so later decisions see the effect of earlier ones before anything actually moves.
+- `executeMoves()` reads each source group's `{ title, color }` **before** moving, because `chrome.tabs.move` to another window drops the group, then re-creates and re-applies it in the destination.
+
+#### dialogs.ts
+```typescript
+showToast(message, kind)  // 'info' | 'success' | 'error'
+confirmDialog(options)    // Promise<boolean>
+promptDialog(options)     // Promise<string | null>
+```
+
+Native `alert`/`confirm`/`prompt` are unreliable in a browser-action popup: the popup loses focus and can be torn down mid-dialog, taking any pending `await` with it. These build DOM into `document.body`, support Escape/outside-click to cancel and Enter to submit, and are styled from `styles.css` so they follow the dark theme.
 
 #### bookmark-utils.ts
 ```typescript
-// Key exports:
-getBookmarksBarId()       // Dynamic folder ID lookup
-createBookmark(tab)       // Create single bookmark
-bulkBookmarkTabs(tabs)    // Batch create with folder
-bookmarkWindow(windowId)  // Bookmark all tabs in window
+createBookmark(tab, parentId?)
+bulkBookmarkTabs(tabs, folderName?)
 ```
+
+`getBookmarksBarId()` resolves the bar as the **first child of the bookmark root**. Matching on the folder title (`includes('bookmark')`) breaks on any non-English Chrome build.
 
 ## Chrome API Usage
 
 ### Tab Management
 ```typescript
-// Query tabs
 const tabs = await chrome.tabs.query({});
-const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-// Modify tabs
 await chrome.tabs.update(tabId, { active: true, pinned: true });
+await chrome.tabs.move(tabIds, { windowId, index: -1 });
 await chrome.tabs.remove([tabId1, tabId2]);
-await chrome.tabs.discard(tabId);  // Hibernate
-await chrome.tabs.reload(tabId);
 ```
 
 ### Tab Groups
 ```typescript
-// Create group
-const groupId = await chrome.tabs.group({ tabIds: [1, 2, 3] });
+// Create in a specific window (required when the tabs just moved there)
+const groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
 
-// Update group appearance
-await chrome.tabGroups.update(groupId, { 
+await chrome.tabGroups.update(groupId, {
   title: 'My Group',
   color: 'blue',  // grey, blue, red, yellow, green, pink, purple, cyan, orange
-  collapsed: false 
+  collapsed: false
 });
 
-// Query existing groups
-const groups = await chrome.tabGroups.query({ windowId });
+// Merge into an existing group instead of creating a new one
+const [existing] = await chrome.tabGroups.query({ windowId, title: 'My Group' });
+if (existing) await chrome.tabs.group({ tabIds, groupId: existing.id });
 ```
+
+### Favicons
+```typescript
+// Reads from Chrome's local cache — no request to the third-party origin
+const url = new URL(chrome.runtime.getURL('/_favicon/'));
+url.searchParams.set('pageUrl', tab.url);
+url.searchParams.set('size', '32');
+img.src = url.toString();
+```
+Requires `"favicon"` in `permissions`.
 
 ### Storage
 ```typescript
-// Local storage (device-specific)
+// Local: sessions (large, device-specific)
 await chrome.storage.local.set({ sessions: [...] });
-const { sessions } = await chrome.storage.local.get('sessions');
 
-// Sync storage (across Chrome accounts)
-await chrome.storage.sync.set({ groupingRules: [...] });
-const { groupingRules } = await chrome.storage.sync.get('groupingRules');
+// Sync: theme only (sync caps at 8 KB per item, 512 items)
+await chrome.storage.sync.set({ theme: 'dark' });
 ```
 
 ### Context Menus
 ```typescript
-// Create menu item
-chrome.contextMenus.create({
-  id: 'my-action',
-  title: 'Do Something',
-  contexts: ['page']  // page, selection, link, image, etc.
-});
-
-// Handle clicks
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'my-action') {
-    // Handle action
-  }
-});
+chrome.contextMenus.create({ id: 'my-action', title: 'Do Something', contexts: ['page'] });
+chrome.contextMenus.onClicked.addListener((info, tab) => { /* ... */ });
 ```
 
 ## Build System
@@ -183,7 +208,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 ```bash
 esbuild src/background/service-worker.ts \
         src/popup/popup.ts \
-        src/content/content-script.ts \
+        src/sidepanel/sidepanel.ts \
   --bundle \
   --outdir=dist \
   --target=chrome114 \
@@ -191,190 +216,124 @@ esbuild src/background/service-worker.ts \
   --splitting
 ```
 
-Key options:
-- `--bundle`: Bundle all imports into output files
-- `--splitting`: Create shared chunks for common code
-- `--format=esm`: ES modules (required for service workers)
-- `--target=chrome114`: Target Chrome 114+ features
+Three entry points, all ESM. `--format=esm` matches `"background": { "type": "module" }` in the manifest. There is no separate content-script build — if one is ever reintroduced it must be bundled as **IIFE**, because content scripts run as classic scripts and a top-level `import` fails at runtime.
 
 ### Output Structure
 ```
 dist/
-├── background/
-│   └── service-worker.js      # Background entry
-├── popup/
-│   └── popup.js               # Popup entry
-├── content/
-│   └── content-script.js      # Content script entry
-├── chunk-*.js                 # Shared code chunks
-└── bookmark-utils-*.js        # Dynamic import chunk
+├── background/service-worker.js
+├── popup/popup.js
+├── sidepanel/sidepanel.js
+└── chunk-*.js                 # shared code chunks
 ```
 
 ### Build Scripts
 ```bash
-npm run build    # Single build
-npm run watch    # Rebuild on file changes
-npm run package  # Build + create clean extension folder
-npm run clean    # Remove dist/ and extension/
+npm run build      # Single build
+npm run watch      # Rebuild on file changes
+npm run typecheck  # tsc --noEmit
+npm run package    # Build + assemble extension/
+npm run clean      # Remove dist/ and extension/ (Node-based, cross-platform)
 ```
 
 ## Folder Structure & Workflow
 
-The project has **two dist folders** and **two manifest files** by design:
-
 | Folder | Purpose | Git Tracked? |
 |--------|---------|--------------|
-| **Root** (`src/`, `manifest.json`, etc.) | Source files you edit | ✅ Yes |
-| **`dist/`** | Compiled JavaScript from esbuild | ❌ No (.gitignore) |
-| **`extension/`** | Clean copy for loading into Chrome | ❌ No (.gitignore) |
+| Root (`src/`, `manifest.json`, …) | Source files you edit | Yes |
+| `dist/` | Compiled JavaScript from esbuild | No |
+| `extension/` | Clean copy for loading into Chrome | No |
 
-### Why Two Folders?
-
-Chrome counts **everything** in the loaded folder toward extension size. If you load the root folder:
-- `node_modules/` = 33MB
-- `src/` = 104KB
-- Dev config files = extra bloat
-- **Total: ~51MB** ❌
-
-The `extension/` folder contains only what Chrome needs:
-- `manifest.json`, HTML, CSS
-- `dist/` (compiled JS)
-- `icons/`
-- **Total: ~124KB** ✅
-
-### Development Workflow
+Chrome counts **everything** in the loaded folder toward extension size, so loading the repository root would include `node_modules`. The `extension/` folder contains only `manifest.json`, the HTML, the CSS, `dist/` and `icons/` — about 172 KB.
 
 ```bash
-# 1. Make changes to source files in src/
-
-# 2. Build and package
 npm run package
-
-# 3. In Chrome (chrome://extensions/):
-#    - If first time: "Load unpacked" → select extension/ folder
-#    - If updating: Click refresh icon on extension card
-
-# 4. Test your changes
+# chrome://extensions/ → Load unpacked → select extension/
+# on later changes → click the refresh icon on the extension card
 ```
-
-**Important:** Always load Chrome from the `extension/` folder, not the root folder!
 
 ## Performance Considerations
 
-### 1. Event Debouncing
-Tab events fire frequently (favicon changes, loading states, etc.). The `TabEventManager` debounces these to 150ms and filters to meaningful changes only.
-
-### 2. Content Script Scope
-Previously: Injected on `<all_urls>` (every page)
-Now: Only on media sites (YouTube, Spotify, Twitch, etc.)
-
-This eliminates memory overhead on non-media pages.
-
-### 4. Clean Extension Folder
-The `npm run package` command creates an `extension/` folder with only:
-- manifest.json
-- HTML files
-- CSS
-- Compiled JS (dist/)
-- Icons
-
-This excludes node_modules (33MB), source files, and config files.
+1. **Event debouncing** — `TabEventManager` debounces to 300 ms and filters to meaningful changes.
+2. **Render coalescing** — the `isRendering` guard queues one pending render rather than dropping the update.
+3. **Favicon API** — icons come from Chrome's cache, so no outbound request per rendered tab.
+4. **Precomputed domain sets** — the balancer avoids O(windows × tabs) URL parsing per move decision.
+5. **Lean package** — `extension/` excludes `node_modules`, source and config files.
 
 ## Debugging
 
 ### Service Worker
-1. Go to `chrome://extensions/`
-2. Find "Advanced Tab Manager"
-3. Click "Service Worker" link
-4. Console and debugger available
+`chrome://extensions/` → "Advanced Tab Manager" → click **Service Worker**.
 
 ### Popup
-1. Open the extension popup
-2. Right-click inside popup
-3. Select "Inspect"
-4. DevTools opens for popup context
+Open the popup, right-click inside it, **Inspect**.
 
-### Content Script
-1. Open a media site (e.g., youtube.com)
-2. Open DevTools (F12)
-3. Content script logs appear in Console
-4. Filter by "content-script.js" if needed
+### Side Panel
+Open the side panel, right-click inside it, **Inspect**.
 
 ## Common Patterns
 
-### Async Initialization
+### Coalesced async rendering
 ```typescript
-// Problem: Constructor can't be async
-class AutoGrouper {
-  private initialized: Promise<void>;
-  
-  constructor() {
-    this.initialized = this.init();
-  }
-  
-  private async init() {
-    await this.loadRules();
-  }
-  
-  async onTabCreated(tab) {
-    await this.initialized;  // Wait before processing
-    // Now safe to use rules
+private async loadAndRenderTabs(...) {
+  if (this.isRendering) { this.pendingRender = true; return; }
+  this.isRendering = true;
+  try {
+    // ... render
+  } finally {
+    this.isRendering = false;
+    if (this.pendingRender) {
+      this.pendingRender = false;
+      await this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
+    }
   }
 }
-```
-
-### Dynamic Imports
-```typescript
-// Only load bookmark utils when needed
-const { bulkBookmarkTabs } = await import('../shared/bookmark-utils.js');
-await bulkBookmarkTabs(tabs);
 ```
 
 ### Type Safety with Chrome APIs
 ```typescript
-// Filter out undefined IDs
-const ids = tabs.map(t => t.id).filter(Boolean) as number[];
+// Use a type predicate, not `filter(Boolean) as number[]`
+const ids = tabs.map(t => t.id).filter((id): id is number => id !== undefined);
 
-// Safe property access
-if (tab?.url && tab?.id) {
-  // Both exist
-}
+// TAB_ID_NONE is -1, so `if (tab.id)` happens to work — but this is the correct guard
+if (tab.id !== undefined) { /* ... */ }
+```
+
+### Preserving a tab group across a window move
+```typescript
+const { title, color } = await chrome.tabGroups.get(sourceGroupId); // before the move
+await chrome.tabs.move(tabIds, { windowId: target, index: -1 });    // group is dropped here
+const newId = await chrome.tabs.group({ tabIds, createProperties: { windowId: target } });
+await chrome.tabGroups.update(newId, { title, color });
 ```
 
 ## Manifest V3 Notes
 
 ### Service Worker Lifecycle
-- Service workers are event-driven (not persistent)
-- They shut down after ~30 seconds of inactivity
-- Use `chrome.alarms` for scheduled tasks
-- Current extension uses message listener to stay responsive
-
-### Content Script Declaration
-```json
-{
-  "content_scripts": [{
-    "matches": ["*://*.youtube.com/*", "*://*.spotify.com/*"],
-    "js": ["dist/content/content-script.js"],
-    "run_at": "document_idle"
-  }]
-}
-```
+- Event-driven, terminated after roughly 30 s of inactivity
+- `setTimeout` in the worker is not durable; the badge debounce accepts this and recomputes on `onStartup`
+- `chrome.alarms` is the durable alternative for anything longer-lived
 
 ### Permissions Model
-- Declare minimal permissions in manifest
-- Request additional permissions at runtime if needed
-- `host_permissions` separated from regular `permissions`
+- Minimal permissions, no `host_permissions`, no remotely hosted code, default CSP retained
+- `minimum_chrome_version: "114"` is declared because `sidePanel` is a hard dependency
 
 ## Testing Checklist
 
 - [ ] Extension loads without errors
-- [ ] All tabs display correctly
-- [ ] Search filters tabs in real-time
-- [ ] Duplicate detection highlights correctly
-- [ ] Close duplicates keeps newest tab
-- [ ] Session save/restore works
-- [ ] Pinned state restored with sessions
-- [ ] Media controls show for playing tabs
+- [ ] All tabs display correctly in list, compact and grid views
+- [ ] Switching view mode preserves the active search and filters
+- [ ] Search filters tabs in real time
+- [ ] Duplicate detection highlights correctly; close-duplicates keeps the newest
+- [ ] Collapsed groups stay collapsed across tab events
+- [ ] Favicons render (and no requests to third-party origins appear in DevTools)
+- [ ] Confirm/prompt dialogs cancel on Escape and on outside click
+- [ ] Balance windows respects min/max and preserves group titles and colours
+- [ ] Group by domain merges into existing same-named groups
+- [ ] Smart grouping leaves existing groups and pinned tabs alone
+- [ ] Session save/restore returns pinned state, tab groups and window geometry
+- [ ] Deleting a session asks for confirmation
+- [ ] Merging windows moves every tab and focuses the target
+- [ ] Media controls appear for audible tabs; mute/unmute works
 - [ ] Context menu items work
-- [ ] Auto-grouping works when enabled
-- [ ] Jump-to-tab navigation works
+- [ ] Dark theme applies to dialogs, modals, panels and the side panel

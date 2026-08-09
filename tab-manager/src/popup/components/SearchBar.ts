@@ -24,7 +24,7 @@ export class SearchBar {
 
   private setupListeners() {
     // Debounced search
-    let timeout: NodeJS.Timeout;
+    let timeout: ReturnType<typeof setTimeout>;
     this.input?.addEventListener('input', () => {
       clearTimeout(timeout);
       timeout = setTimeout(() => {

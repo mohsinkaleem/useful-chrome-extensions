@@ -1,10 +1,11 @@
 // Sidepanel script
-import { TabEventManager, getAllTabs, getTabsByWindow } from '../shared/tab-utils.js';
-import { findDuplicatesByUrl, normalizeUrl } from '../shared/url-utils.js';
+import { TabEventManager, getAllTabs } from '../shared/tab-utils.js';
+import { findDuplicatesByUrl, normalizeUrl, isChromeInternalUrl } from '../shared/url-utils.js';
 import { mergeSelectedWindows } from '../shared/window-utils.js';
+import { groupAllBySimilarity } from '../shared/grouping.js';
+import { showToast } from '../shared/dialogs.js';
 import { TabList } from '../popup/components/TabList.js';
 import { SearchBar, SearchFilters } from '../popup/components/SearchBar.js';
-import { AutoGrouper } from '../background/auto-grouper.js';
 
 class SidepanelApp {
   private tabEventManager: TabEventManager;
@@ -14,6 +15,7 @@ class SidepanelApp {
   private currentFilters: SearchFilters | null = null;
   private groupView: 'window' | 'domain' = 'window';
   private isRendering: boolean = false;
+  private pendingRender: boolean = false;
 
   constructor() {
     this.tabEventManager = new TabEventManager();
@@ -31,7 +33,7 @@ class SidepanelApp {
         document.body.classList.add('dark-theme');
         const icon = document.querySelector('#theme-toggle .icon');
         if (icon) {
-          icon.className = 'icon icon-sun';
+          icon.className = 'icon icon-md icon-sun';
         }
     }
 
@@ -72,14 +74,9 @@ class SidepanelApp {
 
     // Window selection changes
     this.tabList.onWindowSelectionChange((selectedWindowIds) => {
-      const mergeBtn = document.getElementById('merge-windows-btn');
-      if (mergeBtn) {
-        if (selectedWindowIds.length >= 2) {
-          mergeBtn.style.display = 'block';
-        } else {
-          mergeBtn.style.display = 'none';
-        }
-      }
+      document
+        .getElementById('merge-windows-btn')
+        ?.classList.toggle('hidden', selectedWindowIds.length < 2);
     });
 
     // Merge windows button
@@ -94,7 +91,7 @@ class SidepanelApp {
         await chrome.storage.sync.set({ theme: isDark ? 'dark' : 'light' });
         const icon = document.querySelector('#theme-toggle .icon');
         if (icon) {
-          icon.className = isDark ? 'icon icon-sun' : 'icon icon-moon';
+          icon.className = isDark ? 'icon icon-md icon-sun' : 'icon icon-md icon-moon';
         }
     });
 
@@ -109,8 +106,11 @@ class SidepanelApp {
   }
 
   private async loadAndRenderTabs(query: string = '', filters: SearchFilters | null = null) {
-    // Prevent concurrent renders
-    if (this.isRendering) return;
+    // Coalesce concurrent renders so no update is silently dropped
+    if (this.isRendering) {
+      this.pendingRender = true;
+      return;
+    }
     this.isRendering = true;
     
     try {
@@ -151,17 +151,20 @@ class SidepanelApp {
     
     // Grouping Logic
     const groups = new Map<string | number, chrome.tabs.Tab[]>();
+    this.tabList.setTabGroups(await chrome.tabGroups.query({}));
     
     if (this.groupView === 'domain') {
         for (const tab of tabs) {
              let domain = 'Other';
-             try {
-                 if (tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('edge://')) {
+             if (tab.url && isChromeInternalUrl(tab.url)) {
+                 domain = 'System';
+             } else if (tab.url) {
+                 try {
                     domain = new URL(tab.url).hostname.replace(/^www\./, '');
-                 } else {
-                    domain = 'System';
+                 } catch {
+                    domain = 'Other';
                  }
-             } catch {}
+             }
              
              if (!groups.has(domain)) {
                  groups.set(domain, []);
@@ -193,16 +196,26 @@ class SidepanelApp {
     if (countEl) countEl.textContent = `${tabs.length} tabs`;
     } finally {
       this.isRendering = false;
+      if (this.pendingRender) {
+        this.pendingRender = false;
+        await this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
+      }
     }
   }
 
   private async performSmartGrouping() {
-      const grouper = new AutoGrouper();
-      // We leverage the enhanced logic which handles multi-window grouping
-      await grouper.groupAllBySimilarity();
-      
-      // Reload tabs to show groups
-      await this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
+      const btn = document.getElementById('auto-group-btn') as HTMLButtonElement | null;
+      if (btn) btn.disabled = true;
+      try {
+        await groupAllBySimilarity();
+        await this.loadAndRenderTabs(this.currentSearchQuery, this.currentFilters);
+        showToast('Tabs grouped by domain and title', 'success');
+      } catch (e) {
+        console.error('Smart grouping failed:', e);
+        showToast('Failed to group tabs', 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
   }
 
   private async mergeSelectedWindows() {

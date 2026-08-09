@@ -1,185 +1,194 @@
 # Advanced Chrome Tab Manager
 
-A powerful, lightweight Chrome extension for managing tabs, windows, and browser sessions. Built with TypeScript and optimized for performance.
+A lightweight Chrome extension (Manifest V3) for managing tabs, windows, tab groups and browser sessions. Built with TypeScript, bundled with esbuild.
 
-**Extension Size: ~124 KB** (optimized build)
+**Packaged size: ~172 KB** (`extension/` folder, of which ~80 KB is compiled JS)
 
 ## Features
 
-### 🔍 Search & Filter
-- Real-time search by tab title or URL
+### Search & Filter
+- Real-time search by tab title or URL across every window
 - Filter by audible, pinned, or duplicate tabs
-- Debounced search (150ms) to prevent UI lag
+- 300 ms debounce on both the search box and tab events
 
-### 👁️ View Modes
-- **List View**: Detailed tab information with URLs
-- **Compact View**: Minimal view showing just titles
-- **Grid View**: Visual grid layout for quick scanning
+### View Modes
+- **List** — title plus hostname
+- **Compact** — titles only
+- **Grid** — favicon grid for quick visual scanning
 
-### ⚡ Quick Actions
-- Close selected tabs
-- Bookmark selected tabs to auto-created folders
-- Group selected tabs with timestamps
-- Multi-select with checkboxes
+### Quick Actions
+- Multi-select tabs with checkboxes
+- Close, bookmark, or group the selection
+- Merge two or more selected windows into one
+- Drag a tab onto another window's header to move it
 
-### 🎯 Duplicate Detection
-- Automatic duplicate detection by normalized URL
-- Visual highlighting of duplicate tabs
-- One-click close all duplicates (keeps most recently accessed)
+### Duplicate Detection
+- Duplicates matched on fragment-normalized URLs
+- Visual highlighting, plus a live duplicate counter in the action bar
+- One-click "close duplicates" keeps the most recently accessed copy
 
-### 💾 Session Management
-- Save current browser session (all windows and tabs)
-- Restore sessions with preserved pinned tab state
-- Delete old sessions
-- Timestamped session names
+### Window Balancing
+Redistributes tabs so every window sits between a minimum and maximum tab count (10 and 30 by default).
 
-### 🎨 Auto-Grouping
-- **Disabled by default** (opt-in to avoid interfering with workflow)
-- Automatically group new tabs by domain when enabled
-- Pre-configured rules for YouTube, GitHub, Gmail, Google Docs
-- Customizable grouping rules (domain, pattern, keyword matching)
-- Manual "Group by Domain" via context menu
+- Moves whole *units* — a tab group, or all loose tabs sharing a base domain — never individual tabs at random
+- Never splits a window's dominant domain, so a window of 80 YouTube tabs is left intact
+- Prefers a destination window that already holds that domain; among candidates it picks the emptiest
+- Consolidates windows that fall below the minimum into existing windows rather than opening new ones
+- Preserves tab group titles and colours across the move
+- Pinned tabs are never moved
 
-### 🔊 Media Controls
-- Detect tabs playing audio/video
-- Mute/unmute individual tabs
-- Quick navigation to media tabs
-- Content script injection for YouTube, Spotify, Twitch, and other media sites only
+### Grouping
+- **Group by domain** — collects ungrouped tabs by base domain (`mail.google.com` and `docs.google.com` both land in `google.com`)
+- **Smart grouping** (side panel ✨) — groups by domain first, then clusters whatever is left by title similarity
+- Group colours are derived deterministically from the label, so the same domain keeps its colour
+- Tabs are merged into an existing group of the same name instead of creating duplicates
+- Existing groups and pinned tabs are left untouched
+- **Ungroup all** dissolves every group in every window
 
-###  Bookmarking
-- Bulk bookmark tabs to timestamped folders
-- Bookmark entire windows
-- Dynamic bookmark bar detection (no hardcoded folder IDs)
-- Context menu integration
+### Session Management
+- Save every normal window with its tabs
+- Restores pinned state, **tab groups** (title and colour) and **window geometry**
+- Capped at 50 stored sessions to bound storage growth
+- Delete requires confirmation
 
-### 📌 Side Panel Support
-- **Chrome 114+** persistent side panel for tab management
-- Two viewing modes: **By Window** (default) or **By Domain**
-- Same powerful search and filtering capabilities as popup
-- Highlight duplicates with visual indicators
-- Smart auto-grouping via ✨ button
-- Dark mode support with theme toggle
-- Stays open while browsing for quick tab access
-- Automatically syncs with tab changes across all windows
+### Media Controls
+- Lists tabs currently playing audio
+- Mute/unmute and jump-to-tab per entry
+- Implemented entirely through `chrome.tabs` — **no content scripts, no host permissions**
 
-### 🖱️ Context Menu
+### Bookmarking
+- Bulk bookmark all tabs, the selection, or a single window into a new folder
+- Bookmarks bar resolved by position, so it works on non-English Chrome builds
+
+### Side Panel
+- Chrome 114+ persistent side panel (`Ctrl/Cmd+Shift+E`)
+- Group **By Window** or **By Domain**
+- Shares the search bar and tab list with the popup
+- Dark mode synced with the popup via `chrome.storage.sync`
+
+### Context Menu
 - Close duplicate tabs
-- Bookmark current tab
+- Bookmark this tab
 - Group tabs by domain
 
 ## Installation
 
 ### From Source
 
-1. Clone this repository:
+1. Clone and install:
    ```bash
    git clone <repository-url>
    cd tab-manager
-   ```
-
-2. Install dependencies:
-   ```bash
    npm install
    ```
 
-3. Build and package:
+2. Build and package:
    ```bash
    npm run package
    ```
 
-4. Load in Chrome:
+3. Load in Chrome:
    - Open `chrome://extensions/`
-   - Enable "Developer mode" (top right)
-   - Click "Load unpacked"
-   - Select the **`extension/`** folder (NOT the root folder!)
+   - Enable **Developer mode** (top right)
+   - Click **Load unpacked**
+   - Select the **`extension/`** folder (not the repository root)
 
-> ⚠️ **Important:** Always load from `extension/` folder. Loading the root folder includes `node_modules` (33MB) causing 51MB+ extension size instead of ~124KB.
+> Always load from `extension/`. Loading the repository root pulls in `node_modules` and inflates the extension from ~172 KB to tens of megabytes.
 
 ### Development
 
 ```bash
-npm run build    # Build once
-npm run watch    # Watch mode for development
-npm run package  # Build + create clean extension folder (run this before testing!)
-npm run clean    # Remove build artifacts
+npm run build      # Bundle once into dist/
+npm run watch      # Rebuild on change
+npm run typecheck  # tsc --noEmit
+npm run package    # Build + assemble extension/ (run before testing in Chrome)
+npm run clean      # Remove dist/ and extension/
 ```
 
-**After making code changes:**
-1. Run `npm run package`
-2. Go to `chrome://extensions/`
-3. Click the refresh icon on the extension card
-4. Test your changes
+After changing code: `npm run package`, then click the refresh icon on the extension card in `chrome://extensions/`.
 
 ## Project Structure
 
 ```
 tab-manager/
 ├── manifest.json              # Extension manifest (MV3)
-├── popup.html                 # Main popup UI
+├── popup.html                 # Popup UI
 ├── sidepanel.html             # Side panel UI (Chrome 114+)
-├── resource-monitor.html      # Dedicated resource monitor page
-├── styles.css                 # All styles (~23KB)
-├── package.json               # npm scripts and dependencies
-├── tsconfig.json              # TypeScript configuration
+├── styles.css                 # All styles, incl. dark theme (~28 KB)
+├── icons.css                  # Inline SVG icon classes (~10 KB)
+├── package.json
+├── tsconfig.json
 ├── src/
 │   ├── background/
-│   │   ├── service-worker.ts  # Background service worker
-│   │   └── auto-grouper.ts    # Auto-grouping engine with rules
+│   │   └── service-worker.ts  # Context menus, badge, commands
 │   ├── popup/
-│   │   ├── popup.ts           # Main popup controller
+│   │   ├── popup.ts           # Popup controller
 │   │   └── components/
-│   │       ├── TabList.ts         # Tab rendering with tooltips
-│   │       ├── SearchBar.ts       # Search with filters
-│   │       ├── QuickActions.ts    # Batch operations
-│   │       ├── MediaControls.ts    # Media tab controls
-│   │       └── SessionManager.ts   # Session save/restore
+│   │       ├── TabList.ts         # Tab rendering, selection, drag & drop
+│   │       ├── SearchBar.ts       # Search input + filter checkboxes
+│   │       ├── QuickActions.ts    # Batch action buttons
+│   │       ├── MediaControls.ts   # Audible tab controls
+│   │       └── SessionManager.ts  # Session save/restore modal
 │   ├── sidepanel/
 │   │   └── sidepanel.ts       # Side panel controller (shares components)
-│   ├── content/
-│   │   └── content-script.ts  # Media control (YouTube, Spotify, etc.)
 │   └── shared/
-│       ├── tab-utils.ts       # Tab queries, events
+│       ├── tab-utils.ts       # Tab/window queries, debounced events
 │       ├── url-utils.ts       # URL normalization, duplicate detection
-│       └── bookmark-utils.ts  # Bookmark operations
-├── icons/                     # Extension icons (SVG)
+│       ├── grouping.ts        # Domain + title-similarity grouping
+│       ├── tab-balancer.ts    # Window balancing / tab redistribution
+│       ├── bookmark-utils.ts  # Bookmark operations
+│       ├── window-utils.ts    # Window merging
+│       └── dialogs.ts         # In-page confirm/prompt/toast
+├── icons/                     # Extension icons (PNG: 16, 48, 128)
 ├── dist/                      # Compiled JavaScript (generated)
-└── extension/                 # Clean extension folder (generated)
+└── extension/                 # Loadable extension folder (generated)
 ```
 
 ## Permissions
 
 | Permission | Purpose |
 |------------|---------|
-| `tabs` | Access tab information (title, URL, state) |
-| `tabGroups` | Create and manage tab groups |
-| `storage` | Persist sessions and settings |
+| `tabs` | Read tab title, URL and state; move, close and activate tabs |
+| `tabGroups` | Create, rename, recolour and dissolve tab groups |
+| `storage` | Persist sessions (`local`) and theme (`sync`) |
 | `bookmarks` | Create bookmarks and folders |
 | `contextMenus` | Right-click menu integration |
-| `host_permissions: <all_urls>` | Required for content script on media sites |
+| `sidePanel` | Side panel UI (Chrome 114+) |
+| `favicon` | Read favicons from Chrome's own cache |
 
-## Performance Optimizations
+There are **no `host_permissions` and no content scripts**. Nothing is injected into any page, and favicons are read from Chrome's local cache rather than fetched from each site.
 
-- **Debounced tab events**: 150ms debounce prevents excessive re-renders
-- **Selective event handling**: Only reacts to meaningful tab changes (not every favicon update)
-- **Targeted content script**: Only injected on media sites (YouTube, Spotify, Twitch, etc.), not all URLs
-- **Code splitting**: Shared utilities bundled in separate chunks via esbuild
-- **Lazy loading**: Resource monitor loads 10 tabs at a time
-- **Clean builds**: Production extension excludes node_modules and source files (~124KB vs 51MB)
+## Performance Notes
+
+- **Debounced tab events** — 300 ms, and only for meaningful changes (title, url, audible, pinned, discarded); favicon and load-state churn is ignored
+- **Coalesced renders** — a tab event arriving mid-render queues exactly one follow-up render instead of being dropped
+- **No third-party favicon requests** — the `favicon` permission serves icons from `chrome://favicon2` locally, so rendering 200 tabs costs zero network requests
+- **Precomputed domain sets** — the balancer builds one domain set per window instead of re-parsing every URL per move decision
+- **Code splitting** — shared utilities land in separate esbuild chunks
+- **Lean package** — `extension/` excludes `node_modules`, source and config files
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+E` / `Cmd+Shift+E` | Open the side panel |
+
+Chrome silently drops a suggested shortcut if another extension already claims it. Reassign it at `chrome://extensions/shortcuts`.
 
 ## Usage Tips
 
-1. **Multi-Select**: Use checkboxes to select multiple tabs for batch operations
-2. **Search**: Type to filter tabs instantly across all windows
-3. **Duplicates**: Click the ⚠️ filter to highlight and close duplicates
-4. **Sessions**: Save your workspace before closing Chrome
-5. **Hibernate**: Free up memory by hibernating tabs you haven't used recently
-6. **Resource Monitor**: Click "📊 Details" for the full resource breakdown
+1. **Multi-select** — tick checkboxes to close, bookmark or group tabs in bulk
+2. **Search** — the popup auto-focuses the search box on open
+3. **Duplicates** — use the duplicate filter to review before bulk-closing
+4. **Balance** — run it when windows have drifted lopsided; groups survive the move
+5. **Collapse** — click a window or domain header to collapse it; the state survives re-renders
+6. **Sessions** — save your workspace before closing Chrome; groups and window geometry come back
 
 ## Browser Support
 
-- **Chrome 114+**: Full support including Side Panel API
-- **Chrome 121+**: `lastAccessed` property for better hibernation decisions
-- **Edge (Chromium)**: Should work with minor modifications
+- **Chrome 114+** — required (`sidePanel` API), declared as `minimum_chrome_version`
+- **Chrome 121+** — `lastAccessed` improves which duplicate is kept
+- **Edge (Chromium)** — expected to work; not actively tested
 
 ## License
 
@@ -187,4 +196,4 @@ MIT License
 
 ## Contributing
 
-Pull requests welcome! Please open an issue first for major changes.
+Pull requests welcome. Please open an issue first for major changes.

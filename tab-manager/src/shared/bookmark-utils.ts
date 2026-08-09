@@ -1,28 +1,19 @@
 // Bookmark utilities
 
-export interface BookmarkFolder {
-  id: string;
-  title: string;
-  parentId?: string;
-}
+import { isChromeInternalUrl } from './url-utils.js';
 
-// Get the Bookmarks Bar folder ID dynamically
+// Get the Bookmarks Bar folder ID dynamically.
+// Matching on the folder title breaks on non-English Chrome, so rely on position:
+// the bookmarks bar is always the first child of the root node.
 async function getBookmarksBarId(): Promise<string> {
   try {
-    const tree = await chrome.bookmarks.getTree();
-    // The bookmarks bar is typically the first child of the root
-    const root = tree[0];
-    if (root.children && root.children.length > 0) {
-      // Find "Bookmarks Bar" or "Bookmarks bar" or first folder
-      const bookmarksBar = root.children.find(c => 
-        c.title.toLowerCase().includes('bookmark') && !c.url
-      ) || root.children[0];
-      return bookmarksBar.id;
-    }
+    const [root] = await chrome.bookmarks.getTree();
+    const bar = root?.children?.[0];
+    if (bar) return bar.id;
   } catch (e) {
     console.error('Failed to get bookmarks bar ID:', e);
   }
-  return '1'; // Fallback to default
+  return '1'; // Chrome's well-known bookmarks bar ID
 }
 
 // Create a bookmark from a tab
@@ -58,46 +49,11 @@ export async function bulkBookmarkTabs(
   const bookmarks: chrome.bookmarks.BookmarkTreeNode[] = [];
   
   for (const tab of tabs) {
-    if (tab.url && !tab.url.startsWith('chrome://')) {
+    if (tab.url && !isChromeInternalUrl(tab.url)) {
       const bookmark = await createBookmark(tab, folderId);
       bookmarks.push(bookmark);
     }
   }
   
   return bookmarks;
-}
-
-// Create folder for window bookmarks
-export async function bookmarkWindow(
-  windowId: number,
-  folderName?: string
-): Promise<chrome.bookmarks.BookmarkTreeNode[]> {
-  const tabs = await chrome.tabs.query({ windowId });
-  const timestamp = new Date().toISOString().split('T')[0];
-  const defaultFolderName = folderName || `Window - ${timestamp}`;
-  
-  return await bulkBookmarkTabs(tabs, defaultFolderName);
-}
-
-// Get all bookmark folders
-export async function getAllBookmarkFolders(): Promise<BookmarkFolder[]> {
-  const tree = await chrome.bookmarks.getTree();
-  const folders: BookmarkFolder[] = [];
-  
-  function traverse(node: chrome.bookmarks.BookmarkTreeNode) {
-    if (!node.url) { // It's a folder
-      folders.push({
-        id: node.id,
-        title: node.title,
-        parentId: node.parentId
-      });
-    }
-    
-    if (node.children) {
-      node.children.forEach(traverse);
-    }
-  }
-  
-  tree.forEach(traverse);
-  return folders;
 }

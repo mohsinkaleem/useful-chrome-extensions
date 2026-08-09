@@ -1,16 +1,36 @@
 // Session manager component
 
+import { isChromeInternalUrl } from '../../shared/url-utils.js';
+import { confirmDialog, showToast } from '../../shared/dialogs.js';
+
+export interface SessionTab {
+  url: string;
+  title: string;
+  pinned: boolean;
+  /** Original chrome tab group id, used only as a key into `SessionWindow.groups`. */
+  groupId?: number;
+}
+
+export interface SessionGroup {
+  title?: string;
+  color: chrome.tabGroups.ColorEnum;
+}
+
+export interface SessionWindow {
+  tabs: SessionTab[];
+  groups?: Record<string, SessionGroup>;
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
+  state?: chrome.windows.windowStateEnum;
+}
+
 export interface Session {
   id: string;
   name: string;
   timestamp: number;
-  windows: Array<{
-    tabs: Array<{
-      url: string;
-      title: string;
-      pinned: boolean;
-    }>;
-  }>;
+  windows: SessionWindow[];
 }
 
 export class SessionManager {
@@ -62,22 +82,47 @@ export class SessionManager {
   }
 
   private async saveCurrentSession() {
-    const name = this.sessionNameInput?.value || `Session ${new Date().toLocaleString()}`;
+    const name = this.sessionNameInput?.value.trim() || `Session ${new Date().toLocaleString()}`;
     
-    // Get all windows and tabs
     const windows = await chrome.windows.getAll({ populate: true });
+    const groupsById = new Map((await chrome.tabGroups.query({})).map(g => [g.id, g]));
     
     const session: Session = {
       id: Date.now().toString(),
       name,
       timestamp: Date.now(),
-      windows: windows.map(window => ({
-        tabs: (window.tabs || []).map(tab => ({
-          url: tab.url || '',
-          title: tab.title || 'Untitled',
-          pinned: tab.pinned || false
-        }))
-      }))
+      windows: windows
+        .filter(w => w.type === 'normal')
+        .map(window => {
+          const groups: Record<string, SessionGroup> = {};
+
+          const tabs: SessionTab[] = (window.tabs || []).map(tab => {
+            const grouped =
+              tab.groupId !== undefined && tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE;
+
+            if (grouped) {
+              const group = groupsById.get(tab.groupId);
+              if (group) groups[String(tab.groupId)] = { title: group.title, color: group.color };
+            }
+
+            return {
+              url: tab.url || '',
+              title: tab.title || 'Untitled',
+              pinned: tab.pinned || false,
+              groupId: grouped ? tab.groupId : undefined
+            };
+          });
+
+          return {
+            tabs,
+            groups,
+            left: window.left,
+            top: window.top,
+            width: window.width,
+            height: window.height,
+            state: window.state
+          };
+        })
     };
     
     // Save to storage (with limit)
@@ -93,17 +138,16 @@ export class SessionManager {
       await chrome.storage.local.set({ sessions });
     } catch (e) {
       console.error('Failed to save session (storage quota may be exceeded):', e);
-      alert('Failed to save session. Storage may be full. Try deleting old sessions.');
+      showToast('Storage is full — delete an old session and retry', 'error');
       return;
     }
     
-    // Clear input
     if (this.sessionNameInput) {
       this.sessionNameInput.value = '';
     }
     
-    // Reload list
     await this.loadSessions();
+    showToast(`Saved session "${name}"`, 'success');
   }
 
   private async loadSessions() {
@@ -114,7 +158,10 @@ export class SessionManager {
     this.sessionsList.innerHTML = '';
     
     if (sessions.length === 0) {
-      this.sessionsList.innerHTML = '<p style="color: #666;">No saved sessions</p>';
+      const empty = document.createElement('p');
+      empty.className = 'sessions-empty';
+      empty.textContent = 'No saved sessions yet.';
+      this.sessionsList.appendChild(empty);
       return;
     }
     
@@ -138,15 +185,11 @@ export class SessionManager {
     meta.textContent = `${session.windows.length} windows, ${tabCount} tabs - ${new Date(session.timestamp).toLocaleString()}`;
     
     const actions = document.createElement('div');
-    actions.style.marginTop = '8px';
-    actions.style.display = 'flex';
-    actions.style.gap = '8px';
+    actions.className = 'session-actions';
     
     const restoreBtn = document.createElement('button');
     restoreBtn.textContent = 'Restore';
-    restoreBtn.className = 'action-btn';
-    restoreBtn.style.fontSize = '12px';
-    restoreBtn.style.padding = '4px 8px';
+    restoreBtn.className = 'action-btn session-btn';
     restoreBtn.onclick = async (e) => {
       e.stopPropagation();
       await this.restoreSession(session);
@@ -154,13 +197,16 @@ export class SessionManager {
     
     const deleteBtn = document.createElement('button');
     deleteBtn.textContent = 'Delete';
-    deleteBtn.className = 'action-btn';
-    deleteBtn.style.fontSize = '12px';
-    deleteBtn.style.padding = '4px 8px';
-    deleteBtn.style.background = '#d32f2f';
+    deleteBtn.className = 'action-btn session-btn session-btn-danger';
     deleteBtn.onclick = async (e) => {
       e.stopPropagation();
-      await this.deleteSession(session.id);
+      const ok = await confirmDialog({
+        title: 'Delete session?',
+        message: `"${session.name}" will be removed permanently.`,
+        confirmLabel: 'Delete',
+        danger: true
+      });
+      if (ok) await this.deleteSession(session.id);
     };
     
     actions.appendChild(restoreBtn);
@@ -174,45 +220,98 @@ export class SessionManager {
   }
 
   private async restoreSession(session: Session) {
-    // Create windows with tabs and restore pinned state
+    let restoredWindows = 0;
+
     for (const windowData of session.windows) {
-      const validTabs = windowData.tabs.filter(tab => 
-        tab.url && 
-        !tab.url.startsWith('chrome://') && 
-        !tab.url.startsWith('chrome-extension://') &&
-        !tab.url.startsWith('edge://')
-      );
+      const validTabs = windowData.tabs.filter(tab => tab.url && !isChromeInternalUrl(tab.url));
       if (validTabs.length === 0) continue;
       
       try {
-        // Create window with first tab
-        const newWindow = await chrome.windows.create({ url: validTabs[0].url });
+        const newWindow = await chrome.windows.create(this.buildCreateData(windowData, validTabs[0].url));
         if (!newWindow.id) continue;
+        restoredWindows++;
+
+        const createdIds: Array<number | undefined> = [newWindow.tabs?.[0]?.id];
         
-        // Pin first tab if it was pinned
-        if (validTabs[0].pinned && newWindow.tabs?.[0]?.id) {
-          await chrome.tabs.update(newWindow.tabs[0].id, { pinned: true });
+        if (validTabs[0].pinned && createdIds[0] !== undefined) {
+          await chrome.tabs.update(createdIds[0], { pinned: true });
         }
         
-        // Create remaining tabs
         for (let i = 1; i < validTabs.length; i++) {
           const tabData = validTabs[i];
           try {
-            await chrome.tabs.create({
+            const created = await chrome.tabs.create({
               windowId: newWindow.id,
               url: tabData.url,
               pinned: tabData.pinned
             });
+            createdIds.push(created.id);
           } catch (e) {
             console.error(`Failed to restore tab ${tabData.url}:`, e);
+            createdIds.push(undefined);
           }
         }
+
+        await this.restoreGroups(newWindow.id, windowData, validTabs, createdIds);
       } catch (e) {
         console.error('Failed to restore window:', e);
       }
     }
     
     this.hideModal();
+    showToast(
+      restoredWindows > 0
+        ? `Restored ${restoredWindows} window(s)`
+        : 'Nothing to restore in this session',
+      restoredWindows > 0 ? 'success' : 'error'
+    );
+  }
+
+  // Chrome rejects explicit bounds together with a maximized/fullscreen state.
+  private buildCreateData(windowData: SessionWindow, url: string): chrome.windows.CreateData {
+    const createData: chrome.windows.CreateData = { url };
+
+    if (windowData.state === 'maximized' || windowData.state === 'fullscreen') {
+      createData.state = windowData.state;
+    } else if (windowData.width !== undefined && windowData.height !== undefined) {
+      createData.left = windowData.left;
+      createData.top = windowData.top;
+      createData.width = windowData.width;
+      createData.height = windowData.height;
+    }
+
+    return createData;
+  }
+
+  private async restoreGroups(
+    windowId: number,
+    windowData: SessionWindow,
+    tabs: SessionTab[],
+    createdIds: Array<number | undefined>
+  ) {
+    if (!windowData.groups) return;
+
+    const byOriginalGroup = new Map<string, number[]>();
+    tabs.forEach((tab, index) => {
+      const newId = createdIds[index];
+      // Chrome does not allow pinned tabs in a group.
+      if (tab.groupId === undefined || newId === undefined || tab.pinned) return;
+      const key = String(tab.groupId);
+      if (!byOriginalGroup.has(key)) byOriginalGroup.set(key, []);
+      byOriginalGroup.get(key)!.push(newId);
+    });
+
+    for (const [key, tabIds] of byOriginalGroup) {
+      try {
+        const groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
+        const meta = windowData.groups[key];
+        if (meta) {
+          await chrome.tabGroups.update(groupId, { title: meta.title, color: meta.color });
+        }
+      } catch (e) {
+        console.error('Failed to restore tab group:', e);
+      }
+    }
   }
 
   private async deleteSession(sessionId: string) {
@@ -220,5 +319,6 @@ export class SessionManager {
     const filtered = sessions.filter((s: Session) => s.id !== sessionId);
     await chrome.storage.local.set({ sessions: filtered });
     await this.loadSessions();
+    showToast('Session deleted', 'success');
   }
 }

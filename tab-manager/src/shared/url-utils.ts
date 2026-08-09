@@ -76,31 +76,6 @@ export function findDuplicatesByUrl(tabs: chrome.tabs.Tab[]): Map<string, chrome
   return duplicates;
 }
 
-// Find duplicate tabs by domain
-export function findDuplicatesByDomain(tabs: chrome.tabs.Tab[]): Map<string, chrome.tabs.Tab[]> {
-  const duplicates = new Map<string, chrome.tabs.Tab[]>();
-  
-  for (const tab of tabs) {
-    if (!tab.url) continue;
-    const domain = extractDomain(tab.url);
-    if (!domain) continue;
-    
-    if (!duplicates.has(domain)) {
-      duplicates.set(domain, []);
-    }
-    duplicates.get(domain)!.push(tab);
-  }
-  
-  // Filter to only include domains with multiple tabs
-  for (const [domain, tabList] of duplicates.entries()) {
-    if (tabList.length <= 1) {
-      duplicates.delete(domain);
-    }
-  }
-  
-  return duplicates;
-}
-
 // Get duplicate groups with metadata
 export function getDuplicateGroups(tabs: chrome.tabs.Tab[]): DuplicateGroup[] {
   const duplicateMap = findDuplicatesByUrl(tabs);

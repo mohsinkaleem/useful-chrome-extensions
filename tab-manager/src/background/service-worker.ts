@@ -1,9 +1,8 @@
 // Background service worker
 
-import { AutoGrouper } from './auto-grouper.js';
-
-// Initialize auto-grouper
-const autoGrouper = new AutoGrouper();
+import { extractBaseDomain, normalizeUrl } from '../shared/url-utils.js';
+import { createBookmark } from '../shared/bookmark-utils.js';
+import { applyCluster } from '../shared/grouping.js';
 
 // Context menu setup
 chrome.runtime.onInstalled.addListener(() => {
@@ -28,11 +27,15 @@ chrome.runtime.onInstalled.addListener(() => {
 
   // Initialize badge
   updateTabCountBadge();
-  
+
   // Ensure action click opens popup, not side panel
-  // @ts-ignore - sidePanel API types might not be fully available
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
     .catch((error: unknown) => console.error('Failed to set panel behavior:', error));
+});
+
+// Badge text does not survive a browser restart, so recompute it on startup.
+chrome.runtime.onStartup.addListener(() => {
+  updateTabCountBadge();
 });
 
 // Context menu click handler
@@ -40,9 +43,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   switch (info.menuItemId) {
     case 'close-duplicate-tabs':
       if (tab?.url) {
+        const target = normalizeUrl(tab.url);
         const tabs = await chrome.tabs.query({});
-        const duplicates = tabs.filter(t => t.url === tab.url && t.id !== tab.id);
-        const ids = duplicates.map(t => t.id).filter(Boolean) as number[];
+        const ids = tabs
+          .filter(t => t.url && normalizeUrl(t.url) === target && t.id !== tab.id)
+          .map(t => t.id)
+          .filter((id): id is number => id !== undefined);
         if (ids.length > 0) {
           await chrome.tabs.remove(ids);
         }
@@ -51,53 +57,32 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     case 'bookmark-tab':
       if (tab?.url && tab?.title) {
-        await chrome.bookmarks.create({
-          parentId: '1',
-          title: tab.title,
-          url: tab.url
-        });
+        await createBookmark(tab);
       }
       break;
 
     case 'group-by-domain':
       if (tab?.url) {
-        try {
-          const domain = new URL(tab.url).hostname;
-          // Group tabs by domain within each window separately
-          const allWindows = await chrome.windows.getAll({ populate: true });
-          for (const win of allWindows) {
-            if (!win.tabs || !win.id) continue;
-            const sameDomainInWindow = win.tabs.filter(t => {
-              try {
-                return t.url && new URL(t.url).hostname === domain;
-              } catch {
-                return false;
-              }
-            });
-            const ids = sameDomainInWindow.map(t => t.id).filter(Boolean) as number[];
-            if (ids.length > 1) {
-              try {
-                const groupId = await chrome.tabs.group({ tabIds: ids });
-                await chrome.tabGroups.update(groupId, {
-                  title: domain,
-                  collapsed: false
-                });
-              } catch (e) {
-                console.error(`Failed to group tabs in window ${win.id}:`, e);
-              }
-            }
-          }
-        } catch (e) {
-          console.error('Failed to group by domain:', e);
+        const domain = extractBaseDomain(tab.url);
+        if (!domain) break;
+
+        // Group per window — chrome.tabs.group cannot span windows.
+        const allWindows = await chrome.windows.getAll({ populate: true });
+        for (const win of allWindows) {
+          if (!win.tabs || win.id === undefined) continue;
+          const ids = win.tabs
+            .filter(t => t.url && extractBaseDomain(t.url) === domain)
+            .map(t => t.id)
+            .filter((id): id is number => id !== undefined);
+          await applyCluster(win.id, domain, ids);
         }
       }
       break;
   }
 });
 
-// Tab event listeners for auto-grouping
-chrome.tabs.onCreated.addListener((tab) => {
-  autoGrouper.onTabCreated(tab);
+// Tab event listeners
+chrome.tabs.onCreated.addListener(() => {
   debouncedUpdateTabCountBadge();
 });
 
@@ -105,16 +90,9 @@ chrome.tabs.onCreated.addListener((tab) => {
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === 'open_side_panel') {
     if (tab?.windowId) {
-      // @ts-ignore
       chrome.sidePanel.open({ windowId: tab.windowId })
         .catch((error: unknown) => console.error('Failed to open side panel:', error));
     }
-  }
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url) {
-    autoGrouper.onTabUpdated(tab);
   }
 });
 
@@ -159,13 +137,5 @@ async function updateTabCountBadge() {
     await chrome.action.setBadgeBackgroundColor({ color: '#3498db' }); // Blue
   }
 }
-
-// Keep service worker alive
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'ping') {
-    sendResponse({ status: 'alive' });
-  }
-  return true;
-});
 
 console.log('Tab Manager service worker initialized');
