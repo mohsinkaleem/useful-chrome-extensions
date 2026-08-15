@@ -94,27 +94,18 @@ export function getGeneratedFavicon(bookmark) {
 }
 
 /**
- * Get the best available favicon URL for a bookmark
+ * Get the best available favicon URL for a bookmark.
+ * Only locally-derived sources are used - no third-party favicon service, so
+ * rendering a bookmark never discloses the domain to anyone.
  * @param {Object} bookmark - Bookmark object
  * @returns {string} Favicon URL
  */
 export function getFaviconUrl(bookmark) {
-  // 1. Use enriched favicon if available
-  if (bookmark.faviconUrl) {
+  // Favicons captured during enrichment come from the site itself
+  if (bookmark.faviconUrl && /^https?:|^data:image\//i.test(bookmark.faviconUrl)) {
     return bookmark.faviconUrl;
   }
 
-  // 2. Use Google's favicon service for HTTP/HTTPS
-  if (bookmark.url && (bookmark.url.startsWith('http://') || bookmark.url.startsWith('https://'))) {
-    try {
-      const domain = bookmark.domain || new URL(bookmark.url).hostname;
-      return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
-    } catch (e) {
-      // Ignore URL parsing errors
-    }
-  }
-
-  // 3. Fallback to generated icon
   return getGeneratedFavicon(bookmark);
 }
 

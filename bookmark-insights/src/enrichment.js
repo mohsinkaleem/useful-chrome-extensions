@@ -3,6 +3,7 @@
 
 import { getSettings, getNextEnrichmentBatch, removeFromEnrichmentQueue, upsertBookmark, getBookmark, logEvent, invalidateMetricCaches } from './db.js';
 import { parseBookmarkUrl } from './url-parsers.js';
+import { safeFetch, isFetchableUrl, safeImageUrl } from './url-safety.js';
 
 // Domain-based categorization rules
 const CATEGORY_RULES = {
@@ -79,10 +80,10 @@ export async function enrichBookmark(bookmarkId, options = {}) {
       return { success: false, error: 'Bookmark not found' };
     }
 
-    // Only enrich http/https URLs
-    if (!bookmark.url.startsWith('http://') && !bookmark.url.startsWith('https://')) {
-      console.log(`Skipping non-http bookmark: ${bookmark.url}`);
-      return { success: false, error: 'Not an HTTP URL', skipped: true };
+    // Only enrich public http/https URLs - never reach into private or loopback ranges
+    if (!isFetchableUrl(bookmark.url)) {
+      console.log(`Skipping non-fetchable bookmark: ${bookmark.url}`);
+      return { success: false, error: 'Not a public HTTP URL', skipped: true };
     }
 
     // Skip if recently enriched (based on freshness settings) - unless force is true
@@ -193,19 +194,10 @@ export async function enrichBookmark(bookmarkId, options = {}) {
 
 // Check if a bookmark URL is still alive
 export async function checkBookmarkAlive(url) {
+  if (!isFetchableUrl(url)) return null;
+
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    // Try HEAD request first (faster)
-    const response = await fetch(url, {
-      method: 'HEAD',
-      signal: controller.signal,
-      redirect: 'follow'
-    });
-
-    clearTimeout(timeoutId);
-    
+    const response = await safeFetch(url, { method: 'HEAD', timeout: 5000, readBody: false });
     // Consider 2xx and 3xx as alive
     return response.ok || (response.status >= 300 && response.status < 400);
   } catch (error) {
@@ -213,21 +205,13 @@ export async function checkBookmarkAlive(url) {
       console.log(`Timeout checking ${url}`);
       return null; // Unknown - timeout
     }
-    
-    // Try GET request as fallback with no-cors mode
+
+    // Some servers reject HEAD; retry once with a ranged GET before declaring it dead.
     try {
-      const controller2 = new AbortController();
-      const timeoutId2 = setTimeout(() => controller2.abort(), 5000);
-      
-      await fetch(url, {
-        method: 'GET',
-        mode: 'no-cors',
-        signal: controller2.signal
-      });
-      
-      clearTimeout(timeoutId2);
-      return null; // Unknown - CORS blocked but request went through
+      const response = await safeFetch(url, { method: 'GET', timeout: 5000, maxBytes: 1024 });
+      return response.ok || (response.status >= 300 && response.status < 400);
     } catch (error2) {
+      if (error2.name === 'AbortError') return null;
       console.log(`Error checking ${url}:`, error2.message);
       return false; // Likely dead
     }
@@ -237,21 +221,16 @@ export async function checkBookmarkAlive(url) {
 // Fetch metadata from a web page
 export async function fetchPageMetadata(url) {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow'
+    const response = await safeFetch(url, {
+      timeout: 10000,
+      expectContentType: /text\/html|application\/xhtml\+xml/i
     });
 
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
+    if (!response.ok || !response.body) {
       return {};
     }
 
-    const html = await response.text();
+    const html = response.body;
     
     // Parse HTML using regex (service worker compatible - no DOMParser available)
     
@@ -274,11 +253,12 @@ export async function fetchPageMetadata(url) {
       .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gim, "")
       .replace(/<!--[\s\S]*?-->/g, "");
 
-    // Extract all meta tags using regex
+    // Extract all meta tags using regex.
+    // Read from cleanHtml so values inside <script> bodies or comments can't be injected.
     const metaTagRegex = /<meta\s+([^>]*?)>/gi;
     let metaMatch;
     
-    while ((metaMatch = metaTagRegex.exec(html)) !== null) {
+    while ((metaMatch = metaTagRegex.exec(cleanHtml)) !== null) {
       const metaTag = metaMatch[1];
       
       // Extract name/property and content attributes
@@ -299,7 +279,8 @@ export async function fetchPageMetadata(url) {
       }
     }
 
-    // Extract JSON-LD structured data
+    // Extract JSON-LD structured data.
+    // Must read raw html - cleanHtml has already stripped every <script> block.
     const jsonLdRegex = /<script\s+type=["']application\/ld\+json["']>(.*?)<\/script>/gis;
     let jsonLdMatch;
     
@@ -313,20 +294,20 @@ export async function fetchPageMetadata(url) {
     }
 
     // Extract title tag
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const titleMatch = cleanHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
     if (titleMatch) {
       rawMetadata.other.title = titleMatch[1].trim();
     }
     
     // Extract canonical link
-    const canonicalMatch = html.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i) ||
-                          html.match(/<link\s+href=["']([^"']+)["']\s+rel=["']canonical["']/i);
+    const canonicalMatch = cleanHtml.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i) ||
+                          cleanHtml.match(/<link\s+href=["']([^"']+)["']\s+rel=["']canonical["']/i);
     if (canonicalMatch) {
       rawMetadata.other.canonical = canonicalMatch[1];
     }
     
     // Extract language attribute
-    const langMatch = html.match(/<html[^>]*\slang=["']([^"']+)["']/i);
+    const langMatch = cleanHtml.match(/<html[^>]*\slang=["']([^"']+)["']/i);
     if (langMatch) {
       rawMetadata.other.language = langMatch[1];
     }
@@ -362,15 +343,11 @@ export async function fetchPageMetadata(url) {
     }
 
     // Get favicon using regex
-    const faviconMatch = html.match(/<link\s+([^>]*rel=["'](?:icon|shortcut icon)["'][^>]*)>/i);
+    const faviconMatch = cleanHtml.match(/<link\s+([^>]*rel=["'](?:icon|shortcut icon)["'][^>]*)>/i);
     if (faviconMatch) {
       const hrefMatch = faviconMatch[1].match(/href=["']([^"']+)["']/i);
       if (hrefMatch) {
-        try {
-          metadata.faviconUrl = new URL(hrefMatch[1], url).href;
-        } catch (e) {
-          // Invalid URL, skip
-        }
+        metadata.faviconUrl = safeImageUrl(hrefMatch[1], url);
       }
     }
 
@@ -596,8 +573,11 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
   
   // Generic: Extract og:image for thumbnails
   if (rawMeta.openGraph?.['og:image']) {
-    enhanced.extra = enhanced.extra || {};
-    enhanced.extra.thumbnail = rawMeta.openGraph['og:image'];
+    const thumbnail = safeImageUrl(rawMeta.openGraph['og:image']);
+    if (thumbnail) {
+      enhanced.extra = enhanced.extra || {};
+      enhanced.extra.thumbnail = thumbnail;
+    }
   }
   
   // Extract content type from og:type

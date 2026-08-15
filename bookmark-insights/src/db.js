@@ -3,6 +3,7 @@
 
 import Dexie from 'dexie';
 import { STOP_WORDS } from './utils.js';
+import { isFetchableUrl, safeFetch } from './url-safety.js';
 
 // Initialize Dexie database
 export const db = new Dexie('BookmarkInsightsDB');
@@ -1582,9 +1583,12 @@ export async function getDeadLinks() {
 export async function checkDeadLinks(bookmarkIds = null, batchSize = 10) {
   try {
     const bookmarks = await getAllBookmarks();
-    const toCheck = bookmarkIds 
+    // The scheme/host filter applies to both branches - an explicit id list must
+    // not be able to make the extension fetch file://, chrome:// or intranet URLs.
+    const toCheck = (bookmarkIds
       ? bookmarks.filter(b => bookmarkIds.includes(b.id))
-      : bookmarks.filter(b => b.url.startsWith('http'));
+      : bookmarks
+    ).filter(b => isFetchableUrl(b.url));
     
     const results = {
       checked: 0,
@@ -1599,16 +1603,7 @@ export async function checkDeadLinks(bookmarkIds = null, batchSize = 10) {
       results.checked++;
       
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        await fetch(bookmark.url, {
-          method: 'HEAD',
-          mode: 'no-cors',
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
+        await safeFetch(bookmark.url, { method: 'HEAD', timeout: 5000, readBody: false });
         results.alive.push(bookmark);
       } catch (error) {
         if (error.name === 'AbortError') {
