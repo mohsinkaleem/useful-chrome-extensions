@@ -1,153 +1,74 @@
-# Troubleshooting Guide
+# Troubleshooting
 
-## Common Issues and Solutions
+The extension has **no popup and no options page**. The primary UI is the **side panel**, opened by clicking the toolbar icon. The full **dashboard** opens from the side panel or at `chrome-extension://<id>/dashboard.html`.
 
-### Extension Won't Load
-**Problem**: "Manifest file is missing or unreadable" error
-**Solution**: 
-- Ensure you're selecting the root folder containing `manifest.json`
-- Check that `manifest.json` is valid JSON (no syntax errors)
+## Where to look for errors
 
-### No Bookmarks Showing
-**Problem**: Extension loads but shows no bookmarks
-**Solutions**:
-1. **Check Permissions**: Make sure the extension has bookmark permissions
-   - Go to `chrome://extensions/`
-   - Find "Bookmark Insight" 
-   - Click "Details"
-   - Ensure all permissions are granted
+| Surface | How to inspect |
+|---|---|
+| Service worker | `chrome://extensions/` → Bookmark Insight → **Service worker** link |
+| Side panel | Right-click inside the side panel → **Inspect** |
+| Dashboard | Open the dashboard tab → `Cmd/Ctrl + Option + I` |
+| Database | Dashboard → **Data** tab, or DevTools → Application → IndexedDB → `BookmarkInsightsDB` |
 
-2. **Manual Sync**: The extension syncs bookmarks automatically, but you can trigger a manual sync:
-   - Open the extension popup
-   - Click "Dashboard"
-   - The dashboard will attempt to load bookmarks automatically
+## Common problems
 
-3. **Check Browser Console**: 
-   - Right-click on the extension popup → "Inspect"
-   - Look for error messages in the console
-   - Right-click on dashboard page → "Inspect" for dashboard errors
+### The side panel does not open
 
-### Search Not Working
-**Problem**: Search returns no results or errors
-**Solutions**:
-- Try clearing the search and typing again
-- Check if bookmarks are loaded (should show total count)
-- Restart Chrome and try again
+Click the toolbar icon; the panel is configured to open on action click. If nothing happens, reload the extension from `chrome://extensions/` and check the service worker console for errors during `onInstalled`.
 
-### Popup Too Small/Large
-**Problem**: Interface doesn't fit properly
-**Solution**: The popup is designed to be 384x384px. If it looks wrong:
-- Try reloading the extension
-- Check if CSS files are loading properly
-- Clear Chrome cache
+### Bookmarks are missing or stale
 
-### Dashboard Not Opening
-**Problem**: "Dashboard" button doesn't work
-**Solutions**:
-- Check if popup blockers are blocking the new tab
-- Try right-clicking the extension icon and selecting "Options" (if available)
-- Manually navigate to `chrome-extension://[extension-id]/dashboard.html`
+The database syncs on install, on update, on browser startup, and on every Chrome bookmark event.
 
-### Build Errors
-**Problem**: `npm run build` fails
-**Solutions**:
-1. **Node.js Version**: Ensure you're using Node.js 16+ 
-   ```bash
-   node --version
-   ```
+1. Dashboard → **Data** tab → check the `bookmarks` table row count against your Chrome bookmark count.
+2. Reload the extension to force a fresh sync.
+3. If the counts still disagree, restore from a backup (Health → Backup) rather than clearing the database — enrichment data is not recoverable from Chrome.
 
-2. **Clean Install**:
-   ```bash
-   rm -rf node_modules package-lock.json
-   npm install
-   npm run build
-   ```
+### Enrichment does nothing / makes no progress
 
-3. **Permission Issues**: On macOS/Linux, you might need:
-   ```bash
-   sudo npm install
-   ```
+Enrichment is **manual only** — nothing runs on a schedule.
 
-### Performance Issues
-**Problem**: Extension is slow or unresponsive
-**Solutions**:
+- Check `enrichmentEnabled` is true (Health → Enrichment).
+- Bookmarks enriched within `enrichmentFreshnessDays` (default 30) are skipped. Use **Force re-enrich** to bypass this.
+- Only **public http/https** URLs are fetched. `file://`, `chrome://`, `javascript:`, `data:`, `localhost`, and private/loopback/link-local addresses are deliberately skipped and will never enrich.
+- Pages that do not return an HTML content type are skipped, and only the first 512 KB of a response is read.
 
-**Recent Optimizations (v3.2):**
-- Search is now debounced (300ms) to eliminate typing lag
-- Centralized bookmark cache (30s TTL) prevents redundant database reads
-- Stats computed in single-pass with search results
-- Background refresh pauses when tab is hidden
+### Everything shows as a dead link
 
-**If still slow:**
-- **Similarity Detection**: The "Scan for Similarities" feature runs in the background without freezing. If slow, try smaller batches.
-- Check bookmark count (10,000+ bookmarks may need patience)
-- Close and reopen the extension
-- Restart Chrome
-- Check Chrome's Task Manager (`Shift+Esc`) for memory usage
-- Reduce enrichment concurrency in settings (3 → 2)
+Dead-link detection issues a `HEAD` request and falls back to a small ranged `GET`. Sites behind Cloudflare-style bot protection, or that require authentication, will return errors. Requests deliberately omit cookies, so pages that need your login will look unreachable.
 
-### Favicon Loading Errors
-**Problem**: Console shows "Not allowed to load local resource: chrome://favicon/" or CSP violations
-**Solution**: 
-- This has been fixed in the latest version
-- The extension now generates local favicon icons instead of using external services
-- Each domain gets a unique color and letter-based icon
-- Rebuild the extension with `npm run build` and reload it
+Re-check from Health → Dead Links, and delete only after spot-checking a few with the **Try** link.
 
-### Bookmark Deletion Errors
-**Problem**: "Can't find bookmark for id" errors when deleting duplicates
-**Solution**:
-- This happens when bookmarks are deleted faster than the sync can keep up
-- The extension now checks if bookmarks exist before attempting deletion
-- Duplicate detection now validates bookmark existence before showing them
+### Deep analysis returns nothing
 
-## Getting Help
+Deep analysis reads the `rawMetadata` already stored on each bookmark — it makes no network requests. If a bookmark was never enriched, there is nothing to analyse. Run enrichment first.
 
-### Debug Information
-When reporting issues, please provide:
-1. Chrome version: `chrome://version/`
-2. Operating system
-3. Number of bookmarks (approximately)
-4. Error messages from browser console
-5. Steps to reproduce the problem
+### Search returns no results after deleting bookmarks
 
-### Browser Console
-To check for errors:
-1. **For Popup**: Right-click popup → "Inspect" → "Console" tab
-2. **For Dashboard**: F12 on dashboard page → "Console" tab
-3. **For Background**: Go to `chrome://extensions/` → "Inspect views: background page"
+The FlexSearch index is persisted separately from the bookmark table. If results look stale, reload the extension — the index is rebuilt on update.
 
-### Common Error Messages
+### The dashboard shows "Something went wrong"
 
-**"Cannot read properties of undefined (reading 'length')"**
-- **Fixed in v3.3**: This was caused by missing filter properties in the store
-- If you still see this error, rebuild the extension: `npm run build && npm run package`
-- Reload the extension in Chrome
+An uncaught error crashed the Svelte app. Click **Reload**, then open DevTools on the dashboard tab and reproduce to capture the stack trace.
 
-**"Cannot read property of undefined"**
-- Usually means data isn't loaded yet
-- Try refreshing or waiting a moment
+### Behaviour tracking records nothing
 
-**"Extension context invalidated"**
-- Extension was reloaded/updated
-- Close and reopen the extension interface
+`trackBrowsingBehavior` is off by default and requires the **optional** `tabs` permission. Without that permission granted, tab URLs are unreadable and tracking stays disabled — the service worker logs a warning saying so.
 
-**"Storage quota exceeded"**
-- Too much data stored (very large bookmark collections)
-- This is rare but contact support if it happens
+## Resetting
 
-### Reset Extension
-If all else fails:
-1. Go to `chrome://extensions/`
-2. Find "Bookmark Insight"
-3. Click "Remove"
-4. Reinstall the extension
-5. All data will be synced fresh from your Chrome bookmarks
+1. **Back up first**: Dashboard → Health → Backup → Download.
+2. Remove the extension from `chrome://extensions/`, or delete the `BookmarkInsightsDB` database from DevTools → Application → IndexedDB.
+3. Reinstall and restore from your backup.
 
-### Reporting Bugs
-Please include:
-- Detailed description of the problem
-- Steps to reproduce
-- Expected vs actual behavior  
-- Screenshots if applicable
-- Browser console errors
+Removing the extension does **not** delete your Chrome bookmarks — only the enrichment data layered on top of them.
+
+## Reporting an issue
+
+Include:
+
+- Chrome version and OS
+- Which surface failed (service worker / side panel / dashboard)
+- The console error with its stack trace
+- Bookmark count, from Data → `bookmarks` table

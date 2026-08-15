@@ -1,246 +1,206 @@
-# Bookmark Insights - Chrome Extension
+# Bookmark Insight — Chrome Extension
 
-A powerful, privacy-first bookmark intelligence system with smart search, enrichment, insights, and maintenance tools.
+A privacy-first bookmark manager with advanced search, platform-aware enrichment, visual analytics, and maintenance tools. All processing happens locally in your browser.
 
 ## Features
 
-### 🔍 Advanced Search
+### 🔍 Advanced search
 
-- **Hybrid Search Engine**: Combines **FlexSearch** for high-performance fuzzy matching with a custom parser for advanced queries.
+- **FlexSearch** fuzzy matching combined with a custom query parser
 - **Boolean operators**: `+term` (must include), `-term` (must exclude)
-- **Exact phrases**: `"quoted phrases"` for precise matching
-- **Regex patterns**: `/pattern/` or `/pattern/flags` for advanced matching
-- **Special filters**: `category:code`, `domain:github`, `accessed:yes`, `stale:yes`, `dead:yes`, `enriched:yes`, `folder:"path"`
-- **Platform filters**: `platform:youtube`, `channel:@mkbhd`, `repo:facebook/react`, `author:username`, `type:video|issue`
-- **Visual Filter Builder**: Quick-access buttons to easily add common filters.
-- **Search History**: Saves recent searches for quick access via a dropdown menu.
-- **Keyword Highlighting**: Matches are highlighted in Title, URL, and Description for better context.
-- **Smart relevance ranking** - title matches rank highest
-- **Dynamic filtering** - sidebar updates to show matching domains, folders, and platforms
-- **Visual query feedback** - parsed terms displayed as colored tags
+- **Exact phrases**: `"quoted phrases"`
+- **Regex patterns**: `/pattern/` or `/pattern/flags`
+- **Special filters**: `category:`, `domain:`, `folder:`, `accessed:`, `stale:`, `dead:`, `enriched:`
+- **Platform filters**: `platform:`, `channel:`, `repo:`, `author:`, `type:`, `hasimage:`, `playlist:`
+- **Visual filter builder** with quick-access buttons for common filters
+- **Search history** in a dropdown
+- **Keyword highlighting** in titles, URLs and descriptions
+- **Dynamic sidebar** — domain, folder and topic counts update with the result set
 
-### 📱 Platform Enrichment
+### 📱 Platform enrichment
 
-Automatically detects and extracts structured data from popular platforms:
+Structured data is extracted from the URL alone, with no network request:
 
-- **YouTube** - Video IDs, channel handles, playlists, shorts detection
-- **GitHub** - Repositories, issues, PRs, files, wiki pages, gists
-- **Medium/dev.to/Substack** - Authors, publications, article metadata
-- **Twitter/X** - Users, tweets, threads
-- **Reddit** - Subreddits, posts, comments
-- **Stack Overflow** - Questions, answers
-- **npm** - Packages, versions
+- **YouTube** — video IDs, channel handles, playlists, shorts
+- **GitHub** — repositories, issues, PRs, files, wikis, gists
+- **Medium / dev.to / Substack** — authors, publications, article metadata
+- **Twitter/X**, **Reddit**, **Stack Overflow**, **npm**
 
-### 📊 Visual Analytics Dashboard
+### 📊 Visual insights
 
-Six interactive tabs with actionable insights:
+The Insights tab renders Chart.js visualisations over your collection: platform distribution, creator leaderboard, content types, topic clusters, and time-based patterns.
 
-- **❤️ Health** - Collection health score, bookmark ROI, decay rate, dead link ratio
-- **📱 Platforms** - Platform breakdown chart, creator leaderboard, repository map, visual gallery
-- **📚 Content** - Category distribution, topic clusters, content type analysis
-- **⚡ Actions** - Stale queue, cleanup candidates, rediscovery feed
-- **🌐 Domains** - Domain reliability, valuable domains, concentration warnings
-- **⏰ Time** - Hourly/daily patterns, collection age, monthly trends
+### 🔧 Enrichment pipeline
 
-### 👤 Creator Explorer
+- **Manual only** — enrichment never runs on a schedule
+- **Parallel processing** with configurable concurrency
+- **Metadata extraction** — Open Graph, Twitter Card, JSON-LD, meta tags, favicons
+- **Deep analysis** — reading time, published date, content quality and smart tags, derived from already-stored metadata without refetching
+- **Auto-categorization** from domain, URL path and content keywords
+- **Real-time progress** with detailed logs
 
-- **Creator leaderboard** - Most bookmarked channels and authors
-- **YouTube channels** - Group videos by channel with thumbnails
-- **GitHub repositories** - Issues, PRs, and files per repo
-- **Blog authors** - Articles grouped by author across platforms
+### 🏥 Health & maintenance
 
-### 🔧 Enrichment Pipeline
+- **Dead links** — view, re-check or delete unreachable bookmarks
+- **Duplicates & similar content** — unified panel with side-by-side comparison
+- **Cleanup candidates** — dead, old and unused, generic titles, temporary/dev URLs, low quality score
+- **Malformed URL detection**
+- **Backup & restore** — full JSON or compressed `.db` export
 
-- **Manual enrichment** - Click to fetch metadata (never automatic)
-- **Platform detection** - Extracts structured data from URLs without network requests
-- **Force re-enrich** - Option to bypass freshness check for on-demand refresh
-- **Parallel processing** - Configurable concurrency (3-10x faster)
-- **Metadata extraction** - Title, description, Open Graph, keywords, favicons
-- **Auto-categorization** - 15+ categories based on domain, URL, and content
-- **Real-time progress** - Live progress bar with detailed logs
+### 💾 Data explorer
 
-### 🏥 Health & Maintenance
+Browse every IndexedDB table, inspect field coverage, review cached metrics and their TTLs, and export any table as JSON.
 
-- **Dead links** - View, re-check, or delete unreachable bookmarks
-- **Duplicates & Similarities** - Unified interface for managing exact duplicates and finding similar content
-- **Smart similar detection** - Non-blocking, on-demand fuzzy matching with side-by-side comparison
-- **Cached results** - Shows cache status with option to force refresh
-- **Malformed URL detection** - Find invalid bookmark URLs
+### 🔒 Privacy
 
-### 📚 Bookmark Display
+- **100% local** — no analytics, no telemetry, no third-party services. Favicons are rendered locally rather than fetched from a favicon service.
+- **Network requests only during enrichment**, only to your own bookmarked URLs, and only when you trigger it. Requests omit credentials, refuse private/loopback/link-local addresses, cap the response body, and require an HTML content type.
+- **No browsing tracking by default** — tab monitoring is off and requires the optional `tabs` permission.
 
-- **Status icons** - Visual indicators for dead links, enriched status, access count
-- **Category tags** - Category labels displayed on bookmarks
-- **Favicon display** - Website icons for quick recognition
-- **Multi-select** - Select multiple bookmarks for batch operations (persistent across view changes)
-- **Reactive filtering** - Sidebar counts update dynamically as you apply filters
-- **Clear filters** - One-click button to reset all sidebar filters
-
-### 💾 Data Explorer
-
-- **Database browser** - Explore all 7 database tables interactively
-- **Field coverage** - Visual bars showing data completeness
-- **Cache inspector** - Monitor cached metrics with validity status
-- **JSON export** - Export any table with filtering
-
-### 🔒 Privacy First
-
-- ✅ **100% local processing** - All data stays in your browser
-- ✅ **No external APIs** - Only fetches from your bookmarked URLs when you trigger enrichment
-- ✅ **No browsing tracking by default** - Tab monitoring is OFF unless you enable it
-- ✅ **No analytics/telemetry** - Zero data collection
-
-## Search Syntax
+## Search syntax
 
 ```
 javascript tutorial       # Find "javascript" OR "tutorial"
 +javascript +tutorial     # MUST contain both terms
 javascript -video         # Find "javascript" but exclude "video"
-"react hooks"             # Find exact phrase
-/react.*hooks?/           # Regex pattern matching
+"react hooks"             # Exact phrase
+/react.*hooks?/           # Regex pattern
 
 # Special filters
-category:code             # Filter by category
-domain:github.com         # Filter by domain
-accessed:yes              # Only accessed bookmarks (yes/no)
-accessed:no               # Never accessed bookmarks
-stale:yes                 # Old + never accessed
-enriched:yes              # Has metadata (yes/no)
-dead:yes                  # Dead links only (yes/no)
-folder:"My Folder"        # Filter by folder path
+category:code
+domain:github.com
+accessed:yes | accessed:no
+stale:yes                 # Old and never accessed
+enriched:yes | enriched:no
+dead:yes
+folder:"My Folder"
 
-# Platform filters (new in v3.0)
-platform:youtube          # Filter by platform
-platform:github           # GitHub bookmarks only
-channel:@mkbhd            # YouTube channel (with or without @)
-repo:facebook/react       # GitHub repository
-author:username           # Blog/article author
-type:video                # Content type (video, issue, article, repo, etc.)
-type:issue|pr             # Multiple types with pipe separator
-hasimage:yes              # Has thumbnail image
-playlist:PLxxxxxxx        # YouTube playlist
+# Platform filters
+platform:youtube
+channel:@mkbhd
+repo:facebook/react
+author:username
+type:video | type:issue|pr
+hasimage:yes
+playlist:PLxxxxxxx
 
-# Combined example
+# Combined
 domain:github.com +tutorial -video enriched:yes
 platform:youtube channel:@fireship type:video
 ```
 
-## Getting Started
+## Getting started
 
-### 1. Install Dependencies
 ```bash
 npm install
+npm run build
 ```
 
-### 2. Build & Package
-To create a clean extension folder without `node_modules` (recommended for loading into Chrome):
-```bash
-npm run package
-```
+Then load the extension:
 
-### 3. Load into Chrome
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable **Developer mode** (top right toggle)
+1. Open `chrome://extensions/`
+2. Enable **Developer mode**
 3. Click **Load unpacked**
-4. Select the **`extension/`** folder in this project directory
+4. Select this project directory
 
----
+## Interface
 
-## Development
+The extension has no popup. Clicking the toolbar icon opens the **side panel** for quick search and recent bookmarks. From there, "Open Dashboard" opens the full interface with four tabs:
 
-For active development with hot-reloading (CSS) and watch mode (JS):
-
-```bash
-npm run dev
-```
-
-*Note: When running in dev mode, changes are built to the root directory. For the cleanest experience, use `npm run package` after making changes to refresh the `extension/` folder.*
-
-## Search Syntax
-
-**Popup** - Click extension icon for quick search and recent bookmarks
-
-**Dashboard** - Full interface with four tabs:
-
-- **Bookmarks** - Browse, search, and filter with sidebar
-- **Insights** - Visual analytics dashboard
-- **Health** - Enrichment, dead links, duplicates, similar bookmarks
-- **Data** - Database explorer and cache management
+- **Bookmarks** — browse, search and filter with the sidebar
+- **Insights** — visual analytics
+- **Health** — enrichment, dead links, duplicates, cleanup, backup
+- **Data** — database explorer and cache management
 
 ## Configuration
 
-Default settings:
-
 ```javascript
 {
-  enrichmentEnabled: true,           // Enable enrichment feature
-  enrichmentBatchSize: 20,           // Bookmarks per batch (5-100)
+  enrichmentEnabled: true,           // Enable the enrichment feature
   enrichmentConcurrency: 3,          // Parallel workers (1-10)
   enrichmentFreshnessDays: 30,       // Re-enrich after N days (0 = always)
-  forceReenrich: false,              // Bypass freshness check
-  trackBrowsingBehavior: false       // OFF by default
+  trackBrowsingBehavior: false       // Off by default; needs the optional tabs permission
 }
 ```
 
 ## Development
 
 ```bash
-npm run dev        # Watch mode
-npm run build      # Production build
-npm run build:css  # Tailwind only
-npm run build:js   # JavaScript only
+npm run dev          # Watch mode
+npm run build        # Production build
+npm run lint         # ESLint
+npm run format       # Prettier
+npm run test         # Vitest
+npm run knip         # Unused files, exports and dependencies
 ```
 
-## Tech Stack
+CI runs lint, format check, tests, knip and a build on every push and pull request.
+
+## Tech stack
 
 - **UI**: Svelte 4, Tailwind CSS 3
 - **Database**: IndexedDB via Dexie.js
 - **Search**: FlexSearch.js
-- **Charts**: Chart.js 4
+- **Charts**: Chart.js 4 (Insights tab only)
 - **Build**: Rollup
+- **Tooling**: ESLint 9, Prettier, Vitest, Knip
 
-## Performance Optimizations
-
-- **Centralized Bookmark Cache**: 30-second TTL cache prevents redundant database reads across modules
-- **Debounced Search**: 300ms debounce eliminates UI lag during typing
-- **Single-Pass Stats**: Search results and statistics computed in one operation
-- **Visibility-Aware Refresh**: Background stats refresh pauses when tab is hidden
-- **Lazy Loading**: Charts and heavy computations load on-demand
-
-## File Structure
+## File structure
 
 ```
 .
-├── extension/         # Clean extension build (Load this in Chrome)
-├── public/            # Compiled assets
-├── src/               # Svelte components and logic
-│   ├── db.js          # IndexedDB operations
-│   ├── enrichment.js  # Metadata fetching pipeline
-│   ├── url-parsers.js # Platform-specific URL parsing
-│   ├── search.js      # FlexSearch with single-pass stats
-│   ├── similarity.js  # TF-IDF similarity engine
-│   ├── insights.js    # Analytics & platform insights
-│   ├── stores.js      # Svelte state + bookmark cache
-│   ├── utils.js       # Shared utilities & constants
-│   ├── Dashboard.svelte   # Main dashboard
-│   └── Sidebar.svelte     # Filters with platforms & creators
-├── background.js      # Compiled background service worker
-├── manifest.json      # Extension manifest
-└── rollup.config.js   # Build configuration
+├── public/                    # Compiled dashboard and side panel assets
+├── test/                      # Vitest unit tests for the pure functions
+├── src/
+│   ├── background.js          # Service worker: sync, message router, tracking
+│   ├── db.js                  # Dexie schema, queries, metric cache, backup
+│   ├── db-explorer.js         # Data Explorer queries
+│   ├── enrichment.js          # Metadata fetching and categorization
+│   ├── url-safety.js          # SSRF blocklist, scheme allowlists, safeFetch
+│   ├── url-parsers.js         # Platform-specific URL parsing
+│   ├── metadata-analyzer.js   # Reading time, published date, quality, tags
+│   ├── search.js              # FlexSearch index and query parsing
+│   ├── similarity.js          # Duplicate and near-duplicate detection
+│   ├── insights.js            # Analytics aggregations
+│   ├── topics.js              # Topic taxonomy and detection
+│   ├── stores.js              # Svelte stores for filters, search, selection
+│   ├── darkModeStore.js       # Dark mode persistence
+│   ├── utils.js               # Shared helpers and constants
+│   ├── error-boundary.js      # CSP-safe crash fallback
+│   ├── Dashboard.svelte       # Dashboard shell
+│   ├── DashboardHeader.svelte
+│   ├── SidePanel.svelte
+│   ├── Sidebar.svelte         # Filter sidebar
+│   ├── SearchBar.svelte
+│   ├── BookmarkCard.svelte / BookmarkListItem.svelte
+│   ├── ActiveFilterChips.svelte
+│   ├── UselessCategory.svelte
+│   ├── Highlight.svelte       # Search-term highlighting without {@html}
+│   ├── InsightCard.svelte
+│   ├── VisualInsights.svelte  # Insights tab charts
+│   └── DataExplorer.svelte
+├── background.js              # Compiled service worker
+├── manifest.json
+└── rollup.config.js
 ```
 
 ## Permissions
 
-- `bookmarks` - Read and manage bookmarks
-- `storage` - Local data storage
-- `favicon` - Display website icons
-- `tabs` - Track bookmark access (opt-in only)
-- `host_permissions` - Fetch metadata from bookmarked URLs
+| Permission | Why |
+|---|---|
+| `bookmarks` | Read and manage bookmarks |
+| `storage` | Settings and dark mode preference |
+| `sidePanel` | The primary UI surface |
+| `readingList` | Show and manage Chrome reading list items |
+| `<all_urls>` (host) | Fetch metadata from bookmarked URLs during enrichment |
+| `tabs` *(optional)* | Record bookmark access; only requested when you enable browsing behaviour tracking |
 
 ## Documentation
 
-📖 **[Technical Documentation](TECHNICAL_DOCUMENTATION.md)** - Architecture, API reference, and implementation details
+📖 **[Technical Documentation](TECHNICAL_DOCUMENTATION.md)** — architecture and implementation details
+
+🛠 **[Troubleshooting](TROUBLESHOOTING.md)**
 
 ## License
 
-MIT License
+MIT — see [LICENSE](LICENSE).

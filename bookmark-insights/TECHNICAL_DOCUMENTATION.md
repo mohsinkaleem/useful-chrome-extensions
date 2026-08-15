@@ -1,67 +1,9 @@
 # Bookmark Insights - Technical Documentation
 
-**Version:** 3.3  
-**Last Updated:** January 28, 2026
+**Version:** 2.2.0  
+**Last Updated:** August 15, 2026
 
-## Recent Updates (January 2026)
-
-### Dashboard Filter Error Fix & Enrichment UI Improvements (January 28, 2026)
-
-**Issue**: Dashboard page was throwing "Cannot read properties of undefined (reading 'length')" error when loading bookmarks. The SidePanel worked correctly.
-
-**Root Cause & Fix**:
-
-1. **Missing Filter Properties in Store** ([stores.js](src/stores.js))
-   - The `activeFilters` store was missing `types` and `creators` arrays in its initial state
-   - The `hasActiveFilters()` function in Dashboard.svelte was accessing these undefined properties without null checks
-   - Added `types: []` and `creators: []` to the store's initial state, `clearFilters()`, and `reset()` methods
-
-2. **Unsafe Property Access** ([Dashboard.svelte](src/Dashboard.svelte))
-   - Updated `hasActiveFilters()` function to check for undefined before accessing `.length` on all filter arrays
-   - Fixed UI conditional that displayed active filter chips to use safe property access with `&&` guards
-
-**Enrichment UI Improvements**:
-
-- Added **Concurrency Control** (1-20 parallel requests) input in Advanced Options
-- Added **Estimated Time** display based on batch size and concurrency settings
-- Added **Activity Log** panel showing real-time enrichment progress with timestamps
-- Advanced Options panel now auto-expands when enrichment is running
-- Improved input field styling and labels with proper accessibility attributes
-
----
-
-### Filter Reactivity & State Management Improvements
-
-**Issue**: Sidebar filter counts weren't updating when filters were applied without an active search query.
-
-**Root Causes Identified & Fixed**:
-
-1. **Missing Stats Computation in Filter-Only Mode** ([search.js](src/search.js))
-   - The `searchBookmarks()` function had an early return path for filter-only queries (no search text) that didn't compute stats
-   - Added `computeStats` check to the filter-only code path to ensure sidebar stats are calculated
-
-2. **Inconsistent Active Filter Detection** ([Dashboard.svelte](src/Dashboard.svelte), [Sidebar.svelte](src/Sidebar.svelte))
-   - `hasActiveFilters()` in Dashboard and `activeFiltersExist` in Sidebar checked different filter properties
-   - Aligned both to check all filter types: domains, folders, platforms, types, creators, tags, deadLinks, stale, dateRange, readingTimeRange, qualityScoreRange, hasPublishedDate
-
-3. **Missing Filter Implementations** ([search.js](src/search.js))
-   - Added support for `readingTimeRange`, `qualityScoreRange`, and `hasPublishedDate` filters
-   - These filters were defined in the UI but not applied during search/filtering
-
-4. **Case-Insensitive Filter Matching** ([stores.js](src/stores.js), [search.js](src/search.js))
-   - Filter toggle/add/remove operations now use case-insensitive comparison for consistency
-   - Search filtering now lowercases both bookmark values and filter values when comparing
-
-5. **Reactive Statement Ordering** ([Sidebar.svelte](src/Sidebar.svelte))
-   - Moved `activeFiltersExist` computation before `useFilteredStats` to ensure proper dependency resolution
-   - Added intermediate `useFilteredStats` reactive variable to ensure proper prop change detection
-
-6. **Date Filter Toggle Behavior** ([Sidebar.svelte](src/Sidebar.svelte))
-   - Added toggle-off functionality: clicking the same date filter again now clears it instead of reapplying
-
-**Result**: Sidebar now correctly updates all filter counts in real-time, whether using search or filters alone.
-
----
+> Release history lives in [CHANGELOG.md](CHANGELOG.md).
 
 ## Table of Contents
 
@@ -84,31 +26,33 @@
 | UI Framework | Svelte 4.0 |
 | Database | IndexedDB via Dexie.js v3.x |
 | Search | FlexSearch.js |
-| Similarity | Custom TF-IDF with cosine similarity |
-| Charts | Chart.js 4.x |
+| Similarity | Normalized-URL matching + fuzzy title comparison |
+| Charts | Chart.js 4.x (Insights tab only) |
 | Styling | Tailwind CSS 3.x |
 | Build | Rollup with ES modules |
+| Tooling | ESLint 9, Prettier, Vitest, Knip |
 
 ### Component Architecture
 
 ```
 Chrome Extension
-├── Popup (384x384)
-│   └── Quick search, recent items
+├── Side Panel (primary UI, opens on toolbar click)
+│   └── Quick search, recent items, reading list
 ├── Dashboard (Full Page)
 │   ├── Bookmarks Tab - Browse & filter (centralized state)
-│   ├── Insights Tab - VisualInsights component (6 tabs)
-│   ├── Health Tab - Enrichment, dead links, unified duplicates & similarities
+│   ├── Insights Tab - VisualInsights component
+│   ├── Health Tab - Enrichment, dead links, duplicates, cleanup, backup
 │   └── Data Tab - Database explorer
 ├── Background Service Worker
 │   ├── Bookmark event listeners
 │   ├── Enrichment queue manager
-│   ├── Tab monitoring (opt-in)
-│   └── Message router
+│   ├── Tab monitoring (opt-in, optional `tabs` permission)
+│   └── Message router (handler map keyed by action)
 ├── State Management (Svelte Stores)
 │   ├── activeFilters - Centralized filter state
-│   ├── searchQueryStore - Search text state
-│   └── selectedBookmarksStore - Multi-select state
+│   ├── searchQuery - Search text state
+│   ├── selectedBookmarks - Multi-select state
+│   └── allBookmarks - Bookmark cache with 30s TTL
 └── IndexedDB Layer (Dexie)
     └── 7 tables: bookmarks, enrichmentQueue, events, cache, settings, similarities, computedMetrics
 ```
@@ -117,21 +61,27 @@ Chrome Extension
 
 ```
 src/
-├── db.js              # IndexedDB layer (schema v5, CRUD, analytics)
-├── stores.js          # Centralized state + bookmark cache with TTL
-├── enrichment.js      # Enrichment pipeline & metadata fetching
-├── search.js          # FlexSearch + filtering with single-pass stats
-├── similarity.js      # TF-IDF similarity engine (uses cached bookmarks)
-├── insights.js        # Analytics & insights (uses cached bookmarks)
-├── url-parsers.js     # Platform-specific URL parsing (YouTube, GitHub, etc.)
-├── utils.js           # Shared utilities and constants (STOP_WORDS)
-├── Dashboard.svelte   # Main dashboard - orchestrates state, search, and filtering
-├── Sidebar.svelte     # Reactive filter UI - subscribes to activeFilters store
-├── VisualInsights.svelte  # Interactive insights (6 tabs incl. Platforms)
-├── CreatorExplorer.svelte # Creator/channel browsing component
-└── *.svelte           # Other UI components
+├── background.js       # Service worker source
+├── db.js               # IndexedDB layer (schema v5, CRUD, analytics, backup)
+├── db-explorer.js      # Data Explorer queries
+├── stores.js           # Filter/search/selection state + bookmark cache with TTL
+├── enrichment.js       # Enrichment pipeline & metadata fetching
+├── url-safety.js       # SSRF blocklist, scheme allowlists, hardened safeFetch
+├── search.js           # FlexSearch + filtering with single-pass stats
+├── similarity.js       # Duplicate and near-duplicate detection
+├── insights.js         # Analytics & insights
+├── topics.js           # Topic taxonomy and detection
+├── metadata-analyzer.js # Reading time, published date, quality, smart tags
+├── url-parsers.js      # Platform-specific URL parsing (YouTube, GitHub, etc.)
+├── utils.js            # Shared utilities and constants (STOP_WORDS)
+├── Dashboard.svelte    # Dashboard shell - state, search, filtering
+├── DashboardHeader.svelte
+├── Sidebar.svelte      # Reactive filter UI - subscribes to activeFilters
+├── ActiveFilterChips.svelte / UselessCategory.svelte / Highlight.svelte
+├── VisualInsights.svelte  # Insights tab charts
+└── *.svelte            # Other UI components
 
-background-new.js      # Service worker source
+test/                  # Vitest unit tests for the pure functions
 ```
 
 ---
@@ -203,8 +153,12 @@ allBookmarks.invalidate();                              // Force refresh next ca
 **Features:**
 - **30-second TTL**: Balances freshness with performance
 - **Deduplication**: Concurrent calls share the same fetch promise
-- **Cross-module**: Used by similarity.js (9 calls), insights.js (21 calls), Sidebar.svelte
-- **Visibility-aware**: Stats refresh pauses when tab is hidden
+- **Invalidation**: `allBookmarks.invalidate()` is called after every mutation
+
+> **Known gap:** the analysis modules (`insights.js`, `similarity.js`, `search.js`)
+> each wrap this in a local `getBookmarksCached()` whose cache call is currently
+> commented out, so they fall through to a full `getAllBookmarks()` table scan.
+> Reconnecting those three wrappers is tracked in the code review as item 6.8.
 - `clearSelection()` - Deselect all
 
 ### Reactive Integration
@@ -663,26 +617,27 @@ Multi-layer caching with configurable TTL and smart invalidation.
 Centralized bookmark cache prevents redundant database reads across modules:
 
 ```javascript
-// All modules use cached bookmarks via:
 await allBookmarks.getCached(maxAge?)  // Default 30s TTL
 ```
 
-- `similarity.js`: Uses cache for all 9 bookmark operations
-- `insights.js`: Uses cache for all 21 insight computations
-- `Sidebar.svelte`: Uses cache for filter counts
-
 **Computed Metrics Cache (db.js):**
 
-| Metric | TTL |
-|--------|-----|
-| quickStats | 5 minutes |
-| domainStats | 1 hour |
-| duplicates | 1 hour |
-| activityTimeline | 6 hours |
-| wordFrequency | 24 hours |
-| similarities | 24 hours |
+`CACHE_KEYS` in `db.js` is the single source of truth. `CACHE_DURATIONS`,
+`invalidateMetricCaches()` and the Data Explorer's metric list are all derived
+from it, so a key cannot exist in one place and be missing from another.
 
-**Smart Invalidation:** Cache automatically invalidates based on change type (add/delete/update/enrich).
+| Key | TTL |
+|--------|-----|
+| `quickStats` | 5 minutes |
+| `quickDuplicateCount` | 5 minutes |
+| `domainAnalytics` | 1 hour |
+| `ageDistribution` | 6 hours |
+| `creationPatterns` | 6 hours |
+| `wordFrequency` | 24 hours |
+| `duplicates` | 24 hours |
+| `similarities` | 24 hours |
+
+**Smart Invalidation:** Cache invalidates based on change type (add/delete/update/enrich), including from `enrichBookmark()`.
 
 ### Enrichment Pipeline
 
@@ -924,9 +879,14 @@ getDeadLinkInsights()
 
 ### Bundle Sizes
 
-- popup.js: ~150KB (minified)
-- dashboard.js: ~300KB (minified)
-- tailwind.css: ~50KB (purged)
+Measured after `npm run build` (minified). There is no popup.
+
+| Artifact | Size |
+|---|---|
+| `background.js` | ~218 KB |
+| `public/dashboard.js` | ~707 KB (includes Chart.js for the Insights tab) |
+| `public/sidepanel.js` | ~217 KB |
+| `public/tailwind.css` | ~52 KB (purged) |
 
 ---
 
@@ -934,32 +894,46 @@ getDeadLinkInsights()
 
 ### Data Storage
 
-- ✅ **100% local** - All data in browser IndexedDB
-- ✅ **No cloud sync** - Never leaves your device
-- ✅ **No external APIs** - Direct page fetches only
+- ✅ **100% local** — all data in browser IndexedDB
+- ✅ **No cloud sync** — never leaves your device
+- ✅ **No third-party services** — favicons are generated locally rather than fetched from a favicon provider
 
 ### Permissions
 
 | Permission | Purpose | When Used |
 |------------|---------|-----------|
 | `bookmarks` | Read/write bookmarks | Always |
-| `storage` | Store settings | Always |
-| `host_permissions` | Fetch metadata | Manual enrichment only |
-| `tabs` | Track access | Opt-in only |
+| `storage` | Store settings and dark mode | Always |
+| `sidePanel` | Primary UI surface | Always |
+| `readingList` | Show and manage reading list items | Always |
+| `<all_urls>` (host) | Fetch metadata | Manual enrichment and dead-link checks only |
+| `tabs` *(optional)* | Track bookmark access | Only when browsing behaviour tracking is enabled |
 
-### Security
+### Outbound request hardening
 
-- Content Security Policy enforced
-- 5-second timeout per fetch
-- No JavaScript execution (regex parsing only)
-- User controls all processing
+Every outbound request goes through `safeFetch()` in `src/url-safety.js`:
+
+- **`credentials: 'omit'`** — authenticated pages are never fetched with your cookies, so private webmail, admin panels and internal wikis cannot be scraped into IndexedDB.
+- **Scheme allowlist** — only `http:` and `https:`.
+- **Private-range blocklist** — `localhost`, loopback, RFC1918, CGNAT, link-local (including `169.254.169.254`), IPv6 unique-local and link-local, and internal hostname suffixes are rejected. The check is re-applied to the final URL after redirects.
+- **Body cap** — responses are read through a stream reader and truncated at 512 KB, so a large file cannot be decoded into memory and fed to the parsing regexes.
+- **Content-Type gate** — metadata is only parsed from `text/html` or `application/xhtml+xml`.
+- **Timeout covers the body** — the abort timer is cleared only after the body is fully read, so a server that trickles its response cannot hang the worker.
+- `referrerPolicy: 'no-referrer'` and `cache: 'no-store'`.
+
+### Rendering safety
+
+- MV3 CSP is enforced; there are no inline event handlers.
+- `{@html}` does not appear anywhere in the codebase — search-term highlighting goes through `Highlight.svelte`, which emits `{#each}` text segments.
+- Favicon and `og:image` values pass a scheme allowlist before being used as image sources, so `javascript:` cannot survive URL resolution.
+- Metadata is parsed from HTML with `<script>`, `<style>` and comments stripped, so a site cannot inject values into stored records via a script body.
 
 ### GDPR Compliance
 
 - No personal data collection
 - No external data transmission
 - User controls all processing
-- Data export available (JSON)
+- Data export available (JSON and compressed `.db`)
 
 ---
 
@@ -987,7 +961,7 @@ getDeadLinkInsights()
 ### Debug Commands
 
 ```javascript
-// In dashboard/popup console
+// In the dashboard or side panel console
 await db.bookmarks.count()
 await db.enrichmentQueue.count()
 await db.settings.get('app')
