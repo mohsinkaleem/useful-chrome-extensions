@@ -1,0 +1,36 @@
+name: bookmark-insights CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['bookmark-insights/**']
+  pull_request:
+    paths: ['bookmark-insights/**']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bookmark-insights
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: bookmark-insights/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run format:check
+
+      - run: npm test
+
+      - run: npm run knip
+
+      - run: npm run build
