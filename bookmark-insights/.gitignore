@@ -1,6 +1,16 @@
 node_modules/
+.DS_Store
+*.map
+
+# Build output
 dist/
 extension/
-*.map
-.DS_Store
 background.js
+public/dashboard.js
+public/dashboard.css
+public/sidepanel.js
+public/sidepanel.css
+public/tailwind.css
+
+# Local data exports (contain personal browsing data)
+*backup-*.json
