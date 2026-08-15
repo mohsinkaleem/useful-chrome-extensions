@@ -32,6 +32,10 @@ export function formatDate(timestamp) {
 export function formatTimeAgo(timestamp) {
   const now = Date.now();
   const diff = now - timestamp;
+
+  if (!Number.isFinite(diff)) return 'Unknown';
+  if (diff < 0) return 'Just now';
+
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
@@ -43,11 +47,11 @@ export function formatTimeAgo(timestamp) {
   if (seconds < 60) return 'Just now';
   if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
   if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
-  if (days === 0) return 'Today';
   if (days === 1) return '1 day ago';
   if (days < 7) return `${days} days ago`;
   if (weeks < 4) return `${weeks} week${weeks !== 1 ? 's' : ''} ago`;
-  if (months < 12) return `${months} month${months !== 1 ? 's' : ''} ago`;
+  // Guard the 360-364 day gap, where months rounds to 12 but years is still 0
+  if (years < 1) return `${Math.min(months, 11)} month${months !== 1 ? 's' : ''} ago`;
   return `${years} year${years !== 1 ? 's' : ''} ago`;
 }
 

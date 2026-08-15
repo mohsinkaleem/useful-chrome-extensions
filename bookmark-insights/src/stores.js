@@ -7,6 +7,7 @@ import {
   getAllBookmarksWithReadingList,
   getCachedMetric, 
   CACHE_DURATIONS,
+  CACHE_KEYS,
   getStoredSimilarities 
 } from './db.js';
 
@@ -52,7 +53,7 @@ const createStatsStore = () => {
         
         // Get duplicates count from cached computation
         const duplicates = await getCachedMetric(
-          'quickDuplicateCount',
+          CACHE_KEYS.QUICK_DUPLICATE_COUNT,
           async () => {
             const urlMap = new Map();
             bookmarks.forEach(b => {
@@ -62,7 +63,7 @@ const createStatsStore = () => {
             });
             return Array.from(urlMap.values()).filter(count => count > 1).length;
           },
-          CACHE_DURATIONS.quickStats
+          CACHE_DURATIONS[CACHE_KEYS.QUICK_DUPLICATE_COUNT]
         );
         
         set({

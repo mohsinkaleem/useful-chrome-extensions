@@ -353,7 +353,7 @@ export async function getInsightsSummary() {
     const totalBookmarks = bookmarks.length;
     const categorized = bookmarks.filter(b => b.category).length;
     const enriched = bookmarks.filter(b => b.description || b.keywords?.length > 0).length;
-    const aliveChecked = bookmarks.filter(b => b.isAlive !== null).length;
+    const aliveChecked = bookmarks.filter(b => b.isAlive !== null && b.isAlive !== undefined).length;
     const deadLinks = bookmarks.filter(b => b.isAlive === false).length;
     const neverAccessed = bookmarks.filter(b => !b.lastAccessed && (!b.accessCount || b.accessCount === 0)).length;
     
@@ -754,6 +754,7 @@ export async function getCollectionHealthMetrics() {
 export async function getContentAnalysis() {
   try {
     const bookmarks = await getBookmarksCached();
+    const pct = (count) => bookmarks.length > 0 ? Math.round((count / bookmarks.length) * 1000) / 10 : 0;
     
     // Category Breakdown
     const categoryCount = {};
@@ -766,7 +767,7 @@ export async function getContentAnalysis() {
       .map(([category, count]) => ({
         category,
         count,
-        percentage: Math.round((count / bookmarks.length) * 1000) / 10
+        percentage: pct(count)
       }))
       .sort((a, b) => b.count - a.count);
     
@@ -827,7 +828,7 @@ export async function getContentAnalysis() {
       .map(([type, count]) => ({
         type,
         count,
-        percentage: Math.round((count / bookmarks.length) * 1000) / 10
+        percentage: pct(count)
       }))
       .filter(t => t.count > 0)
       .sort((a, b) => b.count - a.count);
@@ -846,7 +847,7 @@ export async function getContentAnalysis() {
       .map(([language, count]) => ({
         language: language === 'unknown' ? 'Unknown' : language.toUpperCase(),
         count,
-        percentage: Math.round((count / bookmarks.length) * 1000) / 10
+        percentage: pct(count)
       }))
       .sort((a, b) => b.count - a.count);
     
@@ -861,7 +862,7 @@ export async function getContentAnalysis() {
       .map(([folder, count]) => ({
         folder,
         count,
-        percentage: Math.round((count / bookmarks.length) * 1000) / 10
+        percentage: pct(count)
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 15);
@@ -1206,7 +1207,7 @@ export async function getTimeBasedAnalysis() {
     
     // Peak hours
     const maxHourCount = Math.max(...hourCounts);
-    const peakHours = bookmarkingHours
+    const peakHours = maxHourCount === 0 ? [] : bookmarkingHours
       .filter(h => h.count === maxHourCount)
       .map(h => h.hourLabel);
     
@@ -1229,9 +1230,10 @@ export async function getTimeBasedAnalysis() {
     // Weekend vs Weekday
     const weekendCount = dayCounts[0] + dayCounts[6];
     const weekdayCount = dayCounts.slice(1, 6).reduce((a, b) => a + b, 0);
+    const percentOfTotal = (count) => bookmarks.length > 0 ? Math.round((count / bookmarks.length) * 100) : 0;
     const weekdayVsWeekend = {
-      weekday: { count: weekdayCount, percentage: Math.round((weekdayCount / bookmarks.length) * 100) },
-      weekend: { count: weekendCount, percentage: Math.round((weekendCount / bookmarks.length) * 100) }
+      weekday: { count: weekdayCount, percentage: percentOfTotal(weekdayCount) },
+      weekend: { count: weekendCount, percentage: percentOfTotal(weekendCount) }
     };
     
     // Age Distribution (histogram)
@@ -1270,7 +1272,7 @@ export async function getTimeBasedAnalysis() {
     const ageDistribution = Object.entries(ageGroups).map(([period, count]) => ({
       period,
       count,
-      percentage: Math.round((count / bookmarks.length) * 100)
+      percentage: percentOfTotal(count)
     }));
     
     // Average age calculation
@@ -1279,9 +1281,13 @@ export async function getTimeBasedAnalysis() {
     const avgAgeDays = Math.round(avgAgeMs / (24 * 60 * 60 * 1000));
     
     // Monthly creation trend (last 12 months)
+    // Anchor to day 1 before stepping months back, otherwise e.g. Mar 31 -> "Feb 31"
+    // overflows into March and drops February from the series.
     const monthlyTrend = {};
+    const trendAnchor = new Date(now);
+    trendAnchor.setDate(1);
     for (let i = 11; i >= 0; i--) {
-      const date = new Date(now);
+      const date = new Date(trendAnchor);
       date.setMonth(date.getMonth() - i);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       monthlyTrend[monthKey] = 0;
@@ -1297,11 +1303,16 @@ export async function getTimeBasedAnalysis() {
       }
     });
     
-    const monthlyCreationTrend = Object.entries(monthlyTrend).map(([month, count]) => ({
-      month,
-      monthLabel: new Date(month + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
-      count
-    }));
+    const monthlyCreationTrend = Object.entries(monthlyTrend).map(([month, count]) => {
+      const [year, monthNum] = month.split('-').map(Number);
+      return {
+        month,
+        // Construct in local time; `new Date('YYYY-MM-01')` parses as UTC and renders
+        // as the previous month for any timezone west of UTC.
+        monthLabel: new Date(year, monthNum - 1, 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        count
+      };
+    });
     
     return {
       bookmarkingHours,

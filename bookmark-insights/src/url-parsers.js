@@ -1,6 +1,8 @@
 // Platform-specific URL parsers for extracting structured data from bookmark URLs
 // Extracts platform, content type, creator, and other structured info without additional fetches
 
+import { flattenRawMetadata } from './metadata-analyzer.js';
+
 /**
  * Main entry point - parse a bookmark URL and extract structured platform data
  * @param {string} url - The bookmark URL to parse
@@ -54,11 +56,16 @@ export function parseBookmarkUrl(url, metadata = null) {
 /**
  * Enhance content type detection using Schema.org structured data
  * @param {Object} platformData - Platform data from URL parsing
- * @param {Object} metadata - Raw metadata with schemaOrg field
+ * @param {Object} rawMetadata - Raw metadata (nested or flat shape)
  * @returns {Object} Enhanced platform data with refined type
  */
-export function enhanceWithSchemaOrg(platformData, metadata) {
-  if (!metadata || !metadata.schemaOrg || !platformData) {
+export function enhanceWithSchemaOrg(platformData, rawMetadata) {
+  if (!rawMetadata || !platformData) {
+    return platformData;
+  }
+
+  const metadata = flattenRawMetadata(rawMetadata);
+  if (!metadata.schemaOrg) {
     return platformData;
   }
 

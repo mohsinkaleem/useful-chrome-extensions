@@ -2,6 +2,44 @@
 // Works with existing rawMetadata without requiring additional network requests
 
 /**
+ * Normalize the nested rawMetadata shape written by enrichment.js
+ * ({ meta, openGraph, twitterCard, jsonLd, other }) into the flat, prefixed-key
+ * shape the extractors below expect, exposing JSON-LD as `schemaOrg`.
+ * @param {Object} rawMetadata
+ * @returns {Object} Flat metadata object
+ */
+export function flattenRawMetadata(rawMetadata) {
+  if (!rawMetadata || typeof rawMetadata !== 'object') return {};
+
+  const isNested = ['meta', 'openGraph', 'twitterCard', 'jsonLd', 'other']
+    .some(key => rawMetadata[key] !== undefined);
+  if (!isNested) return rawMetadata;
+
+  const flat = {
+    ...(rawMetadata.meta || {}),
+    ...(rawMetadata.openGraph || {}),
+    ...(rawMetadata.twitterCard || {}),
+    ...(rawMetadata.other || {})
+  };
+
+  const schemas = [];
+  const collect = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(collect);
+    } else if (Array.isArray(node['@graph'])) {
+      node['@graph'].forEach(collect);
+    } else {
+      schemas.push(node);
+    }
+  };
+  collect(rawMetadata.jsonLd);
+  if (schemas.length > 0) flat.schemaOrg = schemas;
+
+  return flat;
+}
+
+/**
  * Extract reading time estimate from metadata and content
  * @param {Object} metadata - Raw metadata object with Open Graph, Schema.org, etc.
  * @param {string} contentSnippet - Optional content snippet for word count
@@ -248,7 +286,7 @@ export function calculateContentQuality(metadata, bookmark = {}) {
 export function analyzeBookmarkMetadata(bookmark) {
   if (!bookmark) return null;
 
-  const metadata = bookmark.rawMetadata || {};
+  const metadata = flattenRawMetadata(bookmark.rawMetadata);
   
   return {
     readingTime: extractReadingTime(metadata, bookmark.contentSnippet),

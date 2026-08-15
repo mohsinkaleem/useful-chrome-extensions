@@ -1,7 +1,7 @@
 // Enrichment engine for bookmark metadata fetching and processing
 // Handles background enrichment, dead-link checking, and auto-categorization
 
-import { getSettings, getNextEnrichmentBatch, removeFromEnrichmentQueue, upsertBookmark, getBookmark, logEvent } from './db.js';
+import { getSettings, getNextEnrichmentBatch, removeFromEnrichmentQueue, upsertBookmark, getBookmark, logEvent, invalidateMetricCaches } from './db.js';
 import { parseBookmarkUrl } from './url-parsers.js';
 
 // Domain-based categorization rules
@@ -688,7 +688,7 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
       } else {
         bookmarksToProcess = batch.map(item => ({
           bookmarkId: item.bookmarkId,
-          queueId: item.id,
+          queueId: item.queueId,
           directProcess: false
         }));
       }
@@ -811,6 +811,10 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
 
     // Wait for all workers to complete
     await Promise.all(workers);
+
+    if (success > 0) {
+      await invalidateMetricCaches('enrich');
+    }
 
     console.log(`Processed ${bookmarksToProcess.length} bookmarks: ${success} success, ${failed} failed, ${skipped} skipped`);
     return { processed: bookmarksToProcess.length, success, failed, skipped };
@@ -984,6 +988,10 @@ export async function batchReanalyze(bookmarks, progressCallback = null) {
     if (i + chunkSize < bookmarks.length) {
       await sleep(100);
     }
+  }
+
+  if (success > 0) {
+    await invalidateMetricCaches('enrich');
   }
 
   console.log(`Re-analysis complete: ${success} analyzed, ${failed} failed, ${skipped} skipped`);

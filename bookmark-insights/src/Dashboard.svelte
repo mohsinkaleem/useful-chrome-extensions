@@ -19,7 +19,6 @@
     findDuplicates,
     findMalformedUrls,
     findSimilarBookmarks,
-    deleteBookmark,
     deleteBookmarks,
     upsertBookmark,
     getDeadLinks,
@@ -938,15 +937,13 @@
   }
   
   async function handleFilterByUnenriched() {
-    searchQuery = 'enriched:no';
+    searchQueryStore.set('enriched:no');
     currentView = 'bookmarks';
-    await handleSearch(searchQuery);
   }
   
   async function handleFilterByUncategorized() {
-    searchQuery = 'category:uncategorized';
+    searchQueryStore.set('category:uncategorized');
     currentView = 'bookmarks';
-    await handleSearch(searchQuery);
   }
   
   function handleShowDuplicates() {
@@ -1059,14 +1056,7 @@
   
   async function deleteSimilarBookmark(bookmarkId, pairIndex) {
     try {
-      // First check if the bookmark still exists
-      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
-      if (existingBookmarks && existingBookmarks.length > 0) {
-        await chrome.bookmarks.remove(bookmarkId);
-        console.log(`Deleted similar bookmark: ${bookmarkId}`);
-      } else {
-        console.log(`Bookmark ${bookmarkId} no longer exists`);
-      }
+      await deleteBookmarks([bookmarkId]);
       // Remove the pair from the list immediately - no need to reload since data is precomputed
       similarBookmarks = similarBookmarks.filter((_, idx) => idx !== pairIndex);
     } catch (err) {
@@ -1091,14 +1081,7 @@
   // Delete a single dead link
   async function deleteDeadLink(bookmarkId) {
     try {
-      // First check if the bookmark still exists
-      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
-      if (existingBookmarks && existingBookmarks.length > 0) {
-        await chrome.bookmarks.remove(bookmarkId);
-        console.log(`Deleted dead link: ${bookmarkId}`);
-      } else {
-        console.log(`Bookmark ${bookmarkId} no longer exists`);
-      }
+      await deleteBookmarks([bookmarkId]);
       
       // Update the dead links list without full reload
       deadLinks = deadLinks.filter(b => b.id !== bookmarkId);
@@ -1110,10 +1093,6 @@
           total: deadLinkInsights.total - 1
         };
       }
-      
-      // Remove from IndexedDB
-      await deleteBookmark(bookmarkId);
-      
     } catch (err) {
       console.error('Error deleting dead link:', err);
     }
@@ -1221,18 +1200,8 @@
   // Delete a single malformed/invalid URL bookmark
   async function deleteMalformedUrl(bookmarkId) {
     try {
-      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
-      if (existingBookmarks && existingBookmarks.length > 0) {
-        await chrome.bookmarks.remove(bookmarkId);
-        console.log(`Deleted malformed URL: ${bookmarkId}`);
-      }
-      
-      // Update local state
+      await deleteBookmarks([bookmarkId]);
       malformedUrls = malformedUrls.filter(b => b.id !== bookmarkId);
-      
-      // Remove from IndexedDB
-      await deleteBookmark(bookmarkId);
-      
     } catch (err) {
       console.error('Error deleting malformed URL:', err);
     }
@@ -1245,39 +1214,18 @@
     const confirmed = confirm(`Are you sure you want to delete all ${malformedUrls.length} invalid URL bookmarks? This action cannot be undone.`);
     if (!confirmed) return;
     
-    let deletedCount = 0;
-    
-    for (const bookmark of malformedUrls) {
-      try {
-        const existingBookmarks = await chrome.bookmarks.get([bookmark.id]);
-        if (existingBookmarks && existingBookmarks.length > 0) {
-          await chrome.bookmarks.remove(bookmark.id);
-          deletedCount++;
-        }
-        await deleteBookmark(bookmark.id);
-      } catch (err) {
-        console.error(`Error deleting malformed URL ${bookmark.id}:`, err);
-      }
+    try {
+      const result = await deleteBookmarks(malformedUrls.map(b => b.id));
+      console.log(`Deleted ${result.success} invalid URL bookmarks`);
+      malformedUrls = [];
+    } catch (err) {
+      console.error('Error deleting malformed URLs:', err);
     }
-    
-    // Clear local state
-    malformedUrls = [];
-    console.log(`Deleted ${deletedCount} invalid URL bookmarks`);
   }
 
   async function deleteDuplicate(bookmarkId, groupIndex) {
     try {
-      // First check if the bookmark still exists
-      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
-      if (existingBookmarks && existingBookmarks.length > 0) {
-        await chrome.bookmarks.remove(bookmarkId);
-        console.log(`Deleted bookmark: ${bookmarkId}`);
-      } else {
-        console.log(`Bookmark ${bookmarkId} no longer exists`);
-      }
-      
-      // Remove from IndexedDB as well
-      await deleteBookmark(bookmarkId);
+      await deleteBookmarks([bookmarkId]);
       
       // Update the duplicates list without full reload
       duplicates = duplicates.map((group, idx) => {
@@ -1338,18 +1286,12 @@
     if (selectedDuplicates.size === 0) return;
     
     const toDelete = Array.from(selectedDuplicates);
-    let deletedCount = 0;
     
-    for (const bookmarkId of toDelete) {
-      try {
-        const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
-        if (existingBookmarks && existingBookmarks.length > 0) {
-          await chrome.bookmarks.remove(bookmarkId);
-          deletedCount++;
-        }
-      } catch (err) {
-        console.error(`Error deleting bookmark ${bookmarkId}:`, err);
-      }
+    try {
+      const result = await deleteBookmarks(toDelete);
+      console.log(`Deleted ${result.success} duplicate bookmarks`);
+    } catch (err) {
+      console.error('Error deleting selected duplicates:', err);
     }
     
     // Update local state
@@ -1359,35 +1301,26 @@
     
     selectedDuplicates.clear();
     selectedDuplicates = selectedDuplicates;
-    
-    console.log(`Deleted ${deletedCount} duplicate bookmarks`);
+    allBookmarks.invalidate();
   }
   
   // Delete all duplicates (keeps first in each group)
   async function deleteAllDuplicates() {
-    let deletedCount = 0;
+    const toDelete = duplicates.flatMap(group => group.slice(1).map(b => b.id));
+    if (toDelete.length === 0) return;
     
-    for (const group of duplicates) {
-      // Keep the first, delete the rest
-      for (const bookmark of group.slice(1)) {
-        try {
-          const existingBookmarks = await chrome.bookmarks.get([bookmark.id]);
-          if (existingBookmarks && existingBookmarks.length > 0) {
-            await chrome.bookmarks.remove(bookmark.id);
-            deletedCount++;
-          }
-        } catch (err) {
-          console.error(`Error deleting bookmark ${bookmark.id}:`, err);
-        }
-      }
+    try {
+      const result = await deleteBookmarks(toDelete);
+      console.log(`Deleted ${result.success} duplicate bookmarks`);
+    } catch (err) {
+      console.error('Error deleting duplicates:', err);
     }
     
     // Clear duplicates list since all duplicates are removed
     duplicates = [];
     selectedDuplicates.clear();
     selectedDuplicates = selectedDuplicates;
-    
-    console.log(`Deleted ${deletedCount} duplicate bookmarks`);
+    allBookmarks.invalidate();
   }
   
   // Run smart similar detection on demand
@@ -1443,12 +1376,7 @@
   
   async function deleteFromComparison(bookmarkId) {
     try {
-      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
-      if (existingBookmarks && existingBookmarks.length > 0) {
-        await chrome.bookmarks.remove(bookmarkId);
-      }
-      
-      await deleteBookmark(bookmarkId);
+      await deleteBookmarks([bookmarkId]);
       
       // Remove pairs containing this bookmark
       enhancedSimilarPairs = enhancedSimilarPairs.filter(
@@ -1488,12 +1416,7 @@
   
   async function deleteUselessBookmark(bookmarkId, category) {
     try {
-      const existingBookmarks = await chrome.bookmarks.get([bookmarkId]);
-      if (existingBookmarks && existingBookmarks.length > 0) {
-        await chrome.bookmarks.remove(bookmarkId);
-      }
-      
-      await deleteBookmark(bookmarkId);
+      await deleteBookmarks([bookmarkId]);
       
       // Update the useless bookmarks list
       if (uselessBookmarks) {
@@ -1642,7 +1565,7 @@
     if (!bookmarkToDelete) return;
     
     try {
-      await deleteBookmark(bookmarkId);
+      await deleteBookmarks([bookmarkId]);
       
       // Update local state immediately without full page reload
       bookmarks = bookmarks.filter(b => b.id !== bookmarkId);
@@ -1682,22 +1605,24 @@
     if (!undoDeleteToast) return;
     
     try {
-      // Restore the bookmark
-      await upsertBookmark(undoDeleteToast.bookmark);
-      
-      // Re-create in Chrome bookmarks
+      const original = undoDeleteToast.bookmark;
+      // Chrome assigns a fresh id on re-create, so key the restored record to it
+      let restored = { ...original };
       try {
-        await chrome.bookmarks.create({
-          parentId: undoDeleteToast.bookmark.parentId || '1',
-          title: undoDeleteToast.bookmark.title,
-          url: undoDeleteToast.bookmark.url
+        const created = await chrome.bookmarks.create({
+          parentId: original.parentId || '1',
+          title: original.title,
+          url: original.url
         });
+        restored = { ...original, id: created.id, parentId: created.parentId };
       } catch (chromeErr) {
         console.warn('Could not restore to Chrome bookmarks:', chromeErr);
       }
       
+      await upsertBookmark(restored);
+      
       // Update local state
-      bookmarks = [...bookmarks, undoDeleteToast.bookmark].sort((a, b) => b.dateAdded - a.dateAdded);
+      bookmarks = [...bookmarks, restored].sort((a, b) => b.dateAdded - a.dateAdded);
       totalCount = totalCount + 1;
       
       // Invalidate cache

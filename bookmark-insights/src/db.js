@@ -725,19 +725,33 @@ export async function initializeDatabase() {
 // =============================================
 
 /**
+ * Canonical cache keys. Every `getCachedMetric` call, every TTL and every
+ * invalidation rule must reference one of these — they are the only keys ever
+ * written to the `computedMetrics` table.
+ */
+export const CACHE_KEYS = {
+  DOMAIN_ANALYTICS: 'domainAnalytics',
+  AGE_DISTRIBUTION: 'ageDistribution',
+  CREATION_PATTERNS: 'creationPatterns',
+  WORD_FREQUENCY: 'wordFrequency',
+  DUPLICATES: 'duplicates',
+  QUICK_STATS: 'quickStats',
+  QUICK_DUPLICATE_COUNT: 'quickDuplicateCount',
+  SIMILARITIES: 'similarities'
+};
+
+/**
  * Cache duration constants (in milliseconds)
  */
 const CACHE_DURATIONS = {
-  domainStats: 60 * 60 * 1000,      // 1 hour
-  activityTimeline: 6 * 60 * 60 * 1000,  // 6 hours
-  wordFrequency: 24 * 60 * 60 * 1000,    // 24 hours
-  ageDistribution: 6 * 60 * 60 * 1000,   // 6 hours
-  categoryTrends: 24 * 60 * 60 * 1000,   // 24 hours
-  expertiseAreas: 24 * 60 * 60 * 1000,   // 24 hours
-  quickStats: 5 * 60 * 1000,             // 5 minutes
-  duplicates: 24 * 60 * 60 * 1000,       // 24 hours
-  similarities: 24 * 60 * 60 * 1000,     // 24 hours
-  insightsSummary: 5 * 60 * 1000,        // 5 minutes
+  [CACHE_KEYS.DOMAIN_ANALYTICS]: 60 * 60 * 1000,          // 1 hour
+  [CACHE_KEYS.AGE_DISTRIBUTION]: 6 * 60 * 60 * 1000,      // 6 hours
+  [CACHE_KEYS.CREATION_PATTERNS]: 6 * 60 * 60 * 1000,     // 6 hours
+  [CACHE_KEYS.WORD_FREQUENCY]: 24 * 60 * 60 * 1000,       // 24 hours
+  [CACHE_KEYS.DUPLICATES]: 24 * 60 * 60 * 1000,           // 24 hours
+  [CACHE_KEYS.QUICK_STATS]: 5 * 60 * 1000,                // 5 minutes
+  [CACHE_KEYS.QUICK_DUPLICATE_COUNT]: 5 * 60 * 1000,      // 5 minutes
+  [CACHE_KEYS.SIMILARITIES]: 24 * 60 * 60 * 1000,         // 24 hours
 };
 
 /**
@@ -778,12 +792,17 @@ export async function getCachedMetric(key, computeFn, ttlMs) {
  * @param {string} changeType - Type of change: 'add', 'delete', 'update', 'enrich'
  */
 export async function invalidateMetricCaches(changeType) {
+  const {
+    DOMAIN_ANALYTICS, AGE_DISTRIBUTION, CREATION_PATTERNS, WORD_FREQUENCY,
+    DUPLICATES, QUICK_STATS, QUICK_DUPLICATE_COUNT, SIMILARITIES
+  } = CACHE_KEYS;
+
   const keysToInvalidate = {
-    'add': ['domainStats', 'quickStats', 'activityTimeline', 'ageDistribution', 'insightsSummary'],
-    'delete': ['domainStats', 'quickStats', 'duplicates', 'similarities', 'insightsSummary'],
-    'update': ['quickStats', 'insightsSummary'],
-    'enrich': ['categoryTrends', 'expertiseAreas', 'insightsSummary', 'quickStats'],
-    'all': Object.keys(CACHE_DURATIONS) // Invalidate all
+    'add': [DOMAIN_ANALYTICS, AGE_DISTRIBUTION, CREATION_PATTERNS, WORD_FREQUENCY, DUPLICATES, QUICK_DUPLICATE_COUNT, QUICK_STATS],
+    'delete': [DOMAIN_ANALYTICS, AGE_DISTRIBUTION, CREATION_PATTERNS, WORD_FREQUENCY, DUPLICATES, QUICK_DUPLICATE_COUNT, SIMILARITIES, QUICK_STATS],
+    'update': [WORD_FREQUENCY, DUPLICATES, QUICK_DUPLICATE_COUNT, QUICK_STATS],
+    'enrich': [DOMAIN_ANALYTICS, WORD_FREQUENCY, SIMILARITIES, QUICK_STATS],
+    'all': Object.keys(CACHE_DURATIONS)
   };
   
   const keys = keysToInvalidate[changeType] || [];
@@ -987,7 +1006,7 @@ export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {
  * Get consolidated domain analytics in a single pass
  */
 export async function getConsolidatedDomainAnalytics() {
-  return getCachedMetric('domainAnalytics', async () => {
+  return getCachedMetric(CACHE_KEYS.DOMAIN_ANALYTICS, async () => {
     const bookmarks = await getAllBookmarks();
     const domainData = {};
     
@@ -1026,7 +1045,7 @@ export async function getConsolidatedDomainAnalytics() {
       totalDomains: domainArray.length,
       totalBookmarks
     };
-  }, CACHE_DURATIONS.domainStats);
+  }, CACHE_DURATIONS[CACHE_KEYS.DOMAIN_ANALYTICS]);
 }
 
 /**
@@ -1056,7 +1075,7 @@ export async function getUniqueFolders() {
  * Get bookmark age distribution
  */
 export async function getBookmarkAgeDistribution() {
-  return getCachedMetric('ageDistribution', async () => {
+  return getCachedMetric(CACHE_KEYS.AGE_DISTRIBUTION, async () => {
     const bookmarks = await getAllBookmarks();
     const now = Date.now();
     const ageGroups = {
@@ -1086,14 +1105,14 @@ export async function getBookmarkAgeDistribution() {
     });
     
     return Object.entries(ageGroups);
-  }, CACHE_DURATIONS.ageDistribution);
+  }, CACHE_DURATIONS[CACHE_KEYS.AGE_DISTRIBUTION]);
 }
 
 /**
  * Get bookmark creation patterns (hourly, daily, monthly)
  */
 export async function getBookmarkCreationPatterns() {
-  return getCachedMetric('creationPatterns', async () => {
+  return getCachedMetric(CACHE_KEYS.CREATION_PATTERNS, async () => {
     const bookmarks = await getAllBookmarks();
     const hourPatterns = new Array(24).fill(0);
     const dayPatterns = new Array(7).fill(0);
@@ -1114,14 +1133,14 @@ export async function getBookmarkCreationPatterns() {
       daily: dayPatterns.map((count, day) => [dayNames[day], count]),
       monthly: monthPatterns.map((count, month) => [monthNames[month], count])
     };
-  }, CACHE_DURATIONS.ageDistribution);
+  }, CACHE_DURATIONS[CACHE_KEYS.CREATION_PATTERNS]);
 }
 
 /**
  * Get title word frequency
  */
 export async function getTitleWordFrequency() {
-  return getCachedMetric('wordFrequency', async () => {
+  return getCachedMetric(CACHE_KEYS.WORD_FREQUENCY, async () => {
     const bookmarks = await getAllBookmarks();
     const wordCount = {};
     
@@ -1142,14 +1161,14 @@ export async function getTitleWordFrequency() {
     return Object.entries(wordCount)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 20);
-  }, CACHE_DURATIONS.wordFrequency);
+  }, CACHE_DURATIONS[CACHE_KEYS.WORD_FREQUENCY]);
 }
 
 /**
  * Find duplicate bookmarks
  */
 export async function findDuplicates() {
-  return getCachedMetric('duplicates', async () => {
+  return getCachedMetric(CACHE_KEYS.DUPLICATES, async () => {
     const bookmarks = await getAllBookmarks();
     const urlMap = {};
     
@@ -1162,7 +1181,7 @@ export async function findDuplicates() {
     });
     
     return Object.values(urlMap).filter(group => group.length > 1);
-  }, CACHE_DURATIONS.duplicates);
+  }, CACHE_DURATIONS[CACHE_KEYS.DUPLICATES]);
 }
 
 /**
@@ -1211,7 +1230,7 @@ export async function findMalformedUrls() {
  * Get quick statistics for dashboard
  */
 export async function getQuickStats() {
-  return getCachedMetric('quickStats', async () => {
+  return getCachedMetric(CACHE_KEYS.QUICK_STATS, async () => {
     const bookmarks = await getAllBookmarks();
     const duplicates = await findDuplicates();
     const uncategorized = await findUncategorizedBookmarks();
@@ -1240,7 +1259,7 @@ export async function getQuickStats() {
       oldestBookmark: bookmarks.reduce((oldest, b) => b.dateAdded < oldest ? b.dateAdded : oldest, Date.now()),
       newestBookmark: bookmarks.reduce((newest, b) => b.dateAdded > newest ? b.dateAdded : newest, 0)
     };
-  }, CACHE_DURATIONS.quickStats);
+  }, CACHE_DURATIONS[CACHE_KEYS.QUICK_STATS]);
 }
 
 /**

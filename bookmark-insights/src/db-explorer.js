@@ -1,7 +1,7 @@
 // Database Explorer utility functions
 // Provides APIs for exploring and analyzing the IndexedDB database
 
-import { db } from './db.js';
+import { db, CACHE_KEYS, CACHE_DURATIONS } from './db.js';
 
 /**
  * Table metadata with icons and descriptions
@@ -17,20 +17,33 @@ const TABLE_META = {
 };
 
 /**
- * Known computed metrics with their expected TTLs
+ * Known computed metrics, derived from the single CACHE_KEYS/CACHE_DURATIONS
+ * source of truth in db.js so this list cannot drift from what is actually cached.
  */
-const KNOWN_METRICS = [
-  { key: 'domainStats', ttl: '1 hour', description: 'Top domains by bookmark count' },
-  { key: 'activityTimeline', ttl: '6 hours', description: 'Monthly bookmark creation timeline' },
-  { key: 'quickStats', ttl: '5 minutes', description: 'Dashboard quick statistics' },
-  { key: 'wordFrequency', ttl: '24 hours', description: 'Title word frequency analysis' },
-  { key: 'ageDistribution', ttl: '6 hours', description: 'Bookmark age distribution' },
-  { key: 'categoryTrends', ttl: '24 hours', description: 'Category distribution over time' },
-  { key: 'expertiseAreas', ttl: '24 hours', description: 'User expertise based on bookmarks' },
-  { key: 'duplicates', ttl: '24 hours', description: 'Detected duplicate bookmarks' },
-  { key: 'similarities', ttl: '24 hours', description: 'Similar bookmark pairs' },
-  { key: 'insightsSummary', ttl: '5 minutes', description: 'Aggregated insights summary' }
-];
+const METRIC_DESCRIPTIONS = {
+  [CACHE_KEYS.DOMAIN_ANALYTICS]: 'Consolidated domain analytics',
+  [CACHE_KEYS.AGE_DISTRIBUTION]: 'Bookmark age distribution',
+  [CACHE_KEYS.CREATION_PATTERNS]: 'Hourly/daily/monthly creation patterns',
+  [CACHE_KEYS.WORD_FREQUENCY]: 'Title word frequency analysis',
+  [CACHE_KEYS.DUPLICATES]: 'Detected duplicate bookmarks',
+  [CACHE_KEYS.QUICK_STATS]: 'Dashboard quick statistics',
+  [CACHE_KEYS.QUICK_DUPLICATE_COUNT]: 'Duplicate count for the stats store',
+  [CACHE_KEYS.SIMILARITIES]: 'Similar bookmark pairs'
+};
+
+function formatTtl(ms) {
+  if (!ms) return 'Unknown';
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
+const KNOWN_METRICS = Object.values(CACHE_KEYS).map(key => ({
+  key,
+  ttl: formatTtl(CACHE_DURATIONS[key]),
+  description: METRIC_DESCRIPTIONS[key] || 'Custom metric'
+}));
 
 /**
  * Get all table names and record counts

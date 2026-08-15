@@ -2,7 +2,7 @@
 // Provides smarter duplicate and similar bookmark detection
 // Now with on-demand computation and caching for better performance
 
-import { getAllBookmarks, getCache, setCache, getCachedMetric, CACHE_DURATIONS, getBookmark, getBookmarksByDomain, getBookmarksByCategory, storeSimilarities, getStoredSimilarities } from './db.js';
+import { getAllBookmarks, getCache, setCache, getCachedMetric, CACHE_DURATIONS, CACHE_KEYS, getBookmark, getBookmarksByDomain, getBookmarksByCategory, storeSimilarities, getStoredSimilarities } from './db.js';
 import { STOP_WORDS } from './utils.js';
 
 /**
@@ -483,7 +483,7 @@ export async function getSimilarBookmarksWithCache(bookmarkId) {
     if (stored && stored.length > 0) {
       // Check freshness (24 hours)
       const isStale = stored.some(s => 
-        !s.computedAt || (Date.now() - s.computedAt > CACHE_DURATIONS.similarities)
+        !s.computedAt || (Date.now() - s.computedAt > CACHE_DURATIONS[CACHE_KEYS.SIMILARITIES])
       );
       
       if (!isStale) {
@@ -745,7 +745,7 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
     const cacheKey = `enhanced_similar_${minSimilarity}_${maxPairs}`;
     if (useCache && !forceRefresh) {
       const cached = await getCache(cacheKey);
-      if (cached && cached.pairs && Date.now() - cached.timestamp < (CACHE_DURATIONS.similarities || 24 * 60 * 60 * 1000)) {
+      if (cached && cached.pairs && Date.now() - cached.timestamp < CACHE_DURATIONS[CACHE_KEYS.SIMILARITIES]) {
         console.log('Returning cached enhanced similar results');
         return { 
           pairs: cached.pairs, 
