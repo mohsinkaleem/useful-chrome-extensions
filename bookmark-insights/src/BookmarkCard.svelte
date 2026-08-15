@@ -1,12 +1,10 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
-  import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard, highlightText } from './utils.js';
+  import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard } from './utils.js';
+  import Highlight from './Highlight.svelte';
   import { selectedBookmarks } from './stores.js';
   
   export let bookmark;
   export let parsedSearchQuery = null;
-  
-  const dispatch = createEventDispatcher();
   
   let showCopied = false;
   
@@ -68,7 +66,7 @@
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-1.5">
         <h3 class="text-sm font-medium text-gray-900 dark:text-gray-200 truncate flex-1" title={bookmark.title}>
-          {@html highlightText(bookmark.title, parsedSearchQuery)}
+          <Highlight text={bookmark.title} query={parsedSearchQuery} />
         </h3>
         <!-- Status Icons -->
         <div class="flex items-center gap-1 flex-shrink-0">
@@ -97,7 +95,7 @@
         </div>
       </div>
       <p class="text-xs text-gray-500 dark:text-gray-400 truncate mt-1 max-w-full" title={bookmark.url}>
-        {@html highlightText(bookmark.url, parsedSearchQuery)}
+        <Highlight text={bookmark.url} query={parsedSearchQuery} />
       </p>
       <div class="flex items-center justify-between mt-2 gap-2 flex-wrap">
         <div class="flex items-center gap-1.5">
@@ -112,7 +110,7 @@
         </div>
         {#if bookmark.description}
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 line-clamp-2 w-full" title={bookmark.description}>
-            {@html highlightText(bookmark.description, parsedSearchQuery)}
+            <Highlight text={bookmark.description} query={parsedSearchQuery} />
           </p>
         {/if}
         <!-- Deep Metadata -->

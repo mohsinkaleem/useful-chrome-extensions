@@ -2,7 +2,6 @@
 // Every outbound fetch the extension makes must go through this module.
 
 const FETCHABLE_SCHEMES = new Set(['http:', 'https:']);
-const LINKABLE_SCHEMES = new Set(['http:', 'https:', 'ftp:', 'mailto:', 'tel:', 'chrome:', 'file:', 'about:']);
 
 // Hostname suffixes reserved for private / internal networks.
 const PRIVATE_SUFFIXES = ['.local', '.localhost', '.internal', '.intranet', '.home.arpa', '.lan'];
@@ -44,7 +43,7 @@ function isPrivateIPv6(hostname) {
  * @param {string} hostname
  * @returns {boolean}
  */
-export function isPrivateHost(hostname) {
+function isPrivateHost(hostname) {
   if (!hostname) return true;
   const host = hostname.toLowerCase();
 
@@ -92,20 +91,6 @@ export function safeImageUrl(rawUrl, baseUrl) {
     return null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Sanitize a URL before using it as an anchor `href`.
- * @param {string} url
- * @returns {string} The URL, or '#' when the scheme is not linkable.
- */
-export function safeHref(url) {
-  if (typeof url !== 'string' || url.length === 0) return '#';
-  try {
-    return LINKABLE_SCHEMES.has(new URL(url).protocol) ? url : '#';
-  } catch {
-    return '#';
   }
 }
 

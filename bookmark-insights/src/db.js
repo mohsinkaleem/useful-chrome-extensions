@@ -8,57 +8,9 @@ import { isFetchableUrl, safeFetch } from './url-safety.js';
 // Initialize Dexie database
 export const db = new Dexie('BookmarkInsightsDB');
 
-// Define schema version 1
-db.version(1).stores({
-  bookmarks: 'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId',
-  enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
-  events: '++eventId, bookmarkId, type, timestamp',
-  cache: 'key',
-  settings: 'key'
-});
-
-// Schema version 2: Add rawMetadata field for comprehensive data storage
-db.version(2).stores({
-  bookmarks: 'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId',
-  enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
-  events: '++eventId, bookmarkId, type, timestamp',
-  cache: 'key',
-  settings: 'key'
-}).upgrade(tx => {
-  console.log('Upgrading database to version 2 - adding rawMetadata support');
-  // No need to modify existing records, new field will be added on enrichment
-});
-
-// Schema version 3: Add similarities and computedMetrics tables for caching
-db.version(3).stores({
-  bookmarks: 'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId',
-  enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
-  events: '++eventId, bookmarkId, type, timestamp',
-  cache: 'key',
-  settings: 'key',
-  similarities: '++id, bookmark1Id, bookmark2Id, score, [bookmark1Id+bookmark2Id]',
-  computedMetrics: 'key'
-}).upgrade(tx => {
-  console.log('Upgrading database to version 3 - adding similarities and computedMetrics tables');
-});
-
-// Schema version 4: Add platformData fields for platform-specific enrichment
-// Adds indexed fields for platform, creator, contentType, repoName for advanced filtering
-db.version(4).stores({
-  bookmarks: 'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId, platform, creator, contentType',
-  enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
-  events: '++eventId, bookmarkId, type, timestamp',
-  cache: 'key',
-  settings: 'key',
-  similarities: '++id, bookmark1Id, bookmark2Id, score, [bookmark1Id+bookmark2Id]',
-  computedMetrics: 'key'
-}).upgrade(tx => {
-  console.log('Upgrading database to version 4 - adding platformData indexes');
-  // platformData will be populated during enrichment
-});
-
-// Schema version 5: Add deep metadata analysis fields
-// Adds readingTime, publishedDate, contentQualityScore, and smartTags for content intelligence
+// Schema version 5 is the only declaration kept: versions 1-4 had no data
+// migration (their upgrade bodies only logged), and Dexie upgrades an older
+// store directly to the newest declared version.
 db.version(5).stores({
   bookmarks: 'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId, platform, creator, contentType, publishedDate',
   enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
@@ -67,10 +19,6 @@ db.version(5).stores({
   settings: 'key',
   similarities: '++id, bookmark1Id, bookmark2Id, score, [bookmark1Id+bookmark2Id]',
   computedMetrics: 'key'
-}).upgrade(tx => {
-  console.log('Upgrading database to version 5 - adding deep metadata analysis fields');
-  // New fields: readingTime (minutes), publishedDate (timestamp), contentQualityScore (0-100), smartTags (array)
-  // These will be populated during metadata analysis (can be run on existing rawMetadata without new fetches)
 });
 
 // Define default settings
@@ -1762,7 +1710,6 @@ export async function parseDbBackupFile(arrayBuffer) {
   if (bytes.length > 6) {
     const magicHeader = decoder.decode(bytes.slice(0, 4));
     if (magicHeader === 'BKMI') {
-      const version = bytes[4];
       const flags = bytes[5];
       const isCompressed = (flags & 1) === 1;
       const payload = bytes.slice(6);

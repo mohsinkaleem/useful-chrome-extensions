@@ -10,7 +10,7 @@
     getPlatformDistribution,
     getCreatorLeaderboard
   } from './insights.js';
-  import { getPlatformDisplayName, getPlatformIcon, getContentTypeDisplayName } from './url-parsers.js';
+  import { getPlatformDisplayName, getPlatformIcon } from './url-parsers.js';
   
   Chart.register(...registerables);
   
@@ -312,14 +312,6 @@
     window.open(url, '_blank');
   }
   
-  function formatDate(timestamp) {
-    if (!timestamp) return 'Unknown';
-    return new Date(timestamp).toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
-    });
-  }
   
   function formatAgo(days) {
     if (days < 1) return 'Today';

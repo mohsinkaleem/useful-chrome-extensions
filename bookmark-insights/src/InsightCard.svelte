@@ -1,6 +1,4 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
-  
   export let title = '';
   export let subtitle = '';
   export let icon = '📊';
@@ -9,16 +7,10 @@
   export let collapsed = false;
   export let variant = 'default'; // default, success, warning, danger, info
   
-  const dispatch = createEventDispatcher();
-  
   function toggle() {
     if (collapsible) {
       collapsed = !collapsed;
     }
-  }
-  
-  function handleClick(event) {
-    dispatch('click', event);
   }
   
   const variantClasses = {

@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { getDomainsByRecency, getDomainsByCount, getUniqueFolders } from './db.js';
-  import { getTopicDisplayName, getTopicIcon } from './topics.js';
+  import { getTopicDisplayName } from './topics.js';
   import { activeFilters, allBookmarks } from './stores.js';
   
   // Props for search result stats
@@ -203,25 +203,6 @@
   function clearFilters() {
     activeFilters.clearFilters();
   }
-  
-  function setReadingTimeFilter(min, max) {
-    activeFilters.setFilter('readingTimeRange', min || max ? { min, max } : null);
-  }
-  
-  function setQualityScoreFilter(min, max) {
-    activeFilters.setFilter('qualityScoreRange', min || max ? { min, max } : null);
-  }
-  
-  function togglePublishedDateFilter() {
-    // Cycle through: null -> true (has date) -> false (no date) -> null
-    if ($activeFilters.hasPublishedDate === null) {
-      activeFilters.setFilter('hasPublishedDate', true);
-    } else if ($activeFilters.hasPublishedDate === true) {
-      activeFilters.setFilter('hasPublishedDate', false);
-    } else {
-      activeFilters.setFilter('hasPublishedDate', null);
-    }
-  }
 
   function hasActiveFilters() {
     return activeFiltersExist;
@@ -265,19 +246,6 @@
     }
     
     setDateFilter(startDate.getTime(), endDate, period);
-  }
-
-  function formatTimeAgo(timestamp) {
-    const now = Date.now();
-    const diff = now - timestamp;
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
-    if (days === 0) return 'Today';
-    if (days === 1) return '1 day ago';
-    if (days < 7) return `${days} days ago`;
-    if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
-    if (days < 365) return `${Math.floor(days / 30)} months ago`;
-    return `${Math.floor(days / 365)} years ago`;
   }
 </script>
 

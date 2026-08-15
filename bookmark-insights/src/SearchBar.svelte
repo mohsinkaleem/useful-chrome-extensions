@@ -23,11 +23,11 @@
     const regexPatterns = [];
     
     // Extract regex patterns first (format: /pattern/ or /pattern/flags)
-    const regexMatches = query.match(/\/([^\/]+)\/([gimsuvy]*)?/g) || [];
+    const regexMatches = query.match(/\/([^/]+)\/([gimsuvy]*)?/g) || [];
     regexMatches.forEach(r => regexPatterns.push(r));
     
     // Remove regex patterns for further parsing
-    let remaining = query.replace(/\/[^\/]+\/[gimsuvy]*/g, '').trim();
+    let remaining = query.replace(/\/[^/]+\/[gimsuvy]*/g, '').trim();
     
     // Extract quoted phrases first
     const phraseMatches = remaining.match(/"([^"]+)"/g) || [];

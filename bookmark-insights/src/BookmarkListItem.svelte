@@ -1,6 +1,7 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { formatDate, getFaviconUrl, getGeneratedFavicon, getDomainLabel, copyToClipboard, highlightText } from './utils.js';
+  import { formatDate, getFaviconUrl, getGeneratedFavicon, copyToClipboard } from './utils.js';
+  import Highlight from './Highlight.svelte';
   import { selectedBookmarks } from './stores.js';
   
   export let bookmark;
@@ -78,7 +79,7 @@
           <!-- Row 1: Title + Status Icons -->
           <div class="flex items-center gap-2">
             <h3 class="text-sm font-medium text-gray-900 dark:text-gray-200 truncate hover:text-blue-600 dark:hover:text-blue-400" title={bookmark.title}>
-              {@html highlightText(bookmark.title, parsedSearchQuery)}
+              <Highlight text={bookmark.title} query={parsedSearchQuery} />
             </h3>
             <!-- Status Icons -->
             <div class="flex items-center gap-1 flex-shrink-0">

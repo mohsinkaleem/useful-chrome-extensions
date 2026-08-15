@@ -7,15 +7,12 @@
     getTableFields,
     getCachedMetricsStatus,
     getCachedMetricData,
-    invalidateMetric,
     invalidateMetrics,
-    clearAllMetrics,
     getMetricsFlowDiagram,
     exportTableAsJSON,
     downloadJSON,
     formatTimestamp,
-    formatTimeRemaining,
-    formatBytes
+    formatTimeRemaining
   } from './db-explorer.js';
   
   // State
@@ -45,13 +42,9 @@
   let cachedMetrics = [];
   let selectedMetrics = new Set();
   let viewingMetricData = null;
-  let loadingMetrics = false;
   
   // Flow diagram data (simple HTML rendering, no mermaid)
   let flowDiagram = null;
-  
-  // Active section (for collapsible panels)
-  let activeSection = 'table'; // 'table', 'fields', 'cache', 'diagram', 'overview'
   
   onMount(async () => {
     try {
@@ -108,13 +101,10 @@
   }
   
   async function loadCachedMetrics() {
-    loadingMetrics = true;
     try {
       cachedMetrics = await getCachedMetricsStatus();
     } catch (err) {
       console.error('Error loading cached metrics:', err);
-    } finally {
-      loadingMetrics = false;
     }
   }
   

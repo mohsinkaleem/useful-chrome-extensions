@@ -1,6 +1,5 @@
 <script>
   import { onMount } from 'svelte';
-  import { Chart, registerables } from 'chart.js';
   import BookmarkCard from './BookmarkCard.svelte';
   import BookmarkListItem from './BookmarkListItem.svelte';
   import SearchBar from './SearchBar.svelte';
@@ -10,29 +9,14 @@
   import { SORT_OPTIONS } from './utils.js';
   import { searchBookmarks, invalidateSearchIndex } from './search.js';
   import { 
-    getBookmarksPaginated, 
-    getBookmarksByDomain, 
-    getBookmarksByDateRange, 
-    getBookmarksByFolder,
-    getDomainStats,
-    getActivityTimeline,
     findDuplicates,
     findMalformedUrls,
-    findSimilarBookmarks,
     deleteBookmarks,
     upsertBookmark,
     getDeadLinks,
     exportBookmarks,
     getQuickStats,
     getSettings,
-    // Analytics functions
-    getTitleWordFrequency,
-    getTitlePatterns,
-    getBookmarkAgeDistribution,
-    getBookmarkCreationPatterns,
-    getUrlPatterns,
-    getUrlParameterUsage,
-    getDomainDistribution,
     // Backup functions
     downloadBackup,
     restoreFromBackup,
@@ -42,28 +26,18 @@
   
   // Import new insights functions
   import {
-    getDomainHierarchy,
-    getDomainTreemapData,
-    getContentFreshness,
-    getInsightsSummary,
-    getEventStatistics,
-    getHourlyAccessPatterns,
     getDeadLinkInsights
   } from './insights.js';
   
   // Import enhanced similarity functions
   import {
     findSimilarBookmarksEnhancedFuzzy,
-    findUselessBookmarks,
-    getUselessBookmarkIds
+    findUselessBookmarks
   } from './similarity.js';
 
   import { activeFilters, searchQuery as searchQueryStore, allBookmarks, selectedBookmarks } from './stores.js';
-  import { parseSearchQuery } from './search.js';
   import { debounce } from './utils.js';
   import { darkMode, initDarkMode, toggleDarkMode } from './darkModeStore.js';
-  
-  Chart.register(...registerables);
   
   let bookmarks = [];
   let loading = true;
@@ -90,23 +64,9 @@
   let parsedSearchQuery = null;
   let isBulkDeleting = false;
   
-  // Chart variables
-  let domainChart = null;
-  let activityChart = null;
-  let wordCloudChart = null;
-  let titlePatternsChart = null;
-  let ageDistributionChart = null;
-  let creationPatternsChart = null;
-  let urlPatternsChart = null;
-  let domainDistributionChart = null;
-  let domainHierarchyChart = null;
-  let freshnessChart = null;
-  let accessPatternChart = null;
-  
   // Health data
   let duplicates = [];
   let malformedUrls = [];
-  let similarBookmarks = [];
   let deadLinks = [];
   let loadingDeadLinks = false;
   let quickStats = null;
@@ -132,15 +92,10 @@
   let deepAnalysisResult = null;
   
   // Advanced insights data
-  let domainHierarchy = [];
-  let contentFreshness = [];
-  let insightsSummary = null;
-  let eventStats = null;
   let deadLinkInsights = null;
   
   // Health section loading states (for progressive loading)
   let loadingDuplicates = false;
-  let loadingSimilar = false;
   let loadingMalformed = false;
   let deletingDeadLinks = false;
   let loadingUseless = false;
@@ -172,13 +127,9 @@
   };
   let deletingUseless = false;
   
-  // URL parameter data (for insights)
-  let urlParameterData = null;
-  
   // Backup state
   let backupInProgress = false;
   let restoreInProgress = false;
-  let showRestoreDialog = false;
   let restoreFile = null;
   let backupValidation = null;
   let backupFormat = 'json'; // 'json' or 'db'
@@ -215,9 +166,7 @@
       // Ensure we have fresh data on mount
       allBookmarks.invalidate();
       
-      if (currentView === 'insights') {
-        await loadInsights();
-      } else if (currentView === 'health') {
+      if (currentView === 'health') {
         await loadHealthData();
       }
     } catch (err) {
@@ -395,396 +344,14 @@
       if (view === 'bookmarks') {
         currentPage = 0;
         await loadBookmarks(0, false);
-      } else if (view === 'insights') {
-        await loadInsights();
       } else if (view === 'health') {
         await loadHealthData();
       }
+      // The insights view is self-loading via <VisualInsights>
     } catch (err) {
       error = err.message;
     } finally {
       loading = false;
-    }
-  }
-  
-  async function loadInsights() {
-    try {
-      // Load all analytics data
-      const [
-        domainStats,
-        activityTimeline,
-        titleWords,
-        titlePatterns,
-        ageDistribution,
-        creationPatterns,
-        urlPatterns,
-        urlParameterUsage,
-        domainDistribution,
-        // New insights data
-        hierarchyData,
-        freshnessData,
-        summaryData,
-        eventData
-      ] = await Promise.all([
-        getDomainStats(),
-        getActivityTimeline(),
-        getTitleWordFrequency(),
-        getTitlePatterns(),
-        getBookmarkAgeDistribution(),
-        getBookmarkCreationPatterns(),
-        getUrlPatterns(),
-        getUrlParameterUsage(),
-        getDomainDistribution(),
-        // New insights functions
-        getDomainHierarchy(),
-        getContentFreshness(),
-        getInsightsSummary(),
-        getEventStatistics()
-      ]);
-      
-      // Store URL parameter data for display
-      urlParameterData = urlParameterUsage;
-      
-      // Store new insights data
-      domainHierarchy = hierarchyData;
-      contentFreshness = freshnessData;
-      insightsSummary = summaryData;
-      eventStats = eventData;
-      
-      // Create charts with a slight delay to ensure DOM elements exist
-      setTimeout(() => {
-        // Domain Stats Chart (existing)
-        const domainCtx = document.getElementById('domainChart');
-        if (domainCtx) {
-          if (domainChart) domainChart.destroy();
-          domainChart = new Chart(domainCtx, {
-            type: 'bar',
-            data: {
-              labels: domainStats.map(([domain]) => domain),
-              datasets: [{
-                label: 'Bookmarks',
-                data: domainStats.map(([, count]) => count),
-                backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                borderColor: 'rgba(59, 130, 246, 1)',
-                borderWidth: 1
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Top 10 Most Bookmarked Domains'
-                }
-              },
-              scales: {
-                y: {
-                  beginAtZero: true
-                }
-              }
-            }
-          });
-        }
-        
-        // Domain Distribution Chart (new - pie chart)
-        const domainDistCtx = document.getElementById('domainDistributionChart');
-        if (domainDistCtx) {
-          if (domainDistributionChart) domainDistributionChart.destroy();
-          domainDistributionChart = new Chart(domainDistCtx, {
-            type: 'pie',
-            data: {
-              labels: domainDistribution.map(d => d.domain),
-              datasets: [{
-                data: domainDistribution.map(d => d.count),
-                backgroundColor: [
-                  '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
-                  '#EC4899', '#6B7280', '#14B8A6', '#F97316', '#84CC16',
-                  '#06B6D4'
-                ]
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Bookmark Distribution by Domain'
-                },
-                tooltip: {
-                  callbacks: {
-                    label: function(context) {
-                      const item = domainDistribution[context.dataIndex];
-                      return `${item.domain}: ${item.count} (${item.percentage}%)`;
-                    }
-                  }
-                }
-              }
-            }
-          });
-        }
-        
-        // Activity Timeline Chart (existing)
-        const activityCtx = document.getElementById('activityChart');
-        if (activityCtx) {
-          if (activityChart) activityChart.destroy();
-          activityChart = new Chart(activityCtx, {
-            type: 'line',
-            data: {
-              labels: activityTimeline.map(([month]) => month),
-              datasets: [{
-                label: 'Bookmarks Added',
-                data: activityTimeline.map(([, count]) => count),
-                fill: false,
-                borderColor: 'rgba(34, 197, 94, 1)',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                tension: 0.1
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Bookmark Activity Timeline'
-                }
-              },
-              scales: {
-                y: {
-                  beginAtZero: true
-                }
-              }
-            }
-          });
-        }
-
-        // Title Word Frequency Chart (new)
-        const wordCtx = document.getElementById('wordCloudChart');
-        if (wordCtx) {
-          if (wordCloudChart) wordCloudChart.destroy();
-          wordCloudChart = new Chart(wordCtx, {
-            type: 'bar',
-            data: {
-              labels: titleWords.map(([word]) => word),
-              datasets: [{
-                label: 'Frequency',
-                data: titleWords.map(([, count]) => count),
-                backgroundColor: 'rgba(168, 85, 247, 0.5)',
-                borderColor: 'rgba(168, 85, 247, 1)',
-                borderWidth: 1
-              }]
-            },
-            options: {
-              indexAxis: 'y',
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Most Frequent Words in Bookmark Titles'
-                }
-              },
-              scales: {
-                x: {
-                  beginAtZero: true
-                }
-              }
-            }
-          });
-        }
-
-        // Title Patterns Chart (new)
-        const patternsCtx = document.getElementById('titlePatternsChart');
-        if (patternsCtx) {
-          if (titlePatternsChart) titlePatternsChart.destroy();
-          titlePatternsChart = new Chart(patternsCtx, {
-            type: 'doughnut',
-            data: {
-              labels: titlePatterns.map(([pattern]) => pattern),
-              datasets: [{
-                data: titlePatterns.map(([, count]) => count),
-                backgroundColor: [
-                  '#F59E0B', '#10B981', '#3B82F6', '#EF4444', '#8B5CF6',
-                  '#EC4899', '#6B7280', '#14B8A6', '#F97316', '#84CC16'
-                ]
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Common Title Patterns & Types'
-                }
-              }
-            }
-          });
-        }
-
-        // Age Distribution Chart (new)
-        const ageCtx = document.getElementById('ageDistributionChart');
-        if (ageCtx) {
-          if (ageDistributionChart) ageDistributionChart.destroy();
-          ageDistributionChart = new Chart(ageCtx, {
-            type: 'bar',
-            data: {
-              labels: ageDistribution.map(([period]) => period),
-              datasets: [{
-                label: 'Bookmarks',
-                data: ageDistribution.map(([, count]) => count),
-                backgroundColor: 'rgba(34, 197, 94, 0.5)',
-                borderColor: 'rgba(34, 197, 94, 1)',
-                borderWidth: 1
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Bookmark Age Distribution'
-                }
-              },
-              scales: {
-                y: {
-                  beginAtZero: true
-                }
-              }
-            }
-          });
-        }
-
-        // Creation Patterns Chart (new - daily pattern)
-        const creationCtx = document.getElementById('creationPatternsChart');
-        if (creationCtx) {
-          if (creationPatternsChart) creationPatternsChart.destroy();
-          creationPatternsChart = new Chart(creationCtx, {
-            type: 'radar',
-            data: {
-              labels: creationPatterns.daily.map(([day]) => day),
-              datasets: [{
-                label: 'Bookmarks Created',
-                data: creationPatterns.daily.map(([, count]) => count),
-                backgroundColor: 'rgba(245, 158, 11, 0.2)',
-                borderColor: 'rgba(245, 158, 11, 1)',
-                borderWidth: 2
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Bookmark Creation Patterns by Day of Week'
-                }
-              },
-              scales: {
-                r: {
-                  beginAtZero: true
-                }
-              }
-            }
-          });
-        }
-
-        // URL Patterns Chart (new - TLD distribution)
-        const urlCtx = document.getElementById('urlPatternsChart');
-        if (urlCtx) {
-          if (urlPatternsChart) urlPatternsChart.destroy();
-          urlPatternsChart = new Chart(urlCtx, {
-            type: 'bar',
-            data: {
-              labels: urlPatterns.topLevelDomains.map(([tld]) => `.${tld}`),
-              datasets: [{
-                label: 'Count',
-                data: urlPatterns.topLevelDomains.map(([, count]) => count),
-                backgroundColor: 'rgba(236, 72, 153, 0.5)',
-                borderColor: 'rgba(236, 72, 153, 1)',
-                borderWidth: 1
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Top Level Domains Distribution'
-                }
-              },
-              scales: {
-                y: {
-                  beginAtZero: true
-                }
-              }
-            }
-          });
-        }
-
-        // Domain Hierarchy Chart (treemap-like horizontal bar)
-        const hierarchyCtx = document.getElementById('domainHierarchyChart');
-        if (hierarchyCtx && hierarchyData.length > 0) {
-          if (domainHierarchyChart) domainHierarchyChart.destroy();
-          const topDomains = hierarchyData.slice(0, 15);
-          domainHierarchyChart = new Chart(hierarchyCtx, {
-            type: 'bar',
-            data: {
-              labels: topDomains.map(d => d.name),
-              datasets: [{
-                label: 'Bookmarks',
-                data: topDomains.map(d => d.count),
-                backgroundColor: [
-                  '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
-                  '#EC4899', '#6B7280', '#14B8A6', '#F97316', '#84CC16',
-                  '#06B6D4', '#F43F5E', '#22C55E', '#A855F7', '#0EA5E9'
-                ]
-              }]
-            },
-            options: {
-              indexAxis: 'y',
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Domain Hierarchy (Top 15 Domains)'
-                },
-                legend: {
-                  display: false
-                }
-              },
-              scales: {
-                x: {
-                  beginAtZero: true
-                }
-              }
-            }
-          });
-        }
-
-        // Content Freshness Chart (doughnut)
-        const freshnessCtx = document.getElementById('freshnessChart');
-        if (freshnessCtx && freshnessData.length > 0) {
-          if (freshnessChart) freshnessChart.destroy();
-          freshnessChart = new Chart(freshnessCtx, {
-            type: 'doughnut',
-            data: {
-              labels: freshnessData.map(d => d.period),
-              datasets: [{
-                data: freshnessData.map(d => d.count),
-                backgroundColor: ['#22C55E', '#84CC16', '#F59E0B', '#F97316', '#EF4444']
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: 'Bookmark Freshness'
-                }
-              }
-            }
-          });
-        }
-      }, 100);
-    } catch (err) {
-      console.error('Error loading insights:', err);
     }
   }
   
@@ -797,7 +364,6 @@
     try {
       // Load quick stats first (fast) - shows something immediately
       loadingDuplicates = true;
-      loadingSimilar = true;
       loadingDeadLinks = true;
       loadingMalformed = true;
       
@@ -842,10 +408,7 @@
         loadingMalformed = false;
       });
       
-      // Similar bookmarks - skip old algorithm, only use enhanced
-      // Set to not loading since we don't auto-load anymore
-      loadingSimilar = false;
-      similarBookmarks = [];
+      // Similar bookmarks are surfaced only by the enhanced fuzzy pass below
       
       // Enhanced similar bookmarks with fuzzy matching
       // Try to load from cache first to show pre-computed results
@@ -1051,18 +614,6 @@
       deepAnalysisResult = { error: err.message };
     } finally {
       runningDeepAnalysis = false;
-    }
-  }
-  
-  async function deleteSimilarBookmark(bookmarkId, pairIndex) {
-    try {
-      await deleteBookmarks([bookmarkId]);
-      // Remove the pair from the list immediately - no need to reload since data is precomputed
-      similarBookmarks = similarBookmarks.filter((_, idx) => idx !== pairIndex);
-    } catch (err) {
-      console.error('Error deleting bookmark:', err);
-      // Even on error, just remove the pair from display - don't reload
-      similarBookmarks = similarBookmarks.filter((_, idx) => idx !== pairIndex);
     }
   }
   
@@ -1351,19 +902,6 @@
     }
   }
   
-  // Run useless bookmarks detection on demand
-  async function runUselessDetection() {
-    loadingUseless = true;
-    uselessBookmarks = null;
-    
-    try {
-      uselessBookmarks = await findUselessBookmarks();
-    } catch (err) {
-      console.error('Error finding useless bookmarks:', err);
-    } finally {
-      loadingUseless = false;
-    }
-  }
   
   // Enhanced similar bookmarks functions
   function openComparisonModal(pair) {
@@ -1412,6 +950,20 @@
       ...uselessDisplayLimits,
       [category]: uselessDisplayLimits[category] + 10
     };
+  }
+  
+  // Run useless bookmarks detection on demand
+  async function runUselessDetection() {
+    loadingUseless = true;
+    uselessBookmarks = null;
+    
+    try {
+      uselessBookmarks = await findUselessBookmarks();
+    } catch (err) {
+      console.error('Error finding useless bookmarks:', err);
+    } finally {
+      loadingUseless = false;
+    }
   }
   
   async function deleteUselessBookmark(bookmarkId, category) {
@@ -1726,7 +1278,6 @@
       
       if (result.success) {
         alert(`Restore complete!\n\n- ${result.results.bookmarksRestored} bookmarks restored\n- ${result.results.similaritiesRestored} similarities restored\n\nRefreshing...`);
-        showRestoreDialog = false;
         restoreFile = null;
         backupValidation = null;
         // Reload the page to refresh all data
@@ -3174,11 +2725,20 @@
           
           <!-- Useless Bookmarks Detection -->
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors">
-            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
-                🗑️ Cleanup Candidates {#if uselessBookmarks}({uselessBookmarks.summary.total} found){/if}
-              </h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Bookmarks that may be candidates for removal based on various criteria</p>
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between gap-4">
+              <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
+                  🗑️ Cleanup Candidates {#if uselessBookmarks}({uselessBookmarks.summary.total} found){/if}
+                </h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Bookmarks that may be candidates for removal based on various criteria</p>
+              </div>
+              <button
+                on:click={runUselessDetection}
+                disabled={loadingUseless}
+                class="flex-shrink-0 px-3 py-1.5 text-sm bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50"
+              >
+                {loadingUseless ? 'Analyzing…' : uselessBookmarks ? 'Re-analyze' : 'Analyze'}
+              </button>
             </div>
             <div class="p-6">
               {#if loadingUseless}
@@ -3186,7 +2746,9 @@
                   <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 dark:border-orange-400"></div>
                   <span class="ml-3 text-gray-500 dark:text-gray-400">Analyzing bookmarks for cleanup...</span>
                 </div>
-              {:else if !uselessBookmarks || uselessBookmarks.summary.total === 0}
+              {:else if !uselessBookmarks}
+                <p class="text-gray-500 dark:text-gray-400">Run an analysis to find bookmarks worth removing.</p>
+              {:else if uselessBookmarks.summary.total === 0}
                 <p class="text-gray-500 dark:text-gray-400">No cleanup candidates found. Your bookmarks look great!</p>
               {:else}
                 <!-- Summary Cards -->

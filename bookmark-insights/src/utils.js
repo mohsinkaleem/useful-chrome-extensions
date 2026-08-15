@@ -25,37 +25,6 @@ export function formatDate(timestamp) {
 }
 
 /**
- * Format a timestamp to a relative time string (e.g., "2 days ago")
- * @param {number} timestamp - Unix timestamp in milliseconds
- * @returns {string} Relative time string
- */
-export function formatTimeAgo(timestamp) {
-  const now = Date.now();
-  const diff = now - timestamp;
-
-  if (!Number.isFinite(diff)) return 'Unknown';
-  if (diff < 0) return 'Just now';
-
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  const weeks = Math.floor(days / 7);
-  const months = Math.floor(days / 30);
-  const years = Math.floor(days / 365);
-
-  if (seconds < 60) return 'Just now';
-  if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
-  if (hours < 24) return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
-  if (days === 1) return '1 day ago';
-  if (days < 7) return `${days} days ago`;
-  if (weeks < 4) return `${weeks} week${weeks !== 1 ? 's' : ''} ago`;
-  // Guard the 360-364 day gap, where months rounds to 12 but years is still 0
-  if (years < 1) return `${Math.min(months, 11)} month${months !== 1 ? 's' : ''} ago`;
-  return `${years} year${years !== 1 ? 's' : ''} ago`;
-}
-
-/**
  * Generate a favicon URL for a bookmark
  * Uses letter-based SVG icons for reliability
  * @param {Object} bookmark - Bookmark object with url and domain properties
@@ -136,17 +105,6 @@ export function getDomainLabel(bookmark) {
 }
 
 /**
- * Truncate a string to a maximum length with ellipsis
- * @param {string} str - String to truncate
- * @param {number} maxLength - Maximum length
- * @returns {string} Truncated string
- */
-export function truncateString(str, maxLength = 50) {
-  if (!str || str.length <= maxLength) return str;
-  return str.substring(0, maxLength - 3) + '...';
-}
-
-/**
  * Copy text to clipboard
  * @param {string} text - Text to copy
  * @returns {Promise<boolean>} Success status
@@ -180,23 +138,6 @@ export function debounce(func, wait = 300) {
 }
 
 /**
- * Throttle a function
- * @param {Function} func - Function to throttle
- * @param {number} limit - Limit in milliseconds
- * @returns {Function} Throttled function
- */
-export function throttle(func, limit) {
-  let inThrottle;
-  return function(...args) {
-    if (!inThrottle) {
-      func.apply(this, args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  }
-}
-
-/**
  * Sort options for bookmarks
  */
 export const SORT_OPTIONS = {
@@ -219,35 +160,22 @@ export function getSortFunction(key) {
 }
 
 /**
- * Escape HTML entities to prevent XSS
- * @param {string} text - Raw text to escape
- * @returns {string} HTML-safe string
- */
-export function escapeHtml(text) {
-  if (!text) return text;
-  const map = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;'
-  };
-  return text.replace(/[&<>"']/g, (char) => map[char]);
-}
-
-/**
- * Highlight search terms in text
+ * Split text into plain and matched segments for search-term highlighting.
+ * Returns data, not markup, so callers never need `{@html}`.
  * @param {string} text - The text to highlight
  * @param {Object} parsedQuery - The parsed search query
- * @returns {string} HTML string with highlighted terms
+ * @returns {Array<{text: string, match: boolean}>}
  */
-export function highlightText(text, parsedQuery) {
-  if (!text || !parsedQuery) return escapeHtml(text);
-  
+export function highlightSegments(text, parsedQuery) {
+  if (!text) return [];
+  if (!parsedQuery) return [{ text, match: false }];
+
   const { positive, phrases, regular, regexPatterns } = parsedQuery;
   const terms = [...(positive || []), ...(phrases || []), ...(regular || [])];
-  
-  if (terms.length === 0 && (!regexPatterns || regexPatterns.length === 0)) return escapeHtml(text);
+
+  if (terms.length === 0 && (!regexPatterns || regexPatterns.length === 0)) {
+    return [{ text, match: false }];
+  }
   
   // Find all ranges to highlight
   const ranges = [];
@@ -302,21 +230,16 @@ export function highlightText(text, parsedQuery) {
     }
     mergedRanges.push(current);
   }
-  
-  // Apply highlighting: escape HTML in segments, wrap matches in <mark>
-  // Build result from front to back, escaping non-match segments
-  let result = '';
+
+  const segments = [];
   let lastIndex = 0;
-  for (let i = 0; i < mergedRanges.length; i++) {
-    const { start, end } = mergedRanges[i];
-    // Escape the text before this match
-    result += escapeHtml(text.slice(lastIndex, start));
-    // Escape the matched text and wrap in mark tag
-    result += `<mark class="bg-yellow-200 text-gray-900 rounded-sm px-0.5">${escapeHtml(text.slice(start, end))}</mark>`;
+  for (const { start, end } of mergedRanges) {
+    if (start > lastIndex) segments.push({ text: text.slice(lastIndex, start), match: false });
+    segments.push({ text: text.slice(start, end), match: true });
     lastIndex = end;
   }
-  // Escape any remaining text after the last match
-  result += escapeHtml(text.slice(lastIndex));
-  
-  return result;
+  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex), match: false });
+
+  return segments;
 }
+

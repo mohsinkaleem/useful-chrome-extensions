@@ -9,7 +9,7 @@ export const darkMode = writable(false);
  * Apply dark mode to the document
  * @param {boolean} enabled - Whether dark mode is enabled
  */
-export function applyDarkMode(enabled) {
+function applyDarkMode(enabled) {
   if (typeof document !== 'undefined') {
     if (enabled) {
       document.documentElement.classList.add('dark');

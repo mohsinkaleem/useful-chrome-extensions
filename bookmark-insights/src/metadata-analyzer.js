@@ -45,7 +45,7 @@ export function flattenRawMetadata(rawMetadata) {
  * @param {string} contentSnippet - Optional content snippet for word count
  * @returns {number|null} - Estimated reading time in minutes, or null if cannot determine
  */
-export function extractReadingTime(metadata, contentSnippet = '') {
+function extractReadingTime(metadata, contentSnippet = '') {
   if (!metadata) return null;
 
   // 1. Check for explicit video duration (YouTube, Vimeo, etc.)
@@ -85,7 +85,7 @@ export function extractReadingTime(metadata, contentSnippet = '') {
  * @param {Object} metadata - Raw metadata object
  * @returns {number|null} - Published date as Unix timestamp, or null if not found
  */
-export function extractPublishedDate(metadata) {
+function extractPublishedDate(metadata) {
   if (!metadata) return null;
 
   // Priority order: article:published_time > datePublished > og:updated_time > dateModified
@@ -133,7 +133,7 @@ export function extractPublishedDate(metadata) {
  * @param {string} description - Bookmark description
  * @returns {string[]} - Array of unique smart tags
  */
-export function extractSmartTags(metadata, title = '', description = '') {
+function extractSmartTags(metadata, title = '', description = '') {
   const tags = new Set();
 
   if (!metadata) return [];
@@ -210,7 +210,7 @@ export function extractSmartTags(metadata, title = '', description = '') {
  * @param {Object} bookmark - Bookmark object with title, description
  * @returns {number} - Quality score from 0-100
  */
-export function calculateContentQuality(metadata, bookmark = {}) {
+function calculateContentQuality(metadata, bookmark = {}) {
   if (!metadata) return 0;
 
   let score = 0;

@@ -179,18 +179,6 @@ export async function getTableRecords(tableName, options = {}) {
 }
 
 /**
- * Get a single record by primary key
- */
-export async function getRecord(tableName, key) {
-  try {
-    return await db[tableName].get(key);
-  } catch (e) {
-    console.error(`Error getting record from ${tableName}:`, e);
-    return null;
-  }
-}
-
-/**
  * Analyze field coverage in a table
  */
 export async function analyzeTableFields(tableName) {
@@ -327,19 +315,6 @@ export async function getCachedMetricData(key) {
 }
 
 /**
- * Invalidate (delete) a cached metric
- */
-export async function invalidateMetric(key) {
-  try {
-    await db.computedMetrics.delete(key);
-    return true;
-  } catch (e) {
-    console.error(`Error invalidating metric ${key}:`, e);
-    return false;
-  }
-}
-
-/**
  * Invalidate multiple cached metrics
  */
 export async function invalidateMetrics(keys) {
@@ -348,19 +323,6 @@ export async function invalidateMetrics(keys) {
     return true;
   } catch (e) {
     console.error('Error invalidating metrics:', e);
-    return false;
-  }
-}
-
-/**
- * Clear all cached metrics
- */
-export async function clearAllMetrics() {
-  try {
-    await db.computedMetrics.clear();
-    return true;
-  } catch (e) {
-    console.error('Error clearing metrics:', e);
     return false;
   }
 }
@@ -516,11 +478,3 @@ export function formatTimeRemaining(ms) {
   return `${days}d`;
 }
 
-/**
- * Format bytes for display
- */
-export function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}

@@ -6,10 +6,11 @@
   "permissions": [
     "bookmarks",
     "storage",
-    "alarms",
-    "tabs",
     "sidePanel",
     "readingList"
+  ],
+  "optional_permissions": [
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"

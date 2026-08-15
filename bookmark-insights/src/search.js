@@ -2,7 +2,7 @@
 // Provides fuzzy matching, relevance ranking, and multi-field search
 
 import { Document } from 'flexsearch';
-import { db, getAllBookmarks, getAllBookmarksWithReadingList, setCache, getCache } from './db.js';
+import { getAllBookmarksWithReadingList, setCache, getCache } from './db.js';
 import { getSortFunction } from './utils.js';
 // import { allBookmarks as bookmarksStore } from './stores.js';
 
@@ -30,7 +30,7 @@ async function getBookmarksCached() {
  * @param {string} query - The raw search query
  * @returns {Object} Parsed query components
  */
-export function parseAdvancedQuery(query) {
+function parseAdvancedQuery(query) {
   if (!query || !query.trim()) {
     return { positive: [], negative: [], phrases: [], regular: [], regexPatterns: [], hasModifiers: false };
   }
@@ -42,7 +42,7 @@ export function parseAdvancedQuery(query) {
   const regexPatterns = []; // Regex patterns (/pattern/)
   
   // Extract regex patterns first (format: /pattern/ or /pattern/flags)
-  const regexExtractPattern = /\/([^\/]+)\/([gimsuvy]*)?/g;
+  const regexExtractPattern = /\/([^/]+)\/([gimsuvy]*)?/g;
   let match;
   let remaining = query;
   
@@ -59,7 +59,7 @@ export function parseAdvancedQuery(query) {
   }
   
   // Remove regex patterns from remaining query
-  remaining = remaining.replace(/\/[^\/]+\/[gimsuvy]*/g, '').trim();
+  remaining = remaining.replace(/\/[^/]+\/[gimsuvy]*/g, '').trim();
   
   // Extract quoted phrases (including their modifiers)
   const phraseRegex = /([+-]?)"([^"]+)"/g;
@@ -218,7 +218,7 @@ function calculateRelevanceScore(bookmark, parsedQuery) {
 }
 
 // Initialize FlexSearch index with optimized configuration
-export async function initializeSearchIndex() {
+async function initializeSearchIndex() {
   if (indexInitialized) {
     return searchIndex;
   }
@@ -378,7 +378,7 @@ export function invalidateSearchIndex() {
  * @param {string} query - Raw search query
  * @returns {Object} { filters, remainingQuery }
  */
-export function parseSpecialFilters(query) {
+function parseSpecialFilters(query) {
   if (!query || !query.trim()) {
     return { filters: {}, remainingQuery: '' };
   }
@@ -493,7 +493,7 @@ export function parseSpecialFilters(query) {
  * @param {Object} filters - Special filters from parseSpecialFilters
  * @returns {Array} Filtered bookmarks
  */
-export function applySpecialFilters(bookmarks, filters) {
+function applySpecialFilters(bookmarks, filters) {
   const now = Date.now();
   const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
   
@@ -598,61 +598,6 @@ export function applySpecialFilters(bookmarks, filters) {
     
     return true;
   });
-}
-
-/**
- * Parse search query to extract filters (domain:, folder:, etc.)
- * @param {string} query - Raw search query
- * @returns {Object} - { text, filters }
- */
-export function parseSearchQuery(query) {
-  if (!query) return { text: '', filters: {} };
-
-  const filters = {
-    domains: [],
-    folders: [],
-    topics: [],
-    types: [],
-    tags: [],
-    deadLinks: false,
-    stale: false
-  };
-
-  let text = query;
-
-  // Helper to extract and remove patterns
-  const extract = (prefix, targetArray) => {
-    const regex = new RegExp(`${prefix}:"([^"]+)"|${prefix}:([^\\s]+)`, 'gi');
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      const value = match[1] || match[2];
-      targetArray.push(value.toLowerCase());
-    }
-    text = text.replace(regex, '').trim();
-  };
-
-  extract('domain', filters.domains);
-  extract('site', filters.domains); // Alias
-  extract('folder', filters.folders);
-  extract('topic', filters.topics);
-  extract('type', filters.types);
-  extract('tag', filters.tags);
-  
-  // Boolean flags
-  if (text.match(/dead:yes|is:dead/i)) {
-      filters.deadLinks = true;
-      text = text.replace(/dead:yes|is:dead/gi, '').trim();
-  }
-  
-  if (text.match(/stale:yes|is:stale/i)) {
-      filters.stale = true;
-      text = text.replace(/stale:yes|is:stale/gi, '').trim();
-  }
-
-  // Clean up extra spaces
-  text = text.replace(/\s+/g, ' ').trim();
-
-  return { text, filters };
 }
 
 // Search bookmarks with advanced query support
@@ -864,7 +809,7 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
  * @param {Array} bookmarks - Array of bookmark results
  * @returns {Object} Stats for sidebar (domains, folders, topics, etc.)
  */
-export function computeSearchResultStats(bookmarks) {
+function computeSearchResultStats(bookmarks) {
   const domainCounts = new Map();
   const folderCounts = new Map();
   const topicCounts = new Map();
@@ -940,23 +885,6 @@ export function computeSearchResultStats(bookmarks) {
 // The main searchBookmarks() function now supports all advanced filtering via the activeFilters object
 
 // Clear the search index
-export async function clearSearchIndex() {
-  if (searchIndex) {
-    searchIndex.clear();
-  }
-  await setCache('flexsearch_index', null);
-  indexInitialized = false;
-}
 
 // Export for statistics
-export function getIndexStats() {
-  if (!searchIndex || !indexInitialized) {
-    return { initialized: false };
-  }
 
-  return {
-    initialized: true,
-    // FlexSearch doesn't expose size directly, but we can estimate
-    cached: true
-  };
-}

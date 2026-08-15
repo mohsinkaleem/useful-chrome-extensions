@@ -11,7 +11,7 @@
  * - domains: domains strongly associated with this topic
  * - subtopics: optional nested topics for finer categorization
  */
-export const TOPIC_TAXONOMY = {
+const TOPIC_TAXONOMY = {
   tech: {
     id: 'tech',
     name: 'Technology',
@@ -322,43 +322,11 @@ export const TOPIC_TAXONOMY = {
 };
 
 /**
- * Flatten topic taxonomy for quick lookup
- * Returns array of all topics with their full paths
- */
-export function getFlatTopics() {
-  const topics = [];
-  
-  for (const [key, topic] of Object.entries(TOPIC_TAXONOMY)) {
-    topics.push({
-      id: topic.id,
-      name: topic.name,
-      icon: topic.icon,
-      isSubtopic: false,
-      parentId: null
-    });
-    
-    if (topic.subtopics) {
-      for (const [subKey, subtopic] of Object.entries(topic.subtopics)) {
-        topics.push({
-          id: subtopic.id,
-          name: subtopic.name,
-          icon: topic.icon, // Inherit parent icon
-          isSubtopic: true,
-          parentId: topic.id
-        });
-      }
-    }
-  }
-  
-  return topics;
-}
-
-/**
  * Get topic display info by ID
  * @param {string} topicId - Topic ID (e.g., 'tech' or 'tech/ai')
  * @returns {Object|null} Topic info
  */
-export function getTopicInfo(topicId) {
+function getTopicInfo(topicId) {
   if (!topicId) return null;
   
   const parts = topicId.split('/');
@@ -401,16 +369,6 @@ export function getTopicDisplayName(topicId) {
 }
 
 /**
- * Get just the icon for a topic
- * @param {string} topicId - Topic ID
- * @returns {string} Topic icon
- */
-export function getTopicIcon(topicId) {
-  const info = getTopicInfo(topicId);
-  return info?.icon || '📌';
-}
-
-/**
  * Detect topics for a bookmark based on its metadata
  * @param {Object} bookmark - Bookmark object with metadata
  * @returns {string[]} Array of topic IDs that match
@@ -425,7 +383,6 @@ export function detectTopics(bookmark) {
   const title = (bookmark.title || '').toLowerCase();
   const description = (bookmark.description || '').toLowerCase();
   const domain = (bookmark.domain || '').toLowerCase();
-  const url = (bookmark.url || '').toLowerCase();
   const category = (bookmark.category || '').toLowerCase();
   const contentSnippet = (bookmark.contentSnippet || '').toLowerCase();
   const keywords = Array.isArray(bookmark.keywords) 
@@ -436,17 +393,11 @@ export function detectTopics(bookmark) {
   // Combine all text for keyword matching
   const allText = `${title} ${description} ${keywords} ${contentSnippet} ${folderPath}`;
   
-  // Extract og:type, article:section, article:tag from rawMetadata
-  let metaSection = '';
-  let metaTags = '';
+  // Extract og:type from rawMetadata
   let ogType = '';
   
   if (bookmark.rawMetadata) {
-    const meta = bookmark.rawMetadata.meta || {};
     const og = bookmark.rawMetadata.openGraph || {};
-    
-    metaSection = (meta['article:section'] || '').toLowerCase();
-    metaTags = (meta['article:tag'] || '').toLowerCase();
     ogType = (og['og:type'] || '').toLowerCase();
   }
   
@@ -456,7 +407,6 @@ export function detectTopics(bookmark) {
   const KEYWORD_DESC_SCORE = 3;
   const KEYWORD_CONTENT_SCORE = 2;
   const KEYWORD_FOLDER_SCORE = 2;
-  const META_SECTION_SCORE = 4;
   const THRESHOLD_SCORE = 3; // Minimum score to include a topic
   
   // Helper to add score for a topic
@@ -466,7 +416,7 @@ export function detectTopics(bookmark) {
   };
   
   // Check each topic in taxonomy
-  for (const [topicKey, topic] of Object.entries(TOPIC_TAXONOMY)) {
+  for (const topic of Object.values(TOPIC_TAXONOMY)) {
     // Check domain matches (high confidence)
     if (topic.domains) {
       for (const topicDomain of topic.domains) {
@@ -502,7 +452,7 @@ export function detectTopics(bookmark) {
     
     // Check subtopics (more specific)
     if (topic.subtopics) {
-      for (const [subKey, subtopic] of Object.entries(topic.subtopics)) {
+      for (const subtopic of Object.values(topic.subtopics)) {
         // Check subtopic domains
         if (subtopic.domains) {
           for (const subDomain of subtopic.domains) {
@@ -568,43 +518,6 @@ export function detectTopics(bookmark) {
  */
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Batch detect topics for multiple bookmarks
- * @param {Object[]} bookmarks - Array of bookmark objects
- * @returns {Map<string, string[]>} Map of bookmark ID to topics array
- */
-export function batchDetectTopics(bookmarks) {
-  const results = new Map();
-  
-  for (const bookmark of bookmarks) {
-    const topics = detectTopics(bookmark);
-    results.set(bookmark.id, topics);
-  }
-  
-  return results;
-}
-
-/**
- * Get all unique topics from a set of bookmarks
- * @param {Object[]} bookmarks - Array of bookmark objects
- * @returns {Object[]} Array of { topic, count } sorted by count
- */
-export function aggregateTopics(bookmarks) {
-  const topicCounts = new Map();
-  
-  for (const bookmark of bookmarks) {
-    const topics = bookmark.topics || [];
-    for (const topic of topics) {
-      const current = topicCounts.get(topic) || 0;
-      topicCounts.set(topic, current + 1);
-    }
-  }
-  
-  return Array.from(topicCounts.entries())
-    .map(([topic, count]) => ({ topic, count }))
-    .sort((a, b) => b.count - a.count);
 }
 
 /**

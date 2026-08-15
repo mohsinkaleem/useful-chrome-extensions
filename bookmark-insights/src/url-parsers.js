@@ -301,7 +301,7 @@ function parseYouTubeUrl(urlObj) {
   
   // Legacy channel URL: /c/CHANNEL_NAME or /user/USERNAME
   if (pathname.startsWith('/c/') || pathname.startsWith('/user/')) {
-    const match = pathname.match(/^\/(c|user)\/([^\/]+)/);
+    const match = pathname.match(/^\/(c|user)\/([^/]+)/);
     if (match) {
       result.type = 'channel';
       result.identifier = match[2];
@@ -1050,33 +1050,3 @@ export function getPlatformIcon(platform) {
   return icons[platform] || '🔗';
 }
 
-/**
- * Get content type display name
- * @param {string} type - Content type identifier
- * @returns {string} Human-readable content type
- */
-export function getContentTypeDisplayName(type) {
-  const names = {
-    'video': 'Video',
-    'short': 'Short',
-    'channel': 'Channel',
-    'playlist': 'Playlist',
-    'repo': 'Repository',
-    'issue': 'Issue',
-    'pr': 'Pull Request',
-    'gist': 'Gist',
-    'file': 'File',
-    'wiki': 'Wiki',
-    'article': 'Article',
-    'profile': 'Profile',
-    'question': 'Question',
-    'package': 'Package',
-    'subreddit': 'Subreddit',
-    'post': 'Post',
-    'tweet': 'Tweet',
-    'home': 'Home',
-    'search': 'Search',
-    'page': 'Page'
-  };
-  return names[type] || type;
-}
