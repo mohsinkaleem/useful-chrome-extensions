@@ -1,11 +1,14 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import BookmarkCard from './BookmarkCard.svelte';
   import BookmarkListItem from './BookmarkListItem.svelte';
   import SearchBar from './SearchBar.svelte';
   import Sidebar from './Sidebar.svelte';
   import DataExplorer from './DataExplorer.svelte';
   import VisualInsights from './VisualInsights.svelte';
+  import DashboardHeader from './DashboardHeader.svelte';
+  import ActiveFilterChips from './ActiveFilterChips.svelte';
+  import UselessCategory from './UselessCategory.svelte';
   import { SORT_OPTIONS } from './utils.js';
   import { searchBookmarks, invalidateSearchIndex } from './search.js';
   import {
@@ -37,7 +40,7 @@
     selectedBookmarks,
   } from './stores.js';
   import { debounce } from './utils.js';
-  import { darkMode, initDarkMode, toggleDarkMode } from './darkModeStore.js';
+  import { initDarkMode } from './darkModeStore.js';
 
   let bookmarks = [];
   let loading = true;
@@ -127,6 +130,42 @@
   };
   let deletingUseless = false;
 
+  // Drives the five cleanup-candidate panels, which differ only in copy and colour
+  const USELESS_CATEGORIES = [
+    {
+      key: 'deadLinks',
+      title: '\u{1F517} Dead Links',
+      color: 'red',
+      detail: (b) =>
+        `Last checked: ${b.lastChecked ? new Date(b.lastChecked).toLocaleDateString() : 'Unknown'}`,
+    },
+    {
+      key: 'oldUnused',
+      title: '\u{1F4C5} Old & Never Accessed',
+      color: 'orange',
+      detail: (b) =>
+        `Score: ${b.usefulnessScore} \u2022 Created: ${new Date(b.dateAdded).toLocaleDateString()}`,
+    },
+    {
+      key: 'genericTitles',
+      title: '\u{1F4DD} Generic/Placeholder Titles',
+      color: 'yellow',
+      detail: (b) => `Score: ${b.usefulnessScore}`,
+    },
+    {
+      key: 'temporaryUrls',
+      title: '\u{1F527} Temporary/Dev URLs',
+      color: 'purple',
+      detail: (b) => `Score: ${b.usefulnessScore}`,
+    },
+    {
+      key: 'lowScore',
+      title: '\u26A0\uFE0F Low Quality Score',
+      color: 'gray',
+      detail: (b) => `Score: ${b.usefulnessScore} \u2022 ${b.uselessReasons?.join(', ') ?? ''}`,
+    },
+  ];
+
   // Backup state
   let backupInProgress = false;
   let restoreInProgress = false;
@@ -143,17 +182,22 @@
   let undoDeleteToast = null;
   let undoDeleteTimeout = null;
 
+  // Captured so onDestroy can detach them
+  let onHashChange = null;
+  let onRuntimeMessage = null;
+
   onMount(async () => {
     try {
       await initDarkMode();
 
       // Handle hash changes for navigation
-      window.addEventListener('hashchange', () => {
+      onHashChange = () => {
         const newView = getViewFromHash();
         if (newView !== currentView) {
           switchView(newView, false); // Don't update hash since it's already changed
         }
-      });
+      };
+      window.addEventListener('hashchange', onHashChange);
 
       // Set initial hash if not present
       if (!window.location.hash) {
@@ -176,7 +220,7 @@
     }
 
     // Listen for enrichment progress updates and bookmark changes
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    onRuntimeMessage = (message) => {
       if (message.action === 'enrichmentProgress' && message.progress) {
         enrichmentProgress = message.progress;
 
@@ -214,7 +258,14 @@
           sidebarRef.refresh();
         }
       }
-    });
+    };
+    chrome.runtime.onMessage.addListener(onRuntimeMessage);
+  });
+
+  onDestroy(() => {
+    if (onHashChange) window.removeEventListener('hashchange', onHashChange);
+    if (onRuntimeMessage) chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+    if (undoDeleteTimeout) clearTimeout(undoDeleteTimeout);
   });
 
   // Debounced search function to prevent excessive calls during typing
@@ -1377,99 +1428,11 @@
 </svelte:head>
 
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-  <!-- Header -->
-  <header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex justify-between items-center py-4">
-        <div class="flex items-center space-x-4">
-          <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-200">Bookmark Insight</h1>
-          <button
-            on:click={handleExportBookmarks}
-            class="px-3 py-1 text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
-            title="Export bookmarks to JSON"
-          >
-            <svg
-              class="w-4 h-4 inline-block mr-1"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-              ></path>
-            </svg>
-            Export
-          </button>
-        </div>
-
-        <div class="flex items-center space-x-4">
-          <!-- Dark Mode Toggle -->
-          <button
-            on:click={toggleDarkMode}
-            class="p-2 rounded-md text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title={$darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {#if $darkMode}
-              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fill-rule="evenodd"
-                  d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"
-                  clip-rule="evenodd"
-                />
-              </svg>
-            {:else}
-              <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-            {/if}
-          </button>
-
-          <!-- Navigation -->
-          <nav class="flex space-x-4">
-            <button
-              on:click={() => switchView('bookmarks')}
-              class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView ===
-              'bookmarks'
-                ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-            >
-              Bookmarks
-            </button>
-            <button
-              on:click={() => switchView('insights')}
-              class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView ===
-              'insights'
-                ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-            >
-              Insights
-            </button>
-            <button
-              on:click={() => switchView('health')}
-              class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView ===
-              'health'
-                ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-            >
-              Health
-            </button>
-            <button
-              on:click={() => switchView('dataExplorer')}
-              class="px-4 py-2 rounded-md text-sm font-medium transition-colors {currentView ===
-              'dataExplorer'
-                ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}"
-            >
-              🗄️ Data
-            </button>
-          </nav>
-        </div>
-      </div>
-    </div>
-  </header>
+  <DashboardHeader
+    {currentView}
+    on:export={handleExportBookmarks}
+    on:switchView={(e) => switchView(e.detail)}
+  />
 
   <div class="max-w-[96rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
     {#if currentView === 'bookmarks'}
@@ -1574,244 +1537,7 @@
                 </div>
               </div>
 
-              <!-- Active Filters Chips -->
-              {#if ($activeFilters.domains && $activeFilters.domains.length > 0) || ($activeFilters.folders && $activeFilters.folders.length > 0) || $activeFilters.dateRange || $searchQueryStore || ($activeFilters.tags && $activeFilters.tags.length > 0) || ($activeFilters.topics && $activeFilters.topics.length > 0) || $activeFilters.deadLinks || $activeFilters.stale || $activeFilters.readingList}
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm text-gray-500 dark:text-gray-400 mr-1">Filters:</span>
-
-                  <!-- Search Query Chip -->
-                  {#if $searchQueryStore}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
-                    >
-                      Search: {$searchQueryStore}
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-blue-400 dark:text-blue-500 hover:text-blue-600 dark:hover:text-blue-300 focus:outline-none"
-                        on:click={() => searchQueryStore.set('')}
-                      >
-                        <span class="sr-only">Remove search filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/if}
-
-                  <!-- Domain Chips -->
-                  {#each $activeFilters.domains as domain}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800"
-                    >
-                      Domain: {domain}
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-green-400 dark:text-green-500 hover:text-green-600 dark:hover:text-green-300 focus:outline-none"
-                        on:click={() => activeFilters.toggleFilter('domains', domain)}
-                      >
-                        <span class="sr-only">Remove domain filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/each}
-
-                  <!-- Folder Chips -->
-                  {#each $activeFilters.folders as folder}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800"
-                    >
-                      Folder: {folder}
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-yellow-400 dark:text-yellow-500 hover:text-yellow-600 dark:hover:text-yellow-300 focus:outline-none"
-                        on:click={() => activeFilters.toggleFilter('folders', folder)}
-                      >
-                        <span class="sr-only">Remove folder filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/each}
-
-                  <!-- Topic Chips -->
-                  {#each $activeFilters.topics as topic}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
-                    >
-                      Topic: {topic}
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300 focus:outline-none"
-                        on:click={() => activeFilters.toggleFilter('topics', topic)}
-                      >
-                        <span class="sr-only">Remove topic filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/each}
-
-                  <!-- Reading List Chip -->
-                  {#if $activeFilters.readingList}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-100 dark:bg-cyan-900/40 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800"
-                    >
-                      Reading List
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-cyan-400 dark:text-cyan-500 hover:text-cyan-600 dark:hover:text-cyan-300 focus:outline-none"
-                        on:click={() => activeFilters.setFilter('readingList', false)}
-                      >
-                        <span class="sr-only">Remove reading list filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/if}
-
-                  <!-- Tag Chips -->
-                  {#each $activeFilters.tags as tag}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-600"
-                    >
-                      Tag: {tag}
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none"
-                        on:click={() => activeFilters.toggleFilter('tags', tag)}
-                      >
-                        <span class="sr-only">Remove tag filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/each}
-
-                  <!-- Date Range Chip -->
-                  {#if $activeFilters.dateRange}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                    >
-                      Date: {$activeFilters.dateRange.period === 'week'
-                        ? 'This Week'
-                        : $activeFilters.dateRange.period === 'twoWeek'
-                          ? 'This 2-Week'
-                          : $activeFilters.dateRange.period === 'month'
-                            ? 'This Month'
-                            : $activeFilters.dateRange.period === 'threeMonth'
-                              ? 'This 3-Month'
-                              : $activeFilters.dateRange.period === 'sixMonth'
-                                ? 'This 6-Month'
-                                : $activeFilters.dateRange.period === 'year'
-                                  ? 'This Year'
-                                  : $activeFilters.dateRange.period === 'older'
-                                    ? 'Older'
-                                    : 'Custom Range'}
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-blue-400 hover:text-blue-600 focus:outline-none"
-                        on:click={() => activeFilters.setFilter('dateRange', null)}
-                      >
-                        <span class="sr-only">Remove date filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/if}
-
-                  <!-- Dead Links Chip -->
-                  {#if $activeFilters.deadLinks}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
-                    >
-                      Dead Links
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-red-400 hover:text-red-600 focus:outline-none"
-                        on:click={() => activeFilters.setFilter('deadLinks', false)}
-                      >
-                        <span class="sr-only">Remove dead links filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/if}
-
-                  <!-- Stale Chip -->
-                  {#if $activeFilters.stale}
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
-                    >
-                      Stale
-                      <button
-                        type="button"
-                        class="ml-1.5 inline-flex items-center justify-center text-orange-400 hover:text-orange-600 focus:outline-none"
-                        on:click={() => activeFilters.setFilter('stale', false)}
-                      >
-                        <span class="sr-only">Remove stale filter</span>
-                        <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"
-                          ><path
-                            fill-rule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clip-rule="evenodd"
-                          /></svg
-                        >
-                      </button>
-                    </span>
-                  {/if}
-
-                  <!-- Clear All Button -->
-                  <button
-                    on:click={() => {
-                      activeFilters.clearFilters();
-                      searchQueryStore.set('');
-                    }}
-                    class="text-xs text-red-600 hover:text-red-800 underline ml-2"
-                  >
-                    Clear all
-                  </button>
-                </div>
-              {/if}
+              <ActiveFilterChips />
             </div>
 
             <!-- Visual Filter Builder -->
@@ -3355,250 +3081,20 @@
                   </div>
                 </div>
 
-                <!-- Dead Links Section -->
-                {#if uselessBookmarks.deadLinks.length > 0}
-                  <div class="mb-6">
-                    <div class="flex items-center justify-between mb-3">
-                      <h4 class="text-sm font-semibold text-red-700">
-                        🔗 Dead Links ({uselessBookmarks.deadLinks.length})
-                      </h4>
-                      <button
-                        on:click={() => deleteAllUselessInCategory('deadLinks')}
-                        disabled={deletingUseless}
-                        class="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-                      >
-                        Delete All
-                      </button>
-                    </div>
-                    <div class="space-y-2 max-h-48 overflow-y-auto">
-                      {#each uselessBookmarks.deadLinks.slice(0, uselessDisplayLimits.deadLinks) as bookmark}
-                        <div
-                          class="p-2 bg-red-50 rounded border border-red-200 flex items-center justify-between"
-                        >
-                          <div class="flex-1 min-w-0">
-                            <div class="text-sm truncate">{bookmark.title}</div>
-                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                            <div class="text-xs text-red-600 mt-1">
-                              Last checked: {bookmark.lastChecked
-                                ? new Date(bookmark.lastChecked).toLocaleDateString()
-                                : 'Unknown'}
-                            </div>
-                          </div>
-                          <div class="flex gap-1 ml-2 flex-shrink-0">
-                            <a
-                              href={bookmark.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              class="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                            >
-                              Try
-                            </a>
-                            <button
-                              on:click={() => deleteUselessBookmark(bookmark.id, 'deadLinks')}
-                              class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                              >Delete</button
-                            >
-                          </div>
-                        </div>
-                      {/each}
-                    </div>
-                    {#if uselessBookmarks.deadLinks.length > uselessDisplayLimits.deadLinks}
-                      <button
-                        on:click={() => loadMoreUseless('deadLinks')}
-                        class="mt-2 text-xs text-red-600 hover:underline"
-                      >
-                        Show more ({uselessDisplayLimits.deadLinks} of {uselessBookmarks.deadLinks
-                          .length})
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
-
-                <!-- Old & Unused Section -->
-                {#if uselessBookmarks.oldUnused.length > 0}
-                  <div class="mb-6">
-                    <div class="flex items-center justify-between mb-3">
-                      <h4 class="text-sm font-semibold text-orange-700">
-                        📅 Old & Never Accessed ({uselessBookmarks.oldUnused.length})
-                      </h4>
-                      <button
-                        on:click={() => deleteAllUselessInCategory('oldUnused')}
-                        disabled={deletingUseless}
-                        class="text-xs px-2 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50"
-                      >
-                        Delete All
-                      </button>
-                    </div>
-                    <div class="space-y-2 max-h-48 overflow-y-auto">
-                      {#each uselessBookmarks.oldUnused.slice(0, uselessDisplayLimits.oldUnused) as bookmark}
-                        <div
-                          class="p-2 bg-orange-50 rounded border border-orange-200 flex items-center justify-between"
-                        >
-                          <div class="flex-1 min-w-0">
-                            <div class="text-sm truncate">{bookmark.title}</div>
-                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                            <div class="text-xs text-orange-600 mt-1">
-                              Score: {bookmark.usefulnessScore} • Created: {new Date(
-                                bookmark.dateAdded,
-                              ).toLocaleDateString()}
-                            </div>
-                          </div>
-                          <button
-                            on:click={() => deleteUselessBookmark(bookmark.id, 'oldUnused')}
-                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                            >Delete</button
-                          >
-                        </div>
-                      {/each}
-                    </div>
-                    {#if uselessBookmarks.oldUnused.length > uselessDisplayLimits.oldUnused}
-                      <button
-                        on:click={() => loadMoreUseless('oldUnused')}
-                        class="mt-2 text-xs text-orange-600 hover:underline"
-                      >
-                        Show more ({uselessDisplayLimits.oldUnused} of {uselessBookmarks.oldUnused
-                          .length})
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
-
-                <!-- Generic Titles Section -->
-                {#if uselessBookmarks.genericTitles.length > 0}
-                  <div class="mb-6">
-                    <div class="flex items-center justify-between mb-3">
-                      <h4 class="text-sm font-semibold text-yellow-700">
-                        📝 Generic/Placeholder Titles ({uselessBookmarks.genericTitles.length})
-                      </h4>
-                      <button
-                        on:click={() => deleteAllUselessInCategory('genericTitles')}
-                        disabled={deletingUseless}
-                        class="text-xs px-2 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50"
-                      >
-                        Delete All
-                      </button>
-                    </div>
-                    <div class="space-y-2 max-h-48 overflow-y-auto">
-                      {#each uselessBookmarks.genericTitles.slice(0, uselessDisplayLimits.genericTitles) as bookmark}
-                        <div
-                          class="p-2 bg-yellow-50 rounded border border-yellow-200 flex items-center justify-between"
-                        >
-                          <div class="flex-1 min-w-0">
-                            <div class="text-sm truncate">{bookmark.title}</div>
-                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                          </div>
-                          <button
-                            on:click={() => deleteUselessBookmark(bookmark.id, 'genericTitles')}
-                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                            >Delete</button
-                          >
-                        </div>
-                      {/each}
-                    </div>
-                    {#if uselessBookmarks.genericTitles.length > uselessDisplayLimits.genericTitles}
-                      <button
-                        on:click={() => loadMoreUseless('genericTitles')}
-                        class="mt-2 text-xs text-yellow-600 hover:underline"
-                      >
-                        Show more ({uselessDisplayLimits.genericTitles} of {uselessBookmarks
-                          .genericTitles.length})
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
-
-                <!-- Temporary URLs Section -->
-                {#if uselessBookmarks.temporaryUrls.length > 0}
-                  <div class="mb-6">
-                    <div class="flex items-center justify-between mb-3">
-                      <h4 class="text-sm font-semibold text-purple-700">
-                        🔧 Temporary/Dev URLs ({uselessBookmarks.temporaryUrls.length})
-                      </h4>
-                      <button
-                        on:click={() => deleteAllUselessInCategory('temporaryUrls')}
-                        disabled={deletingUseless}
-                        class="text-xs px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
-                      >
-                        Delete All
-                      </button>
-                    </div>
-                    <div class="space-y-2 max-h-48 overflow-y-auto">
-                      {#each uselessBookmarks.temporaryUrls.slice(0, uselessDisplayLimits.temporaryUrls) as bookmark}
-                        <div
-                          class="p-2 bg-purple-50 rounded border border-purple-200 flex items-center justify-between"
-                        >
-                          <div class="flex-1 min-w-0">
-                            <div class="text-sm truncate">{bookmark.title}</div>
-                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                          </div>
-                          <button
-                            on:click={() => deleteUselessBookmark(bookmark.id, 'temporaryUrls')}
-                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                            >Delete</button
-                          >
-                        </div>
-                      {/each}
-                    </div>
-                    {#if uselessBookmarks.temporaryUrls.length > uselessDisplayLimits.temporaryUrls}
-                      <button
-                        on:click={() => loadMoreUseless('temporaryUrls')}
-                        class="mt-2 text-xs text-purple-600 hover:underline"
-                      >
-                        Show more ({uselessDisplayLimits.temporaryUrls} of {uselessBookmarks
-                          .temporaryUrls.length})
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
-
-                <!-- Low Score Section -->
-                {#if uselessBookmarks.lowScore.length > 0}
-                  <div>
-                    <div class="flex items-center justify-between mb-3">
-                      <h4 class="text-sm font-semibold text-gray-700">
-                        ⚠️ Low Quality Score ({uselessBookmarks.lowScore.length})
-                      </h4>
-                      <button
-                        on:click={() => deleteAllUselessInCategory('lowScore')}
-                        disabled={deletingUseless}
-                        class="text-xs px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
-                      >
-                        Delete All
-                      </button>
-                    </div>
-                    <div class="space-y-2 max-h-48 overflow-y-auto">
-                      {#each uselessBookmarks.lowScore.slice(0, uselessDisplayLimits.lowScore) as bookmark}
-                        <div
-                          class="p-2 bg-gray-50 rounded border border-gray-200 flex items-center justify-between"
-                        >
-                          <div class="flex-1 min-w-0">
-                            <div class="text-sm truncate">{bookmark.title}</div>
-                            <div class="text-xs text-gray-500 truncate">{bookmark.url}</div>
-                            <div class="text-xs text-gray-400 mt-1">
-                              Score: {bookmark.usefulnessScore} • {bookmark.uselessReasons?.join(
-                                ', ',
-                              )}
-                            </div>
-                          </div>
-                          <button
-                            on:click={() => deleteUselessBookmark(bookmark.id, 'lowScore')}
-                            class="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
-                            >Delete</button
-                          >
-                        </div>
-                      {/each}
-                    </div>
-                    {#if uselessBookmarks.lowScore.length > uselessDisplayLimits.lowScore}
-                      <button
-                        on:click={() => loadMoreUseless('lowScore')}
-                        class="mt-2 text-xs text-gray-600 hover:underline"
-                      >
-                        Show more ({uselessDisplayLimits.lowScore} of {uselessBookmarks.lowScore
-                          .length})
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
+                {#each USELESS_CATEGORIES as category (category.key)}
+                  <UselessCategory
+                    title={category.title}
+                    color={category.color}
+                    detail={category.detail}
+                    showTryLink={category.key === 'deadLinks'}
+                    bookmarks={uselessBookmarks[category.key]}
+                    limit={uselessDisplayLimits[category.key]}
+                    deleting={deletingUseless}
+                    on:delete={(e) => deleteUselessBookmark(e.detail, category.key)}
+                    on:deleteAll={() => deleteAllUselessInCategory(category.key)}
+                    on:loadMore={() => loadMoreUseless(category.key)}
+                  />
+                {/each}
               {/if}
             </div>
           </div>

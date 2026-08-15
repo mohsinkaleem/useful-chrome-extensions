@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import SearchBar from './SearchBar.svelte';
   import {
     getAllBookmarks,
@@ -55,6 +55,14 @@
       chrome.readingList.onEntryAdded?.addListener(loadReadingList);
       chrome.readingList.onEntryRemoved?.addListener(loadReadingList);
       chrome.readingList.onEntryUpdated?.addListener(loadReadingList);
+    }
+  });
+
+  onDestroy(() => {
+    if (chrome.readingList) {
+      chrome.readingList.onEntryAdded?.removeListener(loadReadingList);
+      chrome.readingList.onEntryRemoved?.removeListener(loadReadingList);
+      chrome.readingList.onEntryUpdated?.removeListener(loadReadingList);
     }
   });
 
