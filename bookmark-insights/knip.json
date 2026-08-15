@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/background.js", "src/dashboard.js", "src/sidepanel.js"],
+  "entry": ["src/background.js"],
   "project": ["src/**/*.{js,svelte}"],
-  "ignore": ["dist/**", "extension/**", "public/**", "background.js"],
-  "ignoreDependencies": ["tailwindcss", "autoprefixer", "postcss"]
+  "ignoreDependencies": ["autoprefixer", "postcss"],
+  "ignoreBinaries": ["du"]
 }

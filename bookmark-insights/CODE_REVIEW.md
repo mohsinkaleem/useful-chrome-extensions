@@ -432,45 +432,50 @@ Ordered by value ÷ effort. All are achievable with data the extension **already
 
 ## 10. Suggested order of work
 
-### Phase 0 — Stop the bleeding
-- [ ] C1 — remove the 29 MB backup from git, purge history, `.gitignore` it
-- [ ] 7.1 — untrack build output, consolidate to a single `dist/`
-- [ ] 7.2 — single version source across `manifest.json` / `package.json`
-- [ ] Add `"private": true`, a `LICENSE` file
+> **Status:** phases 0-4 are complete as of 2026-08-15. Phases 5 and 6 remain.
 
-### Phase 1 — Fix what's silently broken
-- [ ] C2 — normalize the metadata shape + backfill from existing `rawMetadata` (no refetch needed)
-- [ ] C3 — `queueId: item.queueId`
-- [ ] C4 — `searchQuery` ReferenceError
-- [ ] C5 — route all deletes through `deleteBookmarks()`
-- [ ] C6 — single `CACHE_KEYS` source of truth; call `invalidateMetricCaches` from `enrichBookmark`
-- [ ] B11, B12, B13, B15, B18 — the trivial correctness fixes
+### Phase 0 — Stop the bleeding ✅
+- [x] C1 — remove the 29 MB backup from git, purge history, `.gitignore` it
+- [x] 7.1 — untrack build output, consolidate to a single `dist/`
+- [x] 7.2 — single version source across `manifest.json` / `package.json`
+- [x] Add `"private": true`, a `LICENSE` file
 
-### Phase 2 — Security
-- [ ] S1 — `credentials: 'omit'` on all enrichment fetches
-- [ ] S2 — private/loopback/link-local blocklist + scheme filter in `checkDeadLinks`
-- [ ] S3/S4 — `Content-Type` gate, 512 KB body cap, timeout that covers the body
-- [ ] S5 — parse meta tags from `cleanHtml`, not raw `html`
-- [ ] S6 — scheme allowlist for `faviconUrl` / `og:image`
-- [ ] S7 — make the Google favicon service opt-in, correct the README claims
-- [ ] S8 — drop `web_accessible_resources`
+### Phase 1 — Fix what's silently broken ✅
+- [x] C2 — normalize the metadata shape + backfill from existing `rawMetadata` (no refetch needed)
+- [x] C3 — `queueId: item.queueId`
+- [x] C4 — `searchQuery` ReferenceError
+- [x] C5 — route all deletes through `deleteBookmarks()`
+- [x] C6 — single `CACHE_KEYS` source of truth; call `invalidateMetricCaches` from `enrichBookmark`
+- [x] B11, B12, B13, B15, B18 — the trivial correctness fixes
 
-### Phase 3 — Delete
-- [ ] `loadInsights()` + the dead chart layer (~380 lines, drops Chart.js from the bundle)
-- [ ] Unused exports in `similarity.js`, `insights.js`, `stores.js`, `topics.js` (~1,100 lines)
-- [ ] `CreatorExplorer.svelte` — wire it up or delete it
-- [ ] Schema v1-v4, the alarm no-op, the `chrome.storage.local` dual-write, the 14 dynamic imports
-- [ ] Settings with no readers — especially `privacyMode`, which is documented as a privacy control
+### Phase 2 — Security ✅
+- [x] S1 — `credentials: 'omit'` on all enrichment fetches
+- [x] S2 — private/loopback/link-local blocklist + scheme filter in `checkDeadLinks`
+- [x] S3/S4 — `Content-Type` gate, 512 KB body cap, timeout that covers the body
+- [x] S5 — parse meta tags from `cleanHtml`, not raw `html`
+- [x] S6 — scheme allowlist for `faviconUrl` / `og:image`
+- [x] S7 — favicons are now generated locally; the Google service is gone
+- [x] S8 — drop `web_accessible_resources`
+- [x] S11 — CSP-safe crash fallback; S12 — `alarms` dropped, `tabs` made optional
+- [x] Bonus: `{@html}` eliminated via `Highlight.svelte`
 
-### Phase 4 — Structure & tooling
-- [ ] ESLint + Prettier + Vitest + Knip + a CI workflow
-- [ ] Unit tests for the pure functions (highest ROI per line in the repo)
-- [ ] Flatten the background message router
-- [ ] Split `Dashboard.svelte` per §6.1
-- [ ] Rewrite `README` / `TECHNICAL_DOCUMENTATION` / `TROUBLESHOOTING` against reality
+### Phase 3 — Delete ✅ (~2,960 lines)
+- [x] `loadInsights()` + the dead chart layer
+- [x] Unused exports in `similarity.js`, `insights.js`, `stores.js`, `topics.js`, `search.js`, `db-explorer.js`, `url-parsers.js`, `utils.js` — removing similarity's exports made the whole TF-IDF/cosine stack unreachable
+- [x] `CreatorExplorer.svelte` — deleted
+- [x] Schema v1-v4, the alarm no-op, the `chrome.storage.local` dual-write, the dynamic imports
+- [x] Also: B19 (substring mislabelling), and the Cleanup Candidates panel, which had no trigger
+
+### Phase 4 — Structure & tooling ✅
+- [x] ESLint + Prettier + Vitest + Knip + a CI workflow (at the monorepo root, path-filtered)
+- [x] 48 unit tests for the pure functions
+- [x] Flatten the background message router
+- [x] Split `Dashboard.svelte` — `DashboardHeader`, `ActiveFilterChips`, `UselessCategory`; B25 `onDestroy` cleanup added
+- [x] Rewrite `README` / `TECHNICAL_DOCUMENTATION` / `TROUBLESHOOTING` against reality; changelog moved to `CHANGELOG.md`
 
 ### Phase 5 — Performance
-- [ ] B7, B8, B9 — MV3 lifecycle: synchronous listener registration, `onStartup`, persisted state
+- [x] B7, B8 — MV3 lifecycle: synchronous listener registration, `onStartup`
+- [ ] B9 — persist in-memory state across worker suspension
 - [ ] P1 — stop re-reading the corpus on every keystroke
 - [ ] P3/P4 — debounce index serialization, guard the update-time rebuild
 - [ ] P7/P8 — rolling-row Levenshtein, hoisted topic regexes
