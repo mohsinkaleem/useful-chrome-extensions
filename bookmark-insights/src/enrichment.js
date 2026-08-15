@@ -1,7 +1,15 @@
 // Enrichment engine for bookmark metadata fetching and processing
 // Handles background enrichment, dead-link checking, and auto-categorization
 
-import { getSettings, getNextEnrichmentBatch, removeFromEnrichmentQueue, upsertBookmark, getBookmark, logEvent, invalidateMetricCaches } from './db.js';
+import {
+  getSettings,
+  getNextEnrichmentBatch,
+  removeFromEnrichmentQueue,
+  upsertBookmark,
+  getBookmark,
+  logEvent,
+  invalidateMetricCaches,
+} from './db.js';
 import { parseBookmarkUrl } from './url-parsers.js';
 import { safeFetch, isFetchableUrl, safeImageUrl } from './url-safety.js';
 
@@ -29,7 +37,7 @@ const CATEGORY_RULES = {
   'w3schools.com': 'reference',
   'amazon.com': 'shopping',
   'ebay.com': 'shopping',
-  'etsy.com': 'shopping'
+  'etsy.com': 'shopping',
 };
 
 // URL path patterns for categorization
@@ -43,27 +51,27 @@ const PATH_PATTERNS = {
   '/blog': 'blog',
   '/article': 'blog',
   '/video': 'video',
-  '/watch': 'video'
+  '/watch': 'video',
 };
 
 // Content-based keyword detection
 const CONTENT_KEYWORDS = {
-  'tutorial': 'tutorial',
-  'guide': 'tutorial',
+  tutorial: 'tutorial',
+  guide: 'tutorial',
   'how to': 'tutorial',
-  'documentation': 'documentation',
-  'docs': 'documentation',
-  'api': 'api',
-  'reference': 'reference',
-  'blog': 'blog',
-  'article': 'blog',
-  'news': 'news',
-  'video': 'video',
-  'course': 'education',
-  'learning': 'education',
-  'tool': 'tool',
-  'app': 'tool',
-  'software': 'tool'
+  documentation: 'documentation',
+  docs: 'documentation',
+  api: 'api',
+  reference: 'reference',
+  blog: 'blog',
+  article: 'blog',
+  news: 'news',
+  video: 'video',
+  course: 'education',
+  learning: 'education',
+  tool: 'tool',
+  app: 'tool',
+  software: 'tool',
 };
 
 // Enrich a single bookmark by fetching its metadata
@@ -72,7 +80,7 @@ const CONTENT_KEYWORDS = {
 // @param {boolean} options.force - Force re-enrichment even if recently enriched
 export async function enrichBookmark(bookmarkId, options = {}) {
   const { force = false } = options;
-  
+
   try {
     const bookmark = await getBookmark(bookmarkId);
     if (!bookmark) {
@@ -90,10 +98,12 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     if (!force) {
       const settings = await getSettings();
       const freshnessDays = settings.enrichmentFreshnessDays || 30;
-      const freshnessThreshold = Date.now() - (freshnessDays * 24 * 60 * 60 * 1000);
-      
+      const freshnessThreshold = Date.now() - freshnessDays * 24 * 60 * 60 * 1000;
+
       if (bookmark.lastChecked && bookmark.lastChecked > freshnessThreshold) {
-        console.log(`Skipping recently enriched bookmark: ${bookmark.title} (last checked: ${new Date(bookmark.lastChecked).toLocaleDateString()})`);
+        console.log(
+          `Skipping recently enriched bookmark: ${bookmark.title} (last checked: ${new Date(bookmark.lastChecked).toLocaleDateString()})`,
+        );
         return { success: true, skipped: true, alreadyEnriched: true };
       }
     } else {
@@ -104,10 +114,10 @@ export async function enrichBookmark(bookmarkId, options = {}) {
 
     // Parse URL for platform-specific data (fast, no network required)
     const platformData = parseBookmarkUrl(bookmark.url);
-    
+
     // Check dead links first (quick HEAD request)
     const isAlive = await checkBookmarkAlive(bookmark.url);
-    
+
     // If dead, just update the isAlive status and skip metadata fetching
     if (isAlive === false) {
       bookmark.isAlive = false;
@@ -127,10 +137,10 @@ export async function enrichBookmark(bookmarkId, options = {}) {
 
     // Fetch page metadata
     const metadata = await fetchPageMetadata(bookmark.url);
-    
+
     // Auto-categorize
     const category = categorizeBookmark(bookmark, metadata);
-    
+
     // Merge platform data with metadata for enhanced creator detection
     const enrichedPlatformData = mergePlatformDataWithMetadata(platformData, metadata);
 
@@ -143,7 +153,7 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     bookmark.faviconUrl = metadata.faviconUrl || bookmark.faviconUrl;
     bookmark.contentSnippet = metadata.snippet || bookmark.contentSnippet;
     bookmark.rawMetadata = metadata.rawMetadata || bookmark.rawMetadata; // Store comprehensive metadata
-    
+
     // Add platform-specific fields
     if (enrichedPlatformData) {
       bookmark.platform = enrichedPlatformData.platform;
@@ -156,23 +166,23 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     // This keeps enrichment fast and allows users to control when topics are generated
 
     await upsertBookmark(bookmark);
-    await logEvent(bookmarkId, 'enrichment', { 
-      success: true, 
+    await logEvent(bookmarkId, 'enrichment', {
+      success: true,
       category,
       platform: enrichedPlatformData?.platform,
-      hasDescription: !!metadata.description 
+      hasDescription: !!metadata.description,
     });
 
-    return { 
-      success: true, 
-      category, 
+    return {
+      success: true,
+      category,
       description: metadata.description,
       platform: enrichedPlatformData?.platform,
-      isAlive 
+      isAlive,
     };
   } catch (error) {
     console.error(`Error enriching bookmark ${bookmarkId}:`, error);
-    
+
     // IMPORTANT: Update lastChecked even on failure to prevent infinite retry loops
     // We set it to now so it won't be picked up again immediately by the "unenriched" filter
     try {
@@ -223,7 +233,7 @@ export async function fetchPageMetadata(url) {
   try {
     const response = await safeFetch(url, {
       timeout: 10000,
-      expectContentType: /text\/html|application\/xhtml\+xml/i
+      expectContentType: /text\/html|application\/xhtml\+xml/i,
     });
 
     if (!response.ok || !response.body) {
@@ -231,44 +241,44 @@ export async function fetchPageMetadata(url) {
     }
 
     const html = response.body;
-    
+
     // Parse HTML using regex (service worker compatible - no DOMParser available)
-    
+
     // Extract comprehensive raw metadata for future analysis
     const rawMetadata = {
       meta: {},
       openGraph: {},
       twitterCard: {},
       jsonLd: [],
-      other: {}
+      other: {},
     };
 
     // Clean HTML for better content extraction
     // Remove scripts, styles, navs, headers, footers to avoid noise
     const cleanHtml = html
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gim, "")
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gim, "")
-      .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gim, "")
-      .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gim, "")
-      .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gim, "")
-      .replace(/<!--[\s\S]*?-->/g, "");
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gim, '')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gim, '')
+      .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gim, '')
+      .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gim, '')
+      .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gim, '')
+      .replace(/<!--[\s\S]*?-->/g, '');
 
     // Extract all meta tags using regex.
     // Read from cleanHtml so values inside <script> bodies or comments can't be injected.
     const metaTagRegex = /<meta\s+([^>]*?)>/gi;
     let metaMatch;
-    
+
     while ((metaMatch = metaTagRegex.exec(cleanHtml)) !== null) {
       const metaTag = metaMatch[1];
-      
+
       // Extract name/property and content attributes
       const nameMatch = metaTag.match(/(?:name|property)=["']([^"']+)["']/i);
       const contentMatch = metaTag.match(/content=["']([^"']+)["']/i);
-      
+
       if (nameMatch && contentMatch) {
         const name = nameMatch[1];
         const content = contentMatch[1];
-        
+
         if (name.startsWith('og:')) {
           rawMetadata.openGraph[name] = content;
         } else if (name.startsWith('twitter:')) {
@@ -283,7 +293,7 @@ export async function fetchPageMetadata(url) {
     // Must read raw html - cleanHtml has already stripped every <script> block.
     const jsonLdRegex = /<script\s+type=["']application\/ld\+json["']>(.*?)<\/script>/gis;
     let jsonLdMatch;
-    
+
     while ((jsonLdMatch = jsonLdRegex.exec(html)) !== null) {
       try {
         const data = JSON.parse(jsonLdMatch[1]);
@@ -298,14 +308,15 @@ export async function fetchPageMetadata(url) {
     if (titleMatch) {
       rawMetadata.other.title = titleMatch[1].trim();
     }
-    
+
     // Extract canonical link
-    const canonicalMatch = cleanHtml.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i) ||
-                          cleanHtml.match(/<link\s+href=["']([^"']+)["']\s+rel=["']canonical["']/i);
+    const canonicalMatch =
+      cleanHtml.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i) ||
+      cleanHtml.match(/<link\s+href=["']([^"']+)["']\s+rel=["']canonical["']/i);
     if (canonicalMatch) {
       rawMetadata.other.canonical = canonicalMatch[1];
     }
-    
+
     // Extract language attribute
     const langMatch = cleanHtml.match(/<html[^>]*\slang=["']([^"']+)["']/i);
     if (langMatch) {
@@ -323,13 +334,13 @@ export async function fetchPageMetadata(url) {
       keywords: [],
       faviconUrl: null,
       snippet: null,
-      rawMetadata: rawMetadata // Include comprehensive raw data
+      rawMetadata: rawMetadata, // Include comprehensive raw data
     };
 
     // Get description from meta tags (priority: og:description > meta description > twitter:description)
-    metadata.description = 
-      rawMetadata.openGraph['og:description'] || 
-      rawMetadata.meta.description || 
+    metadata.description =
+      rawMetadata.openGraph['og:description'] ||
+      rawMetadata.meta.description ||
       rawMetadata.twitterCard['twitter:description'] ||
       null;
 
@@ -337,13 +348,15 @@ export async function fetchPageMetadata(url) {
     if (rawMetadata.meta.keywords) {
       metadata.keywords = rawMetadata.meta.keywords
         .split(',')
-        .map(k => k.trim())
-        .filter(k => k.length > 0)
+        .map((k) => k.trim())
+        .filter((k) => k.length > 0)
         .slice(0, 10); // Limit to 10 keywords
     }
 
     // Get favicon using regex
-    const faviconMatch = cleanHtml.match(/<link\s+([^>]*rel=["'](?:icon|shortcut icon)["'][^>]*)>/i);
+    const faviconMatch = cleanHtml.match(
+      /<link\s+([^>]*rel=["'](?:icon|shortcut icon)["'][^>]*)>/i,
+    );
     if (faviconMatch) {
       const hrefMatch = faviconMatch[1].match(/href=["']([^"']+)["']/i);
       if (hrefMatch) {
@@ -356,7 +369,7 @@ export async function fetchPageMetadata(url) {
     const pRegex = /<p[^>]*>([^<]+)<\/p>/gi;
     let pMatch;
     const paragraphs = [];
-    
+
     while ((pMatch = pRegex.exec(cleanHtml)) !== null) {
       const text = pMatch[1]
         .replace(/&nbsp;/g, ' ')
@@ -366,18 +379,20 @@ export async function fetchPageMetadata(url) {
         .replace(/&quot;/g, '"')
         .replace(/\s+/g, ' ') // Normalize whitespace
         .trim();
-        
+
       // Filter out short or empty paragraphs (likely UI elements)
       // And filter out cookie warnings or common UI text
-      if (text.length > 50 && 
-          !text.toLowerCase().includes('cookie') && 
-          !text.toLowerCase().includes('copyright')) {
+      if (
+        text.length > 50 &&
+        !text.toLowerCase().includes('cookie') &&
+        !text.toLowerCase().includes('copyright')
+      ) {
         paragraphs.push(text);
       }
-      
+
       if (paragraphs.length >= 3) break; // Get top 3 valid paragraphs
     }
-    
+
     if (paragraphs.length > 0) {
       metadata.snippet = paragraphs.join(' ... ').substring(0, 300);
     }
@@ -449,10 +464,10 @@ export function categorizeBookmark(bookmark, metadata = {}) {
  */
 function mergePlatformDataWithMetadata(platformData, metadata) {
   if (!platformData) return null;
-  
+
   const rawMeta = metadata?.rawMetadata || {};
   const enhanced = { ...platformData };
-  
+
   // YouTube: Extract channel name from JSON-LD or meta tags
   if (platformData.platform === 'youtube') {
     // Try JSON-LD for authoritative channel info
@@ -476,8 +491,8 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
         }
         // BreadcrumbList can have channel info
         if (ld['@type'] === 'BreadcrumbList' && ld.itemListElement) {
-          const channelItem = ld.itemListElement.find(item => 
-            item.item && item.item['@id'] && item.item['@id'].includes('/channel/')
+          const channelItem = ld.itemListElement.find(
+            (item) => item.item && item.item['@id'] && item.item['@id'].includes('/channel/'),
           );
           if (channelItem?.item?.name) {
             enhanced.extra = enhanced.extra || {};
@@ -488,7 +503,7 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
         }
       }
     }
-    
+
     // Fallback to Open Graph
     if (!enhanced.creator && rawMeta.openGraph) {
       const ogSiteName = rawMeta.openGraph['og:site_name'];
@@ -497,7 +512,7 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
       }
     }
   }
-  
+
   // GitHub: Extract topics and additional repo info from meta
   if (platformData.platform === 'github') {
     // GitHub includes topics in meta description sometimes
@@ -506,14 +521,17 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
       // GitHub topics format: "topic1, topic2, topic3 - Description"
       const topicsMatch = desc.match(/^([^-]+)\s*-/);
       if (topicsMatch) {
-        const potentialTopics = topicsMatch[1].split(',').map(t => t.trim()).filter(t => t.length > 0 && t.length < 30);
+        const potentialTopics = topicsMatch[1]
+          .split(',')
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0 && t.length < 30);
         if (potentialTopics.length > 0) {
           enhanced.extra = enhanced.extra || {};
           enhanced.extra.topics = potentialTopics;
         }
       }
     }
-    
+
     // Try to get language from og:image URL (GitHub includes it in some social cards)
     if (rawMeta.openGraph?.['og:image']) {
       const imgUrl = rawMeta.openGraph['og:image'];
@@ -525,19 +543,23 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
       }
     }
   }
-  
+
   // Medium/Blog: Extract author from article metadata
-  if (platformData.platform === 'medium' || platformData.platform === 'devto' || platformData.platform === 'substack') {
+  if (
+    platformData.platform === 'medium' ||
+    platformData.platform === 'devto' ||
+    platformData.platform === 'substack'
+  ) {
     // Try og:article:author
     if (!enhanced.creator && rawMeta.openGraph?.['og:article:author']) {
       enhanced.creator = rawMeta.openGraph['og:article:author'];
     }
-    
+
     // Try meta author
     if (!enhanced.creator && rawMeta.other?.author) {
       enhanced.creator = rawMeta.other.author;
     }
-    
+
     // Try JSON-LD Person/Organization author
     if (!enhanced.creator && rawMeta.jsonLd && Array.isArray(rawMeta.jsonLd)) {
       for (const ld of rawMeta.jsonLd) {
@@ -553,14 +575,14 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
         }
       }
     }
-    
+
     // Extract published date
     if (rawMeta.openGraph?.['og:article:published_time']) {
       enhanced.extra = enhanced.extra || {};
       enhanced.extra.publishedAt = rawMeta.openGraph['og:article:published_time'];
     }
   }
-  
+
   // Twitter: Get display name from meta
   if (platformData.platform === 'twitter') {
     if (rawMeta.twitterCard?.['twitter:creator']) {
@@ -570,7 +592,7 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
       }
     }
   }
-  
+
   // Generic: Extract og:image for thumbnails
   if (rawMeta.openGraph?.['og:image']) {
     const thumbnail = safeImageUrl(rawMeta.openGraph['og:image']);
@@ -579,13 +601,13 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
       enhanced.extra.thumbnail = thumbnail;
     }
   }
-  
+
   // Extract content type from og:type
   if (rawMeta.openGraph?.['og:type']) {
     enhanced.extra = enhanced.extra || {};
     enhanced.extra.ogType = rawMeta.openGraph['og:type'];
   }
-  
+
   return enhanced;
 }
 
@@ -595,9 +617,14 @@ function mergePlatformDataWithMetadata(platformData, metadata) {
 // @param {number} concurrency - Number of parallel requests
 // @param {Object} options - Additional options
 // @param {boolean} options.force - Force re-enrichment even for recently enriched bookmarks
-export async function processEnrichmentBatch(batchSize = 10, progressCallback = null, concurrency = 3, options = {}) {
+export async function processEnrichmentBatch(
+  batchSize = 10,
+  progressCallback = null,
+  concurrency = 3,
+  options = {},
+) {
   const { force = false } = options;
-  
+
   try {
     const settings = await getSettings();
     if (!settings.enrichmentEnabled) {
@@ -607,79 +634,91 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
 
     // Use settings concurrency if not explicitly provided
     const maxConcurrency = concurrency || settings.enrichmentConcurrency || 3;
-    console.log(`Using concurrency: ${maxConcurrency} parallel requests${force ? ' (FORCE mode)' : ''}`);
+    console.log(
+      `Using concurrency: ${maxConcurrency} parallel requests${force ? ' (FORCE mode)' : ''}`,
+    );
 
     let bookmarksToProcess = [];
     let usingQueue = true;
-    
+
     // In FORCE mode, directly get bookmarks instead of using the queue
     if (force) {
       const { getAllBookmarks } = await import('./db.js');
       const allBookmarks = await getAllBookmarks();
-      
+
       // Get all HTTP/HTTPS bookmarks
-      const httpBookmarks = allBookmarks.filter(b => 
-        b.url && (b.url.startsWith('http://') || b.url.startsWith('https://'))
+      const httpBookmarks = allBookmarks.filter(
+        (b) => b.url && (b.url.startsWith('http://') || b.url.startsWith('https://')),
       );
-      
+
       // Take batchSize number of bookmarks (prioritize unenriched, then oldest enriched)
-      const unenriched = httpBookmarks.filter(b => !b.lastChecked);
-      const enriched = httpBookmarks.filter(b => b.lastChecked)
+      const unenriched = httpBookmarks.filter((b) => !b.lastChecked);
+      const enriched = httpBookmarks
+        .filter((b) => b.lastChecked)
         .sort((a, b) => a.lastChecked - b.lastChecked); // Oldest first
-      
+
       // Combine: unenriched first, then oldest enriched
       const prioritized = [...unenriched, ...enriched].slice(0, batchSize);
-      
-      bookmarksToProcess = prioritized.map(b => ({
+
+      bookmarksToProcess = prioritized.map((b) => ({
         bookmarkId: b.id,
         queueId: null, // Not from queue
-        directProcess: true
+        directProcess: true,
       }));
       usingQueue = false;
-      
-      console.log(`FORCE mode: Selected ${bookmarksToProcess.length} bookmarks directly (${unenriched.length} unenriched, ${Math.max(0, bookmarksToProcess.length - unenriched.length)} for re-enrichment)`);
+
+      console.log(
+        `FORCE mode: Selected ${bookmarksToProcess.length} bookmarks directly (${unenriched.length} unenriched, ${Math.max(0, bookmarksToProcess.length - unenriched.length)} for re-enrichment)`,
+      );
     } else {
       // Normal mode: use the enrichment queue
       const batch = await getNextEnrichmentBatch(batchSize);
-      
+
       if (batch.length === 0) {
         // Queue empty - try to get unenriched bookmarks directly
         const { getAllBookmarks } = await import('./db.js');
         const allBookmarks = await getAllBookmarks();
-        
-        const unenrichedBookmarks = allBookmarks.filter(b => 
-          b.url && 
-          (b.url.startsWith('http://') || b.url.startsWith('https://')) &&
-          !b.lastChecked
-        ).slice(0, batchSize);
-        
+
+        const unenrichedBookmarks = allBookmarks
+          .filter(
+            (b) =>
+              b.url &&
+              (b.url.startsWith('http://') || b.url.startsWith('https://')) &&
+              !b.lastChecked,
+          )
+          .slice(0, batchSize);
+
         if (unenrichedBookmarks.length === 0) {
           console.log('No bookmarks in enrichment queue and no unenriched bookmarks found');
           return { processed: 0, success: 0, failed: 0, skipped: 0 };
         }
-        
-        bookmarksToProcess = unenrichedBookmarks.map(b => ({
+
+        bookmarksToProcess = unenrichedBookmarks.map((b) => ({
           bookmarkId: b.id,
           queueId: null,
-          directProcess: true
+          directProcess: true,
         }));
         usingQueue = false;
-        console.log(`Queue empty, found ${bookmarksToProcess.length} unenriched bookmarks to process`);
+        console.log(
+          `Queue empty, found ${bookmarksToProcess.length} unenriched bookmarks to process`,
+        );
       } else {
-        bookmarksToProcess = batch.map(item => ({
+        bookmarksToProcess = batch.map((item) => ({
           bookmarkId: item.bookmarkId,
           queueId: item.queueId,
-          directProcess: false
+          directProcess: false,
         }));
       }
     }
-    
+
     if (bookmarksToProcess.length === 0) {
       console.log('No bookmarks to process');
       return { processed: 0, success: 0, failed: 0, skipped: 0 };
     }
 
-    console.log(`Processing ${bookmarksToProcess.length} bookmarks with ${maxConcurrency} concurrent workers`);
+    console.log(
+      `Processing ${bookmarksToProcess.length} bookmarks with ${maxConcurrency} concurrent workers`,
+    );
 
     let success = 0;
     let failed = 0;
@@ -689,8 +728,8 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
     // Process bookmarks with concurrency control
     const processBookmark = async (item, index) => {
       try {
-        const bookmark = await import('./db.js').then(m => m.getBookmark(item.bookmarkId));
-        
+        const bookmark = await import('./db.js').then((m) => m.getBookmark(item.bookmarkId));
+
         // Send progress update
         if (progressCallback && bookmark) {
           progressCallback({
@@ -700,12 +739,12 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
             bookmarkId: item.bookmarkId,
             url: bookmark.url,
             title: bookmark.title,
-            status: 'processing'
+            status: 'processing',
           });
         }
 
         const result = await enrichBookmark(item.bookmarkId, { force });
-        
+
         // Update counters
         if (result.success) {
           if (result.alreadyEnriched || result.skipped) {
@@ -720,7 +759,7 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
             failed++;
           }
         }
-        
+
         completed++;
 
         // Send completion update for this bookmark
@@ -733,7 +772,7 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
             url: bookmark.url,
             title: bookmark.title,
             status: result.success ? 'completed' : 'failed',
-            result: result
+            result: result,
           });
         }
 
@@ -741,17 +780,17 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
         if (item.queueId && usingQueue) {
           await removeFromEnrichmentQueue(item.queueId);
         }
-        
+
         return { success: true, result };
       } catch (error) {
         console.error(`Error processing bookmark ${item.bookmarkId}:`, error);
         failed++;
         completed++;
-        
+
         if (item.queueId && usingQueue) {
           await removeFromEnrichmentQueue(item.queueId);
         }
-        
+
         if (progressCallback) {
           progressCallback({
             current: index + 1,
@@ -759,10 +798,10 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
             completed: completed,
             bookmarkId: item.bookmarkId,
             status: 'error',
-            error: error.message
+            error: error.message,
           });
         }
-        
+
         return { success: false, error: error.message };
       }
     };
@@ -776,7 +815,7 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
         const index = currentIndex++;
         const item = bookmarksToProcess[index];
         await processBookmark(item, index);
-        
+
         // Small delay between requests to be respectful
         if (currentIndex < bookmarksToProcess.length) {
           await sleep(50); // 50ms delay between starting new requests
@@ -796,7 +835,9 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
       await invalidateMetricCaches('enrich');
     }
 
-    console.log(`Processed ${bookmarksToProcess.length} bookmarks: ${success} success, ${failed} failed, ${skipped} skipped`);
+    console.log(
+      `Processed ${bookmarksToProcess.length} bookmarks: ${success} success, ${failed} failed, ${skipped} skipped`,
+    );
     return { processed: bookmarksToProcess.length, success, failed, skipped };
   } catch (error) {
     console.error('Error processing enrichment batch:', error);
@@ -806,7 +847,7 @@ export async function processEnrichmentBatch(batchSize = 10, progressCallback = 
 
 // Helper function to sleep
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Export category rules for use in UI
@@ -833,7 +874,7 @@ export async function reanalyzeBookmark(bookmark) {
   try {
     // Run deep metadata analysis on existing rawMetadata
     const analysis = analyzeBookmarkMetadata(bookmark);
-    
+
     if (!analysis) {
       return { success: false, error: 'No metadata to analyze', skipped: true };
     }
@@ -849,7 +890,10 @@ export async function reanalyzeBookmark(bookmark) {
 
     // Enhance platform data with Schema.org if available
     if (bookmark.rawMetadata && bookmark.platformData) {
-      const enhancedPlatformData = enhanceWithSchemaOrg(bookmark.platformData, bookmark.rawMetadata);
+      const enhancedPlatformData = enhanceWithSchemaOrg(
+        bookmark.platformData,
+        bookmark.rawMetadata,
+      );
       if (enhancedPlatformData) {
         bookmark.platformData = enhancedPlatformData;
         bookmark.contentType = enhancedPlatformData.type;
@@ -858,16 +902,18 @@ export async function reanalyzeBookmark(bookmark) {
 
     // Save updated bookmark
     await upsertBookmark(bookmark);
-    
-    console.log(`Re-analyzed bookmark: ${bookmark.title} - Quality: ${analysis.contentQualityScore}, Topics: ${bookmark.topics?.length || 0}, Reading time: ${analysis.readingTime || 'N/A'} min`);
-    
-    return { 
-      success: true, 
+
+    console.log(
+      `Re-analyzed bookmark: ${bookmark.title} - Quality: ${analysis.contentQualityScore}, Topics: ${bookmark.topics?.length || 0}, Reading time: ${analysis.readingTime || 'N/A'} min`,
+    );
+
+    return {
+      success: true,
       readingTime: analysis.readingTime,
       publishedDate: analysis.publishedDate,
       contentQualityScore: analysis.contentQualityScore,
       smartTagsCount: analysis.smartTags?.length || 0,
-      topicsCount: bookmark.topics?.length || 0
+      topicsCount: bookmark.topics?.length || 0,
     };
   } catch (error) {
     console.error(`Error re-analyzing bookmark ${bookmark.id}:`, error);
@@ -887,7 +933,7 @@ export async function batchReanalyze(bookmarks, progressCallback = null) {
   }
 
   console.log(`Starting batch re-analysis of ${bookmarks.length} bookmarks...`);
-  
+
   let success = 0;
   let failed = 0;
   let skipped = 0;
@@ -895,20 +941,20 @@ export async function batchReanalyze(bookmarks, progressCallback = null) {
 
   // Process in chunks to avoid blocking
   const chunkSize = 50;
-  
+
   for (let i = 0; i < bookmarks.length; i += chunkSize) {
     const chunk = bookmarks.slice(i, i + chunkSize);
-    
+
     for (let j = 0; j < chunk.length; j++) {
       const bookmark = chunk[j];
       const globalIndex = i + j;
-      
+
       try {
         // Check if bookmark has rawMetadata to analyze
         if (!bookmark.rawMetadata || Object.keys(bookmark.rawMetadata).length === 0) {
           skipped++;
           completed++;
-          
+
           if (progressCallback) {
             progressCallback({
               current: globalIndex + 1,
@@ -917,14 +963,14 @@ export async function batchReanalyze(bookmarks, progressCallback = null) {
               bookmarkId: bookmark.id,
               title: bookmark.title,
               status: 'skipped',
-              reason: 'No metadata to analyze'
+              reason: 'No metadata to analyze',
             });
           }
           continue;
         }
 
         const result = await reanalyzeBookmark(bookmark);
-        
+
         if (result.success) {
           success++;
         } else if (result.skipped) {
@@ -933,7 +979,7 @@ export async function batchReanalyze(bookmarks, progressCallback = null) {
           failed++;
         }
         completed++;
-        
+
         if (progressCallback) {
           progressCallback({
             current: globalIndex + 1,
@@ -941,15 +987,15 @@ export async function batchReanalyze(bookmarks, progressCallback = null) {
             completed: completed,
             bookmarkId: bookmark.id,
             title: bookmark.title,
-            status: result.success ? 'completed' : (result.skipped ? 'skipped' : 'failed'),
-            result: result
+            status: result.success ? 'completed' : result.skipped ? 'skipped' : 'failed',
+            result: result,
           });
         }
       } catch (error) {
         console.error(`Error re-analyzing bookmark ${bookmark.id}:`, error);
         failed++;
         completed++;
-        
+
         if (progressCallback) {
           progressCallback({
             current: globalIndex + 1,
@@ -958,12 +1004,12 @@ export async function batchReanalyze(bookmarks, progressCallback = null) {
             bookmarkId: bookmark.id,
             title: bookmark.title,
             status: 'error',
-            error: error.message
+            error: error.message,
           });
         }
       }
     }
-    
+
     // Small delay between chunks to allow UI to update
     if (i + chunkSize < bookmarks.length) {
       await sleep(100);

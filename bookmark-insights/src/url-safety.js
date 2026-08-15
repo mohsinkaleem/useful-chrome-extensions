@@ -14,7 +14,7 @@ function isPrivateIPv4(hostname) {
   if (parts.length !== 4) return false;
 
   const octets = parts.map(Number);
-  if (octets.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  if (octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
 
   const [a, b] = octets;
   if (a === 0 || a === 10 || a === 127) return true;
@@ -48,7 +48,7 @@ function isPrivateHost(hostname) {
   const host = hostname.toLowerCase();
 
   if (host === 'localhost') return true;
-  if (PRIVATE_SUFFIXES.some(suffix => host.endsWith(suffix))) return true;
+  if (PRIVATE_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true;
   // A bare label with no dot is an intranet name, never a public site.
   if (!host.includes('.') && !host.includes(':')) return true;
   if (isPrivateIPv4(host)) return true;
@@ -113,7 +113,7 @@ export async function safeFetch(url, options = {}) {
     timeout = DEFAULT_TIMEOUT_MS,
     maxBytes = MAX_BODY_BYTES,
     expectContentType = null,
-    readBody = true
+    readBody = true,
   } = options;
 
   if (!isFetchableUrl(url)) {
@@ -131,7 +131,7 @@ export async function safeFetch(url, options = {}) {
       redirect: 'follow',
       credentials: 'omit',
       cache: 'no-store',
-      referrerPolicy: 'no-referrer'
+      referrerPolicy: 'no-referrer',
     });
 
     // A redirect can leave the public range; re-check the final URL.
@@ -167,7 +167,7 @@ async function readCapped(stream, maxBytes) {
       received += value.byteLength;
       text += decoder.decode(
         received > maxBytes ? value.subarray(0, value.byteLength - (received - maxBytes)) : value,
-        { stream: true }
+        { stream: true },
       );
     }
   } finally {

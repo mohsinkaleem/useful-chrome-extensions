@@ -5,14 +5,103 @@
  * Used by similarity detection and word frequency analysis
  */
 export const STOP_WORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-  'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did',
-  'will', 'would', 'could', 'should', 'may', 'might', 'can', 'about', 'from', 'up', 'out',
-  'into', 'over', 'under', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it',
-  'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their',
-  'what', 'which', 'who', 'when', 'where', 'why', 'how', 'all', 'each', 'every', 'both',
-  'few', 'more', 'most', 'other', 'some', 'such', 'no', 'not', 'only', 'same', 'so', 'than',
-  'too', 'very', 'just', 'also', 'now', 'here', 'there', 'then', 'once', 'if', 'any', 'as'
+  'the',
+  'a',
+  'an',
+  'and',
+  'or',
+  'but',
+  'in',
+  'on',
+  'at',
+  'to',
+  'for',
+  'of',
+  'with',
+  'by',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'have',
+  'has',
+  'had',
+  'do',
+  'does',
+  'did',
+  'will',
+  'would',
+  'could',
+  'should',
+  'may',
+  'might',
+  'can',
+  'about',
+  'from',
+  'up',
+  'out',
+  'into',
+  'over',
+  'under',
+  'this',
+  'that',
+  'these',
+  'those',
+  'i',
+  'you',
+  'he',
+  'she',
+  'it',
+  'we',
+  'they',
+  'me',
+  'him',
+  'her',
+  'us',
+  'them',
+  'my',
+  'your',
+  'his',
+  'its',
+  'our',
+  'their',
+  'what',
+  'which',
+  'who',
+  'when',
+  'where',
+  'why',
+  'how',
+  'all',
+  'each',
+  'every',
+  'both',
+  'few',
+  'more',
+  'most',
+  'other',
+  'some',
+  'such',
+  'no',
+  'not',
+  'only',
+  'same',
+  'so',
+  'than',
+  'too',
+  'very',
+  'just',
+  'also',
+  'now',
+  'here',
+  'there',
+  'then',
+  'once',
+  'if',
+  'any',
+  'as',
 ]);
 
 /**
@@ -141,12 +230,28 @@ export function debounce(func, wait = 300) {
  * Sort options for bookmarks
  */
 export const SORT_OPTIONS = {
-  RELEVANCE: { key: 'relevance', label: 'Best Match', sort: (a, b) => (b._searchScore || 0) - (a._searchScore || 0) },
+  RELEVANCE: {
+    key: 'relevance',
+    label: 'Best Match',
+    sort: (a, b) => (b._searchScore || 0) - (a._searchScore || 0),
+  },
   DATE_DESC: { key: 'date_desc', label: 'Newest First', sort: (a, b) => b.dateAdded - a.dateAdded },
   DATE_ASC: { key: 'date_asc', label: 'Oldest First', sort: (a, b) => a.dateAdded - b.dateAdded },
-  TITLE_ASC: { key: 'title_asc', label: 'Title A-Z', sort: (a, b) => (a.title || '').localeCompare(b.title || '') },
-  TITLE_DESC: { key: 'title_desc', label: 'Title Z-A', sort: (a, b) => (b.title || '').localeCompare(a.title || '') },
-  DOMAIN_ASC: { key: 'domain_asc', label: 'Domain A-Z', sort: (a, b) => (a.domain || '').localeCompare(b.domain || '') },
+  TITLE_ASC: {
+    key: 'title_asc',
+    label: 'Title A-Z',
+    sort: (a, b) => (a.title || '').localeCompare(b.title || ''),
+  },
+  TITLE_DESC: {
+    key: 'title_desc',
+    label: 'Title Z-A',
+    sort: (a, b) => (b.title || '').localeCompare(a.title || ''),
+  },
+  DOMAIN_ASC: {
+    key: 'domain_asc',
+    label: 'Domain A-Z',
+    sort: (a, b) => (a.domain || '').localeCompare(b.domain || ''),
+  },
 };
 
 /**
@@ -155,7 +260,7 @@ export const SORT_OPTIONS = {
  * @returns {Function} Sort function
  */
 export function getSortFunction(key) {
-  const option = Object.values(SORT_OPTIONS).find(opt => opt.key === key);
+  const option = Object.values(SORT_OPTIONS).find((opt) => opt.key === key);
   return option ? option.sort : SORT_OPTIONS.DATE_DESC.sort;
 }
 
@@ -176,12 +281,12 @@ export function highlightSegments(text, parsedQuery) {
   if (terms.length === 0 && (!regexPatterns || regexPatterns.length === 0)) {
     return [{ text, match: false }];
   }
-  
+
   // Find all ranges to highlight
   const ranges = [];
-  
+
   // Find matches for text terms
-  terms.forEach(term => {
+  terms.forEach((term) => {
     if (!term) return;
     // Escape special regex characters in the term
     const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -191,10 +296,10 @@ export function highlightSegments(text, parsedQuery) {
       ranges.push({ start: match.index, end: match.index + match[0].length });
     }
   });
-  
+
   // Find matches for regex patterns
   if (regexPatterns) {
-    regexPatterns.forEach(regex => {
+    regexPatterns.forEach((regex) => {
       // Ensure global flag for finding all matches
       const flags = regex.flags.includes('g') ? regex.flags : regex.flags + 'g';
       try {
@@ -212,10 +317,10 @@ export function highlightSegments(text, parsedQuery) {
       }
     });
   }
-  
+
   // Merge overlapping ranges
   ranges.sort((a, b) => a.start - b.start);
-  
+
   const mergedRanges = [];
   if (ranges.length > 0) {
     let current = ranges[0];
@@ -242,4 +347,3 @@ export function highlightSegments(text, parsedQuery) {
 
   return segments;
 }
-

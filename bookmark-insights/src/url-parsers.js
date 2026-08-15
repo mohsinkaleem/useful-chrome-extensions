@@ -11,11 +11,11 @@ import { flattenRawMetadata } from './metadata-analyzer.js';
  */
 export function parseBookmarkUrl(url, metadata = null) {
   if (!url) return null;
-  
+
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
-    
+
     // Try platform-specific parsers
     if (isYouTube(hostname)) {
       return parseYouTubeUrl(urlObj, metadata);
@@ -44,7 +44,7 @@ export function parseBookmarkUrl(url, metadata = null) {
     if (isNpm(hostname)) {
       return parseNpmUrl(urlObj, metadata);
     }
-    
+
     // Generic parsing for unknown platforms (use Schema.org if available)
     return parseGenericUrl(urlObj, metadata);
   } catch (e) {
@@ -70,10 +70,10 @@ export function enhanceWithSchemaOrg(platformData, rawMetadata) {
   }
 
   const schemas = Array.isArray(metadata.schemaOrg) ? metadata.schemaOrg : [metadata.schemaOrg];
-  
+
   for (const schema of schemas) {
     const schemaType = schema['@type'];
-    
+
     // Map Schema.org types to more specific content types
     switch (schemaType) {
       case 'TechArticle':
@@ -119,7 +119,7 @@ export function enhanceWithSchemaOrg(platformData, rawMetadata) {
         platformData.subtype = 'documentation';
         break;
     }
-    
+
     // Extract author from Schema.org if not already set
     if (schema.author && !platformData.creator) {
       if (typeof schema.author === 'object') {
@@ -129,28 +129,29 @@ export function enhanceWithSchemaOrg(platformData, rawMetadata) {
       }
     }
   }
-  
+
   return platformData;
 }
 
 // Platform detection helpers
 function isYouTube(hostname) {
-  return hostname === 'youtube.com' || 
-         hostname === 'www.youtube.com' || 
-         hostname === 'm.youtube.com' ||
-         hostname === 'youtu.be' ||
-         hostname === 'music.youtube.com';
+  return (
+    hostname === 'youtube.com' ||
+    hostname === 'www.youtube.com' ||
+    hostname === 'm.youtube.com' ||
+    hostname === 'youtu.be' ||
+    hostname === 'music.youtube.com'
+  );
 }
 
 function isGitHub(hostname) {
-  return hostname === 'github.com' || 
-         hostname === 'www.github.com' ||
-         hostname === 'gist.github.com';
+  return (
+    hostname === 'github.com' || hostname === 'www.github.com' || hostname === 'gist.github.com'
+  );
 }
 
 function isMedium(hostname) {
-  return hostname === 'medium.com' || 
-         hostname.endsWith('.medium.com');
+  return hostname === 'medium.com' || hostname.endsWith('.medium.com');
 }
 
 function isDevTo(hostname) {
@@ -162,28 +163,33 @@ function isSubstack(hostname) {
 }
 
 function isTwitter(hostname) {
-  return hostname === 'twitter.com' || 
-         hostname === 'www.twitter.com' ||
-         hostname === 'x.com' ||
-         hostname === 'www.x.com';
+  return (
+    hostname === 'twitter.com' ||
+    hostname === 'www.twitter.com' ||
+    hostname === 'x.com' ||
+    hostname === 'www.x.com'
+  );
 }
 
 function isReddit(hostname) {
-  return hostname === 'reddit.com' || 
-         hostname === 'www.reddit.com' ||
-         hostname === 'old.reddit.com' ||
-         hostname.endsWith('.reddit.com');
+  return (
+    hostname === 'reddit.com' ||
+    hostname === 'www.reddit.com' ||
+    hostname === 'old.reddit.com' ||
+    hostname.endsWith('.reddit.com')
+  );
 }
 
 function isStackOverflow(hostname) {
-  return hostname === 'stackoverflow.com' || 
-         hostname === 'www.stackoverflow.com' ||
-         hostname.endsWith('.stackexchange.com');
+  return (
+    hostname === 'stackoverflow.com' ||
+    hostname === 'www.stackoverflow.com' ||
+    hostname.endsWith('.stackexchange.com')
+  );
 }
 
 function isNpm(hostname) {
-  return hostname === 'npmjs.com' || 
-         hostname === 'www.npmjs.com';
+  return hostname === 'npmjs.com' || hostname === 'www.npmjs.com';
 }
 
 /**
@@ -194,23 +200,23 @@ function parseYouTubeUrl(urlObj) {
   const pathname = urlObj.pathname;
   const searchParams = urlObj.searchParams;
   const hostname = urlObj.hostname;
-  
+
   const result = {
     platform: 'youtube',
     type: null,
     creator: null,
     identifier: null,
     subtype: null,
-    extra: {}
+    extra: {},
   };
-  
+
   // Short URL format: youtu.be/VIDEO_ID
   if (hostname === 'youtu.be') {
     const videoId = pathname.slice(1);
     if (videoId) {
       result.type = 'video';
       result.identifier = videoId;
-      
+
       // Check for timestamp
       const timestamp = searchParams.get('t');
       if (timestamp) {
@@ -219,25 +225,25 @@ function parseYouTubeUrl(urlObj) {
     }
     return result;
   }
-  
+
   // YouTube Music
   if (hostname === 'music.youtube.com') {
     result.subtype = 'music';
   }
-  
+
   // Video page: /watch?v=VIDEO_ID
   if (pathname === '/watch') {
     const videoId = searchParams.get('v');
     if (videoId) {
       result.type = 'video';
       result.identifier = videoId;
-      
+
       // Check for playlist
       const listId = searchParams.get('list');
       if (listId) {
         result.extra.playlistId = listId;
       }
-      
+
       // Check for timestamp
       const timestamp = searchParams.get('t');
       if (timestamp) {
@@ -246,7 +252,7 @@ function parseYouTubeUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Shorts: /shorts/VIDEO_ID
   if (pathname.startsWith('/shorts/')) {
     const videoId = pathname.split('/shorts/')[1]?.split('/')[0];
@@ -257,7 +263,7 @@ function parseYouTubeUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Live streams: /live/VIDEO_ID
   if (pathname.startsWith('/live/')) {
     const videoId = pathname.split('/live/')[1]?.split('/')[0];
@@ -268,7 +274,7 @@ function parseYouTubeUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Channel by handle: /@handle
   if (pathname.startsWith('/@')) {
     const parts = pathname.slice(2).split('/');
@@ -276,14 +282,14 @@ function parseYouTubeUrl(urlObj) {
     result.type = 'channel';
     result.creator = `@${handle}`;
     result.identifier = handle;
-    
+
     // Sub-sections of channel
     if (parts[1]) {
       result.extra.section = parts[1]; // videos, shorts, live, playlists, community, etc.
     }
     return result;
   }
-  
+
   // Channel by ID: /channel/CHANNEL_ID
   if (pathname.startsWith('/channel/')) {
     const parts = pathname.split('/channel/')[1]?.split('/');
@@ -291,14 +297,14 @@ function parseYouTubeUrl(urlObj) {
     if (channelId) {
       result.type = 'channel';
       result.identifier = channelId;
-      
+
       if (parts?.[1]) {
         result.extra.section = parts[1];
       }
     }
     return result;
   }
-  
+
   // Legacy channel URL: /c/CHANNEL_NAME or /user/USERNAME
   if (pathname.startsWith('/c/') || pathname.startsWith('/user/')) {
     const match = pathname.match(/^\/(c|user)\/([^/]+)/);
@@ -309,7 +315,7 @@ function parseYouTubeUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Playlist: /playlist?list=PLAYLIST_ID
   if (pathname === '/playlist') {
     const listId = searchParams.get('list');
@@ -319,7 +325,7 @@ function parseYouTubeUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Search results: /results?search_query=QUERY
   if (pathname === '/results') {
     const query = searchParams.get('search_query');
@@ -329,7 +335,7 @@ function parseYouTubeUrl(urlObj) {
     }
     return result;
   }
-  
+
   return result;
 }
 
@@ -340,16 +346,16 @@ function parseYouTubeUrl(urlObj) {
 function parseGitHubUrl(urlObj) {
   const pathname = urlObj.pathname;
   const hostname = urlObj.hostname;
-  
+
   const result = {
     platform: 'github',
     type: null,
     creator: null,
     identifier: null,
     subtype: null,
-    extra: {}
+    extra: {},
   };
-  
+
   // Gist: gist.github.com/USER/GIST_ID
   if (hostname === 'gist.github.com') {
     const parts = pathname.slice(1).split('/').filter(Boolean);
@@ -362,19 +368,30 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   if (parts.length === 0) {
     result.type = 'home';
     return result;
   }
-  
+
   // User/Org profile: /USER
   if (parts.length === 1) {
     const username = parts[0];
     // Check if it's a special page
-    if (['explore', 'trending', 'topics', 'collections', 'sponsors', 'marketplace', 'settings', 'notifications'].includes(username)) {
+    if (
+      [
+        'explore',
+        'trending',
+        'topics',
+        'collections',
+        'sponsors',
+        'marketplace',
+        'settings',
+        'notifications',
+      ].includes(username)
+    ) {
       result.type = 'special';
       result.identifier = username;
     } else {
@@ -384,24 +401,24 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Repository or sub-pages: /OWNER/REPO[/...]
   const owner = parts[0];
   const repo = parts[1];
-  
+
   result.creator = owner;
   result.identifier = repo;
   result.extra.owner = owner;
   result.extra.repo = repo;
-  
+
   // Just the repo root: /OWNER/REPO
   if (parts.length === 2) {
     result.type = 'repo';
     return result;
   }
-  
+
   const subPath = parts[2];
-  
+
   // Issues
   if (subPath === 'issues') {
     if (parts.length === 3) {
@@ -419,7 +436,7 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Pull Requests
   if (subPath === 'pull') {
     if (parts.length >= 4) {
@@ -427,7 +444,7 @@ function parseGitHubUrl(urlObj) {
       if (/^\d+$/.test(prNumber)) {
         result.type = 'pr';
         result.extra.number = parseInt(prNumber, 10);
-        
+
         if (parts.length >= 5) {
           result.extra.tab = parts[4]; // commits, files, checks, etc.
         }
@@ -435,14 +452,14 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Pull Requests list
   if (subPath === 'pulls') {
     result.type = 'pulls';
     result.subtype = 'list';
     return result;
   }
-  
+
   // Actions
   if (subPath === 'actions') {
     result.type = 'actions';
@@ -457,7 +474,7 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Releases
   if (subPath === 'releases') {
     result.type = 'releases';
@@ -471,7 +488,7 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Wiki
   if (subPath === 'wiki') {
     result.type = 'wiki';
@@ -480,7 +497,7 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Discussions
   if (subPath === 'discussions') {
     result.type = 'discussions';
@@ -490,7 +507,7 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Commits
   if (subPath === 'commits' || subPath === 'commit') {
     if (subPath === 'commit' && parts.length >= 4) {
@@ -504,29 +521,29 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Branches
   if (subPath === 'branches') {
     result.type = 'branches';
     return result;
   }
-  
+
   // Tags
   if (subPath === 'tags') {
     result.type = 'tags';
     return result;
   }
-  
+
   // File browsing: blob or tree
   if (subPath === 'blob' || subPath === 'tree') {
     result.type = 'file';
     result.subtype = subPath; // 'blob' = file, 'tree' = directory
-    
+
     if (parts.length >= 4) {
       result.extra.branch = parts[3];
       if (parts.length >= 5) {
         result.extra.path = parts.slice(4).join('/');
-        
+
         // Extract file extension for files
         if (subPath === 'blob') {
           const fileName = parts[parts.length - 1];
@@ -539,18 +556,18 @@ function parseGitHubUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Search in repo
   if (subPath === 'search') {
     result.type = 'search';
     result.extra.query = urlObj.searchParams.get('q');
     return result;
   }
-  
+
   // Default - repository with unknown subpath
   result.type = 'repo';
   result.extra.subPath = parts.slice(2).join('/');
-  
+
   return result;
 }
 
@@ -561,41 +578,41 @@ function parseGitHubUrl(urlObj) {
 function parseMediumUrl(urlObj) {
   const hostname = urlObj.hostname;
   const pathname = urlObj.pathname;
-  
+
   const result = {
     platform: 'medium',
     type: 'article',
     creator: null,
     identifier: null,
     subtype: null,
-    extra: {}
+    extra: {},
   };
-  
+
   // Publication subdomain: publication.medium.com
   if (hostname !== 'medium.com' && hostname.endsWith('.medium.com')) {
     const publication = hostname.replace('.medium.com', '');
     result.extra.publication = publication;
-    
+
     const parts = pathname.slice(1).split('/').filter(Boolean);
     if (parts.length > 0 && parts[0].startsWith('@')) {
       result.creator = parts[0];
     }
-    
+
     // Article slug is usually the last part with a hash ID
     const lastPart = parts[parts.length - 1];
     if (lastPart && lastPart.includes('-')) {
       result.identifier = lastPart;
     }
-    
+
     return result;
   }
-  
+
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   // Author page: medium.com/@username
   if (parts.length >= 1 && parts[0].startsWith('@')) {
     result.creator = parts[0];
-    
+
     if (parts.length === 1) {
       result.type = 'profile';
     } else {
@@ -605,16 +622,16 @@ function parseMediumUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Publication on main domain: medium.com/publication/article
   if (parts.length >= 1) {
     result.extra.publication = parts[0];
-    
+
     if (parts.length >= 2) {
       result.identifier = parts[parts.length - 1];
     }
   }
-  
+
   return result;
 }
 
@@ -625,28 +642,28 @@ function parseMediumUrl(urlObj) {
 function parseDevToUrl(urlObj) {
   const pathname = urlObj.pathname;
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   const result = {
     platform: 'devto',
     type: 'article',
     creator: null,
     identifier: null,
     subtype: null,
-    extra: {}
+    extra: {},
   };
-  
+
   if (parts.length === 0) {
     result.type = 'home';
     return result;
   }
-  
+
   // Tag page: dev.to/t/tagname
   if (parts[0] === 't' && parts.length >= 2) {
     result.type = 'tag';
     result.identifier = parts[1];
     return result;
   }
-  
+
   // Author profile: dev.to/username
   if (parts.length === 1) {
     result.type = 'profile';
@@ -654,14 +671,14 @@ function parseDevToUrl(urlObj) {
     result.identifier = parts[0];
     return result;
   }
-  
+
   // Article: dev.to/username/article-slug
   if (parts.length >= 2) {
     result.type = 'article';
     result.creator = parts[0];
     result.identifier = parts[1];
   }
-  
+
   return result;
 }
 
@@ -672,10 +689,10 @@ function parseDevToUrl(urlObj) {
 function parseSubstackUrl(urlObj) {
   const hostname = urlObj.hostname;
   const pathname = urlObj.pathname;
-  
+
   const publication = hostname.replace('.substack.com', '');
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   const result = {
     platform: 'substack',
     type: 'publication',
@@ -683,29 +700,29 @@ function parseSubstackUrl(urlObj) {
     identifier: publication,
     subtype: null,
     extra: {
-      publication: publication
-    }
+      publication: publication,
+    },
   };
-  
+
   // Post: publication.substack.com/p/post-slug
   if (parts.length >= 2 && parts[0] === 'p') {
     result.type = 'article';
     result.identifier = parts[1];
     return result;
   }
-  
+
   // Archive page
   if (parts.length >= 1 && parts[0] === 'archive') {
     result.type = 'archive';
     return result;
   }
-  
+
   // About page
   if (parts.length >= 1 && parts[0] === 'about') {
     result.type = 'about';
     return result;
   }
-  
+
   return result;
 }
 
@@ -715,52 +732,54 @@ function parseSubstackUrl(urlObj) {
 function parseTwitterUrl(urlObj) {
   const pathname = urlObj.pathname;
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   const result = {
     platform: 'twitter',
     type: null,
     creator: null,
     identifier: null,
     subtype: null,
-    extra: {}
+    extra: {},
   };
-  
+
   if (parts.length === 0) {
     result.type = 'home';
     return result;
   }
-  
+
   // Special pages
-  if (['home', 'explore', 'search', 'notifications', 'messages', 'settings', 'i'].includes(parts[0])) {
+  if (
+    ['home', 'explore', 'search', 'notifications', 'messages', 'settings', 'i'].includes(parts[0])
+  ) {
     result.type = 'special';
     result.identifier = parts[0];
     return result;
   }
-  
+
   // Hashtag: twitter.com/hashtag/tagname
   if (parts[0] === 'hashtag' && parts.length >= 2) {
     result.type = 'hashtag';
     result.identifier = parts[1];
     return result;
   }
-  
+
   // User profile or tweet
   const username = parts[0];
   result.creator = `@${username}`;
-  
+
   if (parts.length === 1) {
     result.type = 'profile';
     result.identifier = username;
     return result;
   }
-  
+
   // Tweet: twitter.com/username/status/TWEET_ID
   if (parts[1] === 'status' && parts.length >= 3) {
     result.type = 'tweet';
     result.identifier = parts[2];
     return result;
   }
-  
+
   // Profile sections
   if (['followers', 'following', 'likes', 'lists', 'moments'].includes(parts[1])) {
     result.type = 'profile';
@@ -768,7 +787,7 @@ function parseTwitterUrl(urlObj) {
     result.extra.section = parts[1];
     return result;
   }
-  
+
   return result;
 }
 
@@ -778,28 +797,28 @@ function parseTwitterUrl(urlObj) {
 function parseRedditUrl(urlObj) {
   const pathname = urlObj.pathname;
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   const result = {
     platform: 'reddit',
     type: null,
     creator: null,
     identifier: null,
     subtype: null,
-    extra: {}
+    extra: {},
   };
-  
+
   if (parts.length === 0) {
     result.type = 'home';
     return result;
   }
-  
+
   // Subreddit: reddit.com/r/subreddit
   if (parts[0] === 'r' && parts.length >= 2) {
     const subreddit = parts[1];
     result.type = 'subreddit';
     result.creator = `r/${subreddit}`;
     result.identifier = subreddit;
-    
+
     // Post: reddit.com/r/subreddit/comments/POST_ID/title
     if (parts.length >= 4 && parts[2] === 'comments') {
       result.type = 'post';
@@ -809,22 +828,22 @@ function parseRedditUrl(urlObj) {
         result.extra.title = parts[4];
       }
     }
-    
+
     return result;
   }
-  
+
   // User profile: reddit.com/u/username or reddit.com/user/username
   if ((parts[0] === 'u' || parts[0] === 'user') && parts.length >= 2) {
     result.type = 'profile';
     result.creator = `u/${parts[1]}`;
     result.identifier = parts[1];
-    
+
     if (parts.length >= 3) {
       result.extra.section = parts[2]; // posts, comments, submitted, etc.
     }
     return result;
   }
-  
+
   return result;
 }
 
@@ -835,26 +854,26 @@ function parseStackOverflowUrl(urlObj) {
   const hostname = urlObj.hostname;
   const pathname = urlObj.pathname;
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   const result = {
     platform: 'stackoverflow',
     type: null,
     creator: null,
     identifier: null,
     subtype: null,
-    extra: {}
+    extra: {},
   };
-  
+
   // Check for Stack Exchange sites
   if (hostname.endsWith('.stackexchange.com')) {
     result.extra.site = hostname.replace('.stackexchange.com', '');
   }
-  
+
   if (parts.length === 0) {
     result.type = 'home';
     return result;
   }
-  
+
   // Question: stackoverflow.com/questions/ID/title
   if (parts[0] === 'questions' && parts.length >= 2) {
     const questionId = parts[1];
@@ -862,7 +881,7 @@ function parseStackOverflowUrl(urlObj) {
       result.type = 'question';
       result.identifier = questionId;
       result.extra.questionId = parseInt(questionId, 10);
-      
+
       // Check for answer anchor
       const hash = urlObj.hash;
       if (hash && hash.startsWith('#')) {
@@ -878,7 +897,7 @@ function parseStackOverflowUrl(urlObj) {
     }
     return result;
   }
-  
+
   // User profile: stackoverflow.com/users/ID/username
   if (parts[0] === 'users' && parts.length >= 2) {
     result.type = 'profile';
@@ -888,7 +907,7 @@ function parseStackOverflowUrl(urlObj) {
     }
     return result;
   }
-  
+
   // Tags
   if (parts[0] === 'tags') {
     result.type = 'tags';
@@ -897,7 +916,7 @@ function parseStackOverflowUrl(urlObj) {
     }
     return result;
   }
-  
+
   return result;
 }
 
@@ -907,24 +926,24 @@ function parseStackOverflowUrl(urlObj) {
 function parseNpmUrl(urlObj) {
   const pathname = urlObj.pathname;
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   const result = {
     platform: 'npm',
     type: 'home',
     creator: null,
     identifier: null,
     subtype: null,
-    extra: {}
+    extra: {},
   };
-  
+
   if (parts.length === 0) {
     return result;
   }
-  
+
   // Package page: npmjs.com/package/PACKAGE_NAME
   if (parts[0] === 'package') {
     result.type = 'package';
-    
+
     // Handle scoped packages: @scope/package
     if (parts.length >= 2 && parts[1].startsWith('@')) {
       result.identifier = `${parts[1]}/${parts[2] || ''}`;
@@ -932,16 +951,16 @@ function parseNpmUrl(urlObj) {
     } else if (parts.length >= 2) {
       result.identifier = parts[1];
     }
-    
+
     // Tab: readme, versions, dependencies, etc.
     const lastPart = parts[parts.length - 1];
     if (['readme', 'versions', 'dependencies', 'dependents', 'code'].includes(lastPart)) {
       result.extra.tab = lastPart;
     }
-    
+
     return result;
   }
-  
+
   // User/org profile: npmjs.com/~username
   if (parts[0].startsWith('~')) {
     result.type = 'profile';
@@ -949,7 +968,7 @@ function parseNpmUrl(urlObj) {
     result.identifier = parts[0].slice(1);
     return result;
   }
-  
+
   // Org: npmjs.com/org/ORG_NAME
   if (parts[0] === 'org' && parts.length >= 2) {
     result.type = 'org';
@@ -957,14 +976,14 @@ function parseNpmUrl(urlObj) {
     result.identifier = parts[1];
     return result;
   }
-  
+
   // Search: npmjs.com/search?q=QUERY
   if (parts[0] === 'search') {
     result.type = 'search';
     result.extra.query = urlObj.searchParams.get('q');
     return result;
   }
-  
+
   return result;
 }
 
@@ -975,7 +994,7 @@ function parseGenericUrl(urlObj) {
   const hostname = urlObj.hostname;
   const pathname = urlObj.pathname;
   const parts = pathname.slice(1).split('/').filter(Boolean);
-  
+
   const result = {
     platform: 'other',
     type: 'page',
@@ -983,28 +1002,39 @@ function parseGenericUrl(urlObj) {
     identifier: null,
     subtype: null,
     extra: {
-      domain: hostname.replace(/^www\./, '')
-    }
+      domain: hostname.replace(/^www\./, ''),
+    },
   };
-  
+
   // Detect blog-like URL patterns
-  if (pathname.includes('/blog/') || pathname.includes('/article/') || pathname.includes('/post/')) {
+  if (
+    pathname.includes('/blog/') ||
+    pathname.includes('/article/') ||
+    pathname.includes('/post/')
+  ) {
     result.type = 'article';
     result.identifier = parts[parts.length - 1];
   }
-  
+
   // Detect documentation
-  if (pathname.includes('/docs/') || pathname.includes('/documentation/') || pathname.includes('/api/')) {
+  if (
+    pathname.includes('/docs/') ||
+    pathname.includes('/documentation/') ||
+    pathname.includes('/api/')
+  ) {
     result.type = 'documentation';
     result.identifier = parts[parts.length - 1];
   }
-  
+
   // Detect profile patterns
-  if (parts.length >= 1 && (parts[0].startsWith('@') || parts[0] === 'user' || parts[0] === 'profile')) {
+  if (
+    parts.length >= 1 &&
+    (parts[0].startsWith('@') || parts[0] === 'user' || parts[0] === 'profile')
+  ) {
     result.type = 'profile';
-    result.creator = parts[0].startsWith('@') ? parts[0] : (parts[1] || parts[0]);
+    result.creator = parts[0].startsWith('@') ? parts[0] : parts[1] || parts[0];
   }
-  
+
   return result;
 }
 
@@ -1015,16 +1045,16 @@ function parseGenericUrl(urlObj) {
  */
 export function getPlatformDisplayName(platform) {
   const names = {
-    'youtube': 'YouTube',
-    'github': 'GitHub',
-    'medium': 'Medium',
-    'devto': 'DEV Community',
-    'substack': 'Substack',
-    'twitter': 'Twitter/X',
-    'reddit': 'Reddit',
-    'stackoverflow': 'Stack Overflow',
-    'npm': 'npm',
-    'other': 'Other'
+    youtube: 'YouTube',
+    github: 'GitHub',
+    medium: 'Medium',
+    devto: 'DEV Community',
+    substack: 'Substack',
+    twitter: 'Twitter/X',
+    reddit: 'Reddit',
+    stackoverflow: 'Stack Overflow',
+    npm: 'npm',
+    other: 'Other',
   };
   return names[platform] || platform;
 }
@@ -1036,17 +1066,16 @@ export function getPlatformDisplayName(platform) {
  */
 export function getPlatformIcon(platform) {
   const icons = {
-    'youtube': '📺',
-    'github': '🐙',
-    'medium': '📝',
-    'devto': '👩‍💻',
-    'substack': '📨',
-    'twitter': '🐦',
-    'reddit': '🤖',
-    'stackoverflow': '📚',
-    'npm': '📦',
-    'other': '🌐'
+    youtube: '📺',
+    github: '🐙',
+    medium: '📝',
+    devto: '👩‍💻',
+    substack: '📨',
+    twitter: '🐦',
+    reddit: '🤖',
+    stackoverflow: '📚',
+    npm: '📦',
+    other: '🌐',
   };
   return icons[platform] || '🔗';
 }
-

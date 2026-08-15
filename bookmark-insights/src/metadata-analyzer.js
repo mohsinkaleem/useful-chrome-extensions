@@ -11,15 +11,16 @@
 export function flattenRawMetadata(rawMetadata) {
   if (!rawMetadata || typeof rawMetadata !== 'object') return {};
 
-  const isNested = ['meta', 'openGraph', 'twitterCard', 'jsonLd', 'other']
-    .some(key => rawMetadata[key] !== undefined);
+  const isNested = ['meta', 'openGraph', 'twitterCard', 'jsonLd', 'other'].some(
+    (key) => rawMetadata[key] !== undefined,
+  );
   if (!isNested) return rawMetadata;
 
   const flat = {
     ...(rawMetadata.meta || {}),
     ...(rawMetadata.openGraph || {}),
     ...(rawMetadata.twitterCard || {}),
-    ...(rawMetadata.other || {})
+    ...(rawMetadata.other || {}),
   };
 
   const schemas = [];
@@ -99,7 +100,7 @@ function extractPublishedDate(metadata) {
     'og:updated_time',
     'article:modified_time',
     'dateModified',
-    'lastmod'
+    'lastmod',
   ];
 
   for (const field of dateFields) {
@@ -140,10 +141,11 @@ function extractSmartTags(metadata, title = '', description = '') {
 
   // 1. Extract from meta keywords
   if (metadata.keywords) {
-    const keywords = typeof metadata.keywords === 'string' 
-      ? metadata.keywords.split(',').map(k => k.trim())
-      : metadata.keywords;
-    keywords.forEach(tag => {
+    const keywords =
+      typeof metadata.keywords === 'string'
+        ? metadata.keywords.split(',').map((k) => k.trim())
+        : metadata.keywords;
+    keywords.forEach((tag) => {
       if (tag && tag.length >= 3 && tag.length <= 30) {
         tags.add(tag.toLowerCase());
       }
@@ -152,10 +154,10 @@ function extractSmartTags(metadata, title = '', description = '') {
 
   // 2. Extract from article:tag (common in blogs)
   if (metadata['article:tag']) {
-    const articleTags = Array.isArray(metadata['article:tag']) 
-      ? metadata['article:tag'] 
+    const articleTags = Array.isArray(metadata['article:tag'])
+      ? metadata['article:tag']
       : [metadata['article:tag']];
-    articleTags.forEach(tag => {
+    articleTags.forEach((tag) => {
       if (tag && tag.length >= 3 && tag.length <= 30) {
         tags.add(tag.toLowerCase());
       }
@@ -167,10 +169,13 @@ function extractSmartTags(metadata, title = '', description = '') {
     const schemas = Array.isArray(metadata.schemaOrg) ? metadata.schemaOrg : [metadata.schemaOrg];
     for (const schema of schemas) {
       if (schema.keywords) {
-        const schemaKeywords = typeof schema.keywords === 'string'
-          ? schema.keywords.split(',').map(k => k.trim())
-          : Array.isArray(schema.keywords) ? schema.keywords : [];
-        schemaKeywords.forEach(tag => {
+        const schemaKeywords =
+          typeof schema.keywords === 'string'
+            ? schema.keywords.split(',').map((k) => k.trim())
+            : Array.isArray(schema.keywords)
+              ? schema.keywords
+              : [];
+        schemaKeywords.forEach((tag) => {
           if (tag && tag.length >= 3 && tag.length <= 30) {
             tags.add(tag.toLowerCase());
           }
@@ -181,10 +186,10 @@ function extractSmartTags(metadata, title = '', description = '') {
 
   // 4. Extract from og:video:tag or similar
   if (metadata['og:video:tag']) {
-    const videoTags = Array.isArray(metadata['og:video:tag']) 
-      ? metadata['og:video:tag'] 
+    const videoTags = Array.isArray(metadata['og:video:tag'])
+      ? metadata['og:video:tag']
       : [metadata['og:video:tag']];
-    videoTags.forEach(tag => {
+    videoTags.forEach((tag) => {
       if (tag && tag.length >= 3 && tag.length <= 30) {
         tags.add(tag.toLowerCase());
       }
@@ -198,7 +203,7 @@ function extractSmartTags(metadata, title = '', description = '') {
 
   // 6. Extract common technical terms from title/description (optional - can be noisy)
   const technicalTerms = extractTechnicalTerms(title + ' ' + description);
-  technicalTerms.forEach(term => tags.add(term));
+  technicalTerms.forEach((term) => tags.add(term));
 
   // Limit to top 20 most relevant tags
   return Array.from(tags).slice(0, 20);
@@ -245,8 +250,8 @@ function calculateContentQuality(metadata, bookmark = {}) {
     score += 10;
     // Bonus for rich schema types
     const schemas = Array.isArray(metadata.schemaOrg) ? metadata.schemaOrg : [metadata.schemaOrg];
-    const hasRichSchema = schemas.some(s => 
-      ['Article', 'BlogPosting', 'TechArticle', 'VideoObject', 'Course'].includes(s['@type'])
+    const hasRichSchema = schemas.some((s) =>
+      ['Article', 'BlogPosting', 'TechArticle', 'VideoObject', 'Course'].includes(s['@type']),
     );
     if (hasRichSchema) score += 5;
   }
@@ -287,12 +292,12 @@ export function analyzeBookmarkMetadata(bookmark) {
   if (!bookmark) return null;
 
   const metadata = flattenRawMetadata(bookmark.rawMetadata);
-  
+
   return {
     readingTime: extractReadingTime(metadata, bookmark.contentSnippet),
     publishedDate: extractPublishedDate(metadata),
     contentQualityScore: calculateContentQuality(metadata, bookmark),
-    smartTags: extractSmartTags(metadata, bookmark.title, bookmark.description)
+    smartTags: extractSmartTags(metadata, bookmark.title, bookmark.description),
   };
 }
 
@@ -382,12 +387,44 @@ function extractTechnicalTerms(text) {
 
   const terms = new Set();
   const techKeywords = [
-    'javascript', 'typescript', 'python', 'java', 'react', 'vue', 'angular', 
-    'node', 'express', 'api', 'rest', 'graphql', 'sql', 'nosql', 'mongodb',
-    'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'cloud', 'serverless',
-    'ml', 'ai', 'machine learning', 'deep learning', 'neural network',
-    'frontend', 'backend', 'fullstack', 'devops', 'ci/cd', 'testing',
-    'security', 'performance', 'optimization', 'design', 'architecture'
+    'javascript',
+    'typescript',
+    'python',
+    'java',
+    'react',
+    'vue',
+    'angular',
+    'node',
+    'express',
+    'api',
+    'rest',
+    'graphql',
+    'sql',
+    'nosql',
+    'mongodb',
+    'docker',
+    'kubernetes',
+    'aws',
+    'azure',
+    'gcp',
+    'cloud',
+    'serverless',
+    'ml',
+    'ai',
+    'machine learning',
+    'deep learning',
+    'neural network',
+    'frontend',
+    'backend',
+    'fullstack',
+    'devops',
+    'ci/cd',
+    'testing',
+    'security',
+    'performance',
+    'optimization',
+    'design',
+    'architecture',
   ];
 
   const lowerText = text.toLowerCase();

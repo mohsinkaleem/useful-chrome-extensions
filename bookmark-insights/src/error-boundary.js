@@ -15,7 +15,8 @@ export function renderErrorBoundary() {
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = 'Reload';
-  button.style.cssText = 'padding: 0.5rem 1rem; background: #2563eb; color: white; border: none; border-radius: 0.375rem; cursor: pointer;';
+  button.style.cssText =
+    'padding: 0.5rem 1rem; background: #2563eb; color: white; border: none; border-radius: 0.375rem; cursor: pointer;';
   button.addEventListener('click', () => location.reload());
 
   fallback.append(message, button);

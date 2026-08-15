@@ -1,45 +1,45 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  
+
   const dispatch = createEventDispatcher();
-  
+
   export let value = '';
   export let placeholder = 'Search: use +term (must include), -term (exclude), "exact phrase"';
-  
+
   let debounceTimer;
   let inputElement;
   let showHelp = false;
-  
+
   // Parse query to show visual feedback
   $: parsedQuery = parseQueryForDisplay(value);
-  
+
   function parseQueryForDisplay(query) {
     if (!query) return { positive: [], negative: [], phrases: [], regular: [], regexPatterns: [] };
-    
+
     const positive = [];
     const negative = [];
     const phrases = [];
     const regular = [];
     const regexPatterns = [];
-    
+
     // Extract regex patterns first (format: /pattern/ or /pattern/flags)
     const regexMatches = query.match(/\/([^/]+)\/([gimsuvy]*)?/g) || [];
-    regexMatches.forEach(r => regexPatterns.push(r));
-    
+    regexMatches.forEach((r) => regexPatterns.push(r));
+
     // Remove regex patterns for further parsing
     let remaining = query.replace(/\/[^/]+\/[gimsuvy]*/g, '').trim();
-    
+
     // Extract quoted phrases first
     const phraseMatches = remaining.match(/"([^"]+)"/g) || [];
-    phraseMatches.forEach(p => phrases.push(p.slice(1, -1)));
-    
+    phraseMatches.forEach((p) => phrases.push(p.slice(1, -1)));
+
     // Remove quoted phrases for further parsing
     remaining = remaining.replace(/"[^"]+"/g, '').trim();
-    
+
     // Split into terms
-    const terms = remaining.split(/\s+/).filter(t => t.length > 0);
-    
-    terms.forEach(term => {
+    const terms = remaining.split(/\s+/).filter((t) => t.length > 0);
+
+    terms.forEach((term) => {
       if (term.startsWith('+') && term.length > 1) {
         positive.push(term.slice(1));
       } else if (term.startsWith('-') && term.length > 1) {
@@ -48,22 +48,20 @@
         regular.push(term);
       }
     });
-    
+
     return { positive, negative, phrases, regular, regexPatterns };
   }
-  
+
   function handleInput(event) {
     value = event.target.value;
-    
+
     // Debounce search to avoid too many queries
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       dispatch('search', { query: value });
     }, 200);
   }
-  
 
-  
   function handleKeyDown(event) {
     if (event.key === 'Escape') {
       clearSearch();
@@ -73,13 +71,13 @@
       dispatch('search', { query: value });
     }
   }
-  
+
   function clearSearch() {
     value = '';
     dispatch('search', { query: '' });
     inputElement?.focus();
   }
-  
+
   function toggleHelp() {
     showHelp = !showHelp;
   }
@@ -89,8 +87,18 @@
   <div class="flex items-center gap-2">
     <div class="relative flex-1">
       <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-        <svg class="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        <svg
+          class="h-5 w-5 text-gray-400 dark:text-gray-500"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          ></path>
         </svg>
       </div>
       <input
@@ -99,7 +107,7 @@
         bind:value
         on:input={handleInput}
         on:keydown={handleKeyDown}
-        placeholder={placeholder}
+        {placeholder}
         class="block w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg leading-5 bg-white dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
         autocomplete="off"
         spellcheck="false"
@@ -111,8 +119,18 @@
           type="button"
           title="Clear search (Esc)"
         >
-          <svg class="h-5 w-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          <svg
+            class="h-5 w-5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            ></path>
           </svg>
         </button>
       {/if}
@@ -124,165 +142,298 @@
       title="Search help"
     >
       <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        ></path>
       </svg>
     </button>
   </div>
-  
 
-  
   <!-- Active search terms display -->
   {#if value && (parsedQuery.positive.length > 0 || parsedQuery.negative.length > 0 || parsedQuery.phrases.length > 0 || parsedQuery.regexPatterns.length > 0)}
     <div class="flex flex-wrap gap-1.5 mt-2">
       {#each parsedQuery.positive as term}
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300">
-          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+        <span
+          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300"
+        >
+          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"
+            ><path
+              fill-rule="evenodd"
+              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+              clip-rule="evenodd"
+            /></svg
+          >
           {term}
         </span>
       {/each}
       {#each parsedQuery.negative as term}
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300">
-          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+        <span
+          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300"
+        >
+          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"
+            ><path
+              fill-rule="evenodd"
+              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+              clip-rule="evenodd"
+            /></svg
+          >
           {term}
         </span>
       {/each}
       {#each parsedQuery.phrases as phrase}
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
-          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
+        <span
+          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300"
+        >
+          <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"
+            ><path
+              fill-rule="evenodd"
+              d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z"
+              clip-rule="evenodd"
+            /></svg
+          >
           "{phrase}"
         </span>
       {/each}
       {#each parsedQuery.regexPatterns as pattern}
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300">
-          <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 20 20"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l-4 4 4 4M6 16l-4-4 4-4"/></svg>
+        <span
+          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300"
+        >
+          <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 20 20"
+            ><path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 20l4-16m4 4l-4 4 4 4M6 16l-4-4 4-4"
+            /></svg
+          >
           {pattern}
         </span>
       {/each}
     </div>
   {/if}
-  
+
   <!-- Search help dropdown -->
   {#if showHelp}
-    <div class="absolute z-20 w-full mt-2 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-[70vh] overflow-y-auto">
+    <div
+      class="absolute z-20 w-full mt-2 p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-[70vh] overflow-y-auto"
+    >
       <h4 class="font-medium text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-        <svg class="w-4 h-4 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        <svg
+          class="w-4 h-4 text-blue-500 dark:text-blue-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          ></path>
         </svg>
         Search Syntax
       </h4>
       <div class="space-y-2 text-sm">
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded text-xs whitespace-nowrap">+term</code>
+          <code
+            class="px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 rounded text-xs whitespace-nowrap"
+            >+term</code
+          >
           <span class="text-gray-600 dark:text-gray-400">Must include this term</span>
         </div>
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 rounded text-xs whitespace-nowrap">-term</code>
+          <code
+            class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 rounded text-xs whitespace-nowrap"
+            >-term</code
+          >
           <span class="text-gray-600 dark:text-gray-400">Must NOT include this term</span>
         </div>
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 rounded text-xs whitespace-nowrap">"exact phrase"</code>
+          <code
+            class="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 rounded text-xs whitespace-nowrap"
+            >"exact phrase"</code
+          >
           <span class="text-gray-600 dark:text-gray-400">Match exact phrase</span>
         </div>
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs whitespace-nowrap">word</code>
+          <code
+            class="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs whitespace-nowrap"
+            >word</code
+          >
           <span class="text-gray-600 dark:text-gray-400">Regular search term</span>
         </div>
         <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 rounded text-xs whitespace-nowrap">/regex/</code>
+          <code
+            class="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 rounded text-xs whitespace-nowrap"
+            >/regex/</code
+          >
           <span class="text-gray-600 dark:text-gray-400">Regular expression pattern</span>
         </div>
       </div>
-      
+
       <!-- Special Filters Section -->
       <div class="mt-4 pt-3 border-t border-gray-100">
         <h5 class="font-medium text-gray-800 mb-2 flex items-center gap-2 text-sm">
-          <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+          <svg
+            class="w-4 h-4 text-indigo-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+            ></path>
           </svg>
           Special Filters
         </h5>
         <div class="space-y-2 text-sm">
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap">category:tech</code>
-          <span class="text-gray-600 dark:text-gray-400">📁 Filter by category</span>
-        </div>
-        <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap">domain:github.com</code>
-          <span class="text-gray-600 dark:text-gray-400">🌐 Filter by domain</span>
-        </div>
-        <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap">folder:"Work/Projects"</code>
-          <span class="text-gray-600 dark:text-gray-400">📂 Filter by folder path</span>
-        </div>
-        <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 rounded text-xs whitespace-nowrap">accessed:yes</code>
-          <span class="text-gray-600 dark:text-gray-400">👆 Has been accessed (yes/no)</span>
-        </div>
-        <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 rounded text-xs whitespace-nowrap">stale:yes</code>
-          <span class="text-gray-600 dark:text-gray-400">⏰ Old & never accessed</span>
-        </div>
-        <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-teal-100 dark:bg-teal-900/40 text-teal-800 dark:text-teal-300 rounded text-xs whitespace-nowrap">enriched:yes</code>
-          <span class="text-gray-600 dark:text-gray-400">✨ Has metadata (yes/no)</span>
-        </div>
-        <div class="flex items-start gap-3">
-          <code class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs whitespace-nowrap">dead:yes</code>
-          <span class="text-gray-600 dark:text-gray-400">💀 Dead links (yes/no)</span>
+            <code
+              class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap"
+              >category:tech</code
+            >
+            <span class="text-gray-600 dark:text-gray-400">📁 Filter by category</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code
+              class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap"
+              >domain:github.com</code
+            >
+            <span class="text-gray-600 dark:text-gray-400">🌐 Filter by domain</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code
+              class="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 rounded text-xs whitespace-nowrap"
+              >folder:"Work/Projects"</code
+            >
+            <span class="text-gray-600 dark:text-gray-400">📂 Filter by folder path</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code
+              class="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 rounded text-xs whitespace-nowrap"
+              >accessed:yes</code
+            >
+            <span class="text-gray-600 dark:text-gray-400">👆 Has been accessed (yes/no)</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code
+              class="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 rounded text-xs whitespace-nowrap"
+              >stale:yes</code
+            >
+            <span class="text-gray-600 dark:text-gray-400">⏰ Old & never accessed</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code
+              class="px-1.5 py-0.5 bg-teal-100 dark:bg-teal-900/40 text-teal-800 dark:text-teal-300 rounded text-xs whitespace-nowrap"
+              >enriched:yes</code
+            >
+            <span class="text-gray-600 dark:text-gray-400">✨ Has metadata (yes/no)</span>
+          </div>
+          <div class="flex items-start gap-3">
+            <code
+              class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded text-xs whitespace-nowrap"
+              >dead:yes</code
+            >
+            <span class="text-gray-600 dark:text-gray-400">💀 Dead links (yes/no)</span>
           </div>
         </div>
       </div>
-      
+
       <!-- Platform Filters Section -->
       <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-        <h5 class="font-medium text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2 text-sm">
+        <h5
+          class="font-medium text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2 text-sm"
+        >
           <span class="text-lg">📱</span>
           Platform Filters
         </h5>
         <div class="space-y-2 text-sm">
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">platform:youtube</code>
-            <span class="text-gray-600 dark:text-gray-400">📺 Filter by platform (youtube, github, medium, etc.)</span>
+            <code
+              class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap"
+              >platform:youtube</code
+            >
+            <span class="text-gray-600 dark:text-gray-400"
+              >📺 Filter by platform (youtube, github, medium, etc.)</span
+            >
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">channel:@mkbhd</code>
-            <span class="text-gray-600 dark:text-gray-400">📺 YouTube channel (with or without @)</span>
+            <code
+              class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap"
+              >channel:@mkbhd</code
+            >
+            <span class="text-gray-600 dark:text-gray-400"
+              >📺 YouTube channel (with or without @)</span
+            >
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">repo:facebook/react</code>
+            <code
+              class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap"
+              >repo:facebook/react</code
+            >
             <span class="text-gray-600 dark:text-gray-400">💻 GitHub repository (owner/repo)</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">author:username</code>
+            <code
+              class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap"
+              >author:username</code
+            >
             <span class="text-gray-600 dark:text-gray-400">✍️ Blog/article author</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">type:video</code>
-            <span class="text-gray-600 dark:text-gray-400">📝 Content type (video, issue, article, repo, pr)</span>
+            <code
+              class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap"
+              >type:video</code
+            >
+            <span class="text-gray-600 dark:text-gray-400"
+              >📝 Content type (video, issue, article, repo, pr)</span
+            >
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">hasimage:yes</code>
+            <code
+              class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap"
+              >hasimage:yes</code
+            >
             <span class="text-gray-600 dark:text-gray-400">🖼️ Has thumbnail image (yes/no)</span>
           </div>
           <div class="flex items-start gap-3">
-            <code class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap">playlist:PLxxx</code>
+            <code
+              class="px-1.5 py-0.5 bg-pink-100 dark:bg-pink-900/40 text-pink-800 dark:text-pink-300 rounded text-xs whitespace-nowrap"
+              >playlist:PLxxx</code
+            >
             <span class="text-gray-600 dark:text-gray-400">🎵 YouTube playlist ID</span>
           </div>
         </div>
       </div>
-      
+
       <div class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
         <p class="text-xs text-gray-500 dark:text-gray-400">
-          <strong>Example:</strong> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">javascript +tutorial -video "best practices"</code>
+          <strong>Example:</strong>
+          <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded"
+            >javascript +tutorial -video "best practices"</code
+          >
         </p>
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          <strong>With filters:</strong> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">domain:github.com category:development enriched:yes</code>
+          <strong>With filters:</strong>
+          <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded"
+            >domain:github.com category:development enriched:yes</code
+          >
         </p>
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          <strong>Platform:</strong> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">platform:youtube channel:@fireship type:video</code>
+          <strong>Platform:</strong>
+          <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded"
+            >platform:youtube channel:@fireship type:video</code
+          >
         </p>
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          <strong>Regex:</strong> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">/react.*hooks?/</code>
+          <strong>Regex:</strong>
+          <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">/react.*hooks?/</code>
         </p>
       </div>
     </div>

@@ -40,7 +40,7 @@ export async function initDarkMode() {
  */
 export async function toggleDarkMode() {
   let newValue;
-  darkMode.update(current => {
+  darkMode.update((current) => {
     newValue = !current;
     return newValue;
   });

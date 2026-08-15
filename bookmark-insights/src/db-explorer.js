@@ -13,7 +13,7 @@ const TABLE_META = {
   settings: { icon: '⚙️', description: 'Application settings and preferences' },
   similarities: { icon: '🔗', description: 'Precomputed bookmark similarity scores' },
   computedMetrics: { icon: '📈', description: 'Cached computed metrics with TTL' },
-  enrichmentQueue: { icon: '⏳', description: 'Queue of bookmarks pending enrichment' }
+  enrichmentQueue: { icon: '⏳', description: 'Queue of bookmarks pending enrichment' },
 };
 
 /**
@@ -28,7 +28,7 @@ const METRIC_DESCRIPTIONS = {
   [CACHE_KEYS.DUPLICATES]: 'Detected duplicate bookmarks',
   [CACHE_KEYS.QUICK_STATS]: 'Dashboard quick statistics',
   [CACHE_KEYS.QUICK_DUPLICATE_COUNT]: 'Duplicate count for the stats store',
-  [CACHE_KEYS.SIMILARITIES]: 'Similar bookmark pairs'
+  [CACHE_KEYS.SIMILARITIES]: 'Similar bookmark pairs',
 };
 
 function formatTtl(ms) {
@@ -39,10 +39,10 @@ function formatTtl(ms) {
   return `${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
-const KNOWN_METRICS = Object.values(CACHE_KEYS).map(key => ({
+const KNOWN_METRICS = Object.values(CACHE_KEYS).map((key) => ({
   key,
   ttl: formatTtl(CACHE_DURATIONS[key]),
-  description: METRIC_DESCRIPTIONS[key] || 'Custom metric'
+  description: METRIC_DESCRIPTIONS[key] || 'Custom metric',
 }));
 
 /**
@@ -50,7 +50,7 @@ const KNOWN_METRICS = Object.values(CACHE_KEYS).map(key => ({
  */
 export async function getDatabaseOverview() {
   const tableNames = Object.keys(TABLE_META);
-  
+
   const tables = await Promise.all(
     tableNames.map(async (name) => {
       try {
@@ -58,27 +58,27 @@ export async function getDatabaseOverview() {
         return {
           name,
           count,
-          ...TABLE_META[name]
+          ...TABLE_META[name],
         };
       } catch (e) {
         return {
           name,
           count: 0,
           ...TABLE_META[name],
-          error: e.message
+          error: e.message,
         };
       }
-    })
+    }),
   );
-  
+
   const totalRecords = tables.reduce((sum, t) => sum + t.count, 0);
   const estimatedSize = await estimateDatabaseSize();
-  
+
   return {
     tables,
     totalRecords,
     estimatedSize,
-    lastChecked: Date.now()
+    lastChecked: Date.now(),
   };
 }
 
@@ -86,18 +86,18 @@ export async function getDatabaseOverview() {
  * Get paginated records from a table with sorting & filtering
  */
 export async function getTableRecords(tableName, options = {}) {
-  const { 
-    page = 0, 
-    pageSize = 50, 
-    sortBy = null, 
+  const {
+    page = 0,
+    pageSize = 50,
+    sortBy = null,
     sortOrder = 'desc',
     searchQuery = '',
     searchField = 'all',
-    fieldFilter = null // { field: 'category', hasValue: true/false }
+    fieldFilter = null, // { field: 'category', hasValue: true/false }
   } = options;
-  
+
   const needsClientFilter = searchQuery || fieldFilter;
-  
+
   // Fast path: no filtering needed, use Dexie's native pagination
   if (!needsClientFilter && !sortBy) {
     const totalCount = await db[tableName].count();
@@ -106,7 +106,7 @@ export async function getTableRecords(tableName, options = {}) {
       .offset(page * pageSize)
       .limit(pageSize)
       .toArray();
-    
+
     return {
       records,
       totalCount,
@@ -114,27 +114,30 @@ export async function getTableRecords(tableName, options = {}) {
       pageSize,
       totalPages,
       hasMore: (page + 1) * pageSize < totalCount,
-      hasPrev: page > 0
+      hasPrev: page > 0,
     };
   }
-  
+
   // Slow path: need to load all for client-side filtering/sorting
   let records = await db[tableName].toArray();
-  
+
   // Apply field filter (show only records with/without a specific field)
   if (fieldFilter) {
-    records = records.filter(record => {
+    records = records.filter((record) => {
       const value = record[fieldFilter.field];
-      const hasValue = value !== null && value !== undefined && value !== '' && 
-                       !(Array.isArray(value) && value.length === 0);
+      const hasValue =
+        value !== null &&
+        value !== undefined &&
+        value !== '' &&
+        !(Array.isArray(value) && value.length === 0);
       return fieldFilter.hasValue ? hasValue : !hasValue;
     });
   }
-  
+
   // Apply search filter
   if (searchQuery) {
     const query = searchQuery.toLowerCase();
-    records = records.filter(record => {
+    records = records.filter((record) => {
       if (searchField === 'all') {
         return JSON.stringify(record).toLowerCase().includes(query);
       }
@@ -142,7 +145,7 @@ export async function getTableRecords(tableName, options = {}) {
       return value && String(value).toLowerCase().includes(query);
     });
   }
-  
+
   // Apply sorting
   if (sortBy) {
     records.sort((a, b) => {
@@ -151,22 +154,22 @@ export async function getTableRecords(tableName, options = {}) {
       if (aVal === bVal) return 0;
       if (aVal === null || aVal === undefined) return 1;
       if (bVal === null || bVal === undefined) return -1;
-      
+
       // Handle different types
       if (typeof aVal === 'number' && typeof bVal === 'number') {
         return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
       }
-      
+
       const result = String(aVal).localeCompare(String(bVal));
       return sortOrder === 'desc' ? -result : result;
     });
   }
-  
+
   // Calculate pagination
   const totalCount = records.length;
   const totalPages = Math.ceil(totalCount / pageSize);
   const paginatedRecords = records.slice(page * pageSize, (page + 1) * pageSize);
-  
+
   return {
     records: paginatedRecords,
     totalCount,
@@ -174,7 +177,7 @@ export async function getTableRecords(tableName, options = {}) {
     pageSize,
     totalPages,
     hasMore: (page + 1) * pageSize < totalCount,
-    hasPrev: page > 0
+    hasPrev: page > 0,
   };
 }
 
@@ -184,23 +187,26 @@ export async function getTableRecords(tableName, options = {}) {
 export async function analyzeTableFields(tableName) {
   const records = await db[tableName].toArray();
   const fieldStats = {};
-  
-  records.forEach(record => {
-    Object.keys(record).forEach(key => {
+
+  records.forEach((record) => {
+    Object.keys(record).forEach((key) => {
       if (!fieldStats[key]) {
-        fieldStats[key] = { 
+        fieldStats[key] = {
           field: key,
-          populated: 0, 
-          empty: 0, 
+          populated: 0,
+          empty: 0,
           samples: [],
-          types: new Set()
+          types: new Set(),
         };
       }
-      
+
       const value = record[key];
-      const isEmpty = value === null || value === undefined || value === '' || 
-                     (Array.isArray(value) && value.length === 0);
-      
+      const isEmpty =
+        value === null ||
+        value === undefined ||
+        value === '' ||
+        (Array.isArray(value) && value.length === 0);
+
       if (isEmpty) {
         fieldStats[key].empty++;
       } else {
@@ -221,14 +227,16 @@ export async function analyzeTableFields(tableName) {
       }
     });
   });
-  
+
   const total = records.length;
-  return Object.values(fieldStats).map(stat => ({
-    ...stat,
-    types: [...stat.types],
-    total,
-    coverage: total > 0 ? parseFloat(((stat.populated / total) * 100).toFixed(1)) : 0
-  })).sort((a, b) => b.coverage - a.coverage);
+  return Object.values(fieldStats)
+    .map((stat) => ({
+      ...stat,
+      types: [...stat.types],
+      total,
+      coverage: total > 0 ? parseFloat(((stat.populated / total) * 100).toFixed(1)) : 0,
+    }))
+    .sort((a, b) => b.coverage - a.coverage);
 }
 
 /**
@@ -237,11 +245,11 @@ export async function analyzeTableFields(tableName) {
 export async function getTableFields(tableName) {
   const records = await db[tableName].limit(100).toArray();
   const fields = new Set();
-  
-  records.forEach(record => {
-    Object.keys(record).forEach(key => fields.add(key));
+
+  records.forEach((record) => {
+    Object.keys(record).forEach((key) => fields.add(key));
   });
-  
+
   return [...fields].sort();
 }
 
@@ -250,24 +258,24 @@ export async function getTableFields(tableName) {
  */
 export async function getCachedMetricsStatus() {
   let metrics = [];
-  
+
   try {
     metrics = await db.computedMetrics.toArray();
   } catch (e) {
     console.error('Error fetching computedMetrics:', e);
   }
-  
+
   const now = Date.now();
-  const cachedKeys = new Set(metrics.map(m => m.key));
-  
-  const result = metrics.map(m => {
+  const cachedKeys = new Set(metrics.map((m) => m.key));
+
+  const result = metrics.map((m) => {
     const timeRemaining = m.validUntil - now;
     let status = 'valid';
     if (timeRemaining <= 0) status = 'stale';
     else if (timeRemaining < 60 * 60 * 1000) status = 'expiring'; // < 1 hour
-    
-    const knownMeta = KNOWN_METRICS.find(km => km.key === m.key);
-    
+
+    const knownMeta = KNOWN_METRICS.find((km) => km.key === m.key);
+
     return {
       key: m.key,
       description: knownMeta?.description || 'Custom metric',
@@ -277,12 +285,12 @@ export async function getCachedMetricsStatus() {
       timeRemaining,
       status,
       dataSize: JSON.stringify(m.data || {}).length,
-      hasData: !!m.data
+      hasData: !!m.data,
     };
   });
-  
+
   // Add known metrics that haven't been cached yet
-  KNOWN_METRICS.forEach(km => {
+  KNOWN_METRICS.forEach((km) => {
     if (!cachedKeys.has(km.key)) {
       result.push({
         key: km.key,
@@ -293,11 +301,11 @@ export async function getCachedMetricsStatus() {
         timeRemaining: null,
         status: 'never',
         dataSize: 0,
-        hasData: false
+        hasData: false,
       });
     }
   });
-  
+
   return result.sort((a, b) => a.key.localeCompare(b.key));
 }
 
@@ -332,8 +340,8 @@ export async function invalidateMetrics(keys) {
  */
 export async function getMetricsFlowDiagram() {
   const cacheStatus = await getCachedMetricsStatus();
-  const statusMap = Object.fromEntries(cacheStatus.map(c => [c.key, c.status]));
-  
+  const statusMap = Object.fromEntries(cacheStatus.map((c) => [c.key, c.status]));
+
   // Return structured data for simple HTML rendering (no mermaid dependency)
   return {
     layers: [
@@ -341,34 +349,54 @@ export async function getMetricsFlowDiagram() {
         title: '📥 Data Sources',
         items: [
           { id: 'chromeApi', label: 'Chrome Bookmarks API', status: 'source' },
-          { id: 'activity', label: 'User Activity', status: 'source' }
-        ]
+          { id: 'activity', label: 'User Activity', status: 'source' },
+        ],
       },
       {
         title: '🗄️ Storage',
         items: [
           { id: 'bookmarks', label: 'Bookmarks Table', status: 'storage' },
-          { id: 'events', label: 'Events Table', status: 'storage' }
-        ]
+          { id: 'events', label: 'Events Table', status: 'storage' },
+        ],
       },
       {
         title: '📊 Computed Metrics',
         items: [
           { id: 'domainStats', label: 'Domain Stats', status: statusMap['domainStats'] || 'none' },
-          { id: 'activityTimeline', label: 'Activity Timeline', status: statusMap['activityTimeline'] || 'none' },
+          {
+            id: 'activityTimeline',
+            label: 'Activity Timeline',
+            status: statusMap['activityTimeline'] || 'none',
+          },
           { id: 'quickStats', label: 'Quick Stats', status: statusMap['quickStats'] || 'none' },
-          { id: 'similarities', label: 'Similarities', status: statusMap['similarities'] || 'none' },
-          { id: 'wordFrequency', label: 'Word Frequency', status: statusMap['wordFrequency'] || 'none' }
-        ]
+          {
+            id: 'similarities',
+            label: 'Similarities',
+            status: statusMap['similarities'] || 'none',
+          },
+          {
+            id: 'wordFrequency',
+            label: 'Word Frequency',
+            status: statusMap['wordFrequency'] || 'none',
+          },
+        ],
       },
       {
         title: '🎯 Insights',
         items: [
-          { id: 'insightsSummary', label: 'Summary', status: statusMap['insightsSummary'] || 'none' },
-          { id: 'expertiseAreas', label: 'Expertise', status: statusMap['expertiseAreas'] || 'none' }
-        ]
-      }
-    ]
+          {
+            id: 'insightsSummary',
+            label: 'Summary',
+            status: statusMap['insightsSummary'] || 'none',
+          },
+          {
+            id: 'expertiseAreas',
+            label: 'Expertise',
+            status: statusMap['expertiseAreas'] || 'none',
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -376,9 +404,9 @@ export async function getMetricsFlowDiagram() {
  * Export table as JSON with optional filtering
  */
 export async function exportTableAsJSON(tableName, options = {}) {
-  const { records } = await getTableRecords(tableName, { 
-    ...options, 
-    pageSize: 999999 // Get all matching records
+  const { records } = await getTableRecords(tableName, {
+    ...options,
+    pageSize: 999999, // Get all matching records
   });
   return JSON.stringify(records, null, 2);
 }
@@ -415,16 +443,16 @@ async function estimateDatabaseSize() {
       // Fall through to sampling method
     }
   }
-  
+
   // Fallback: estimate from record counts and sample sizes
   let totalSize = 0;
   const tableNames = Object.keys(TABLE_META);
-  
+
   for (const tableName of tableNames) {
     try {
       const count = await db[tableName].count();
       if (count === 0) continue;
-      
+
       // Sample up to 10 records to estimate average size
       const sampleSize = Math.min(count, 10);
       const sample = await db[tableName].limit(sampleSize).toArray();
@@ -435,7 +463,7 @@ async function estimateDatabaseSize() {
       // Table might not exist yet
     }
   }
-  
+
   if (totalSize > 1024 * 1024) {
     return `~${(totalSize / (1024 * 1024)).toFixed(1)} MB`;
   }
@@ -447,19 +475,19 @@ async function estimateDatabaseSize() {
  */
 export function formatTimestamp(timestamp) {
   if (!timestamp) return '-';
-  
+
   const date = new Date(timestamp);
   const now = new Date();
   const diffMs = now - date;
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
-  
+
   if (diffMins < 1) return 'just now';
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  
+
   return date.toLocaleDateString();
 }
 
@@ -468,13 +496,12 @@ export function formatTimestamp(timestamp) {
  */
 export function formatTimeRemaining(ms) {
   if (!ms || ms <= 0) return 'expired';
-  
+
   const mins = Math.floor(ms / 60000);
   const hours = Math.floor(ms / 3600000);
   const days = Math.floor(ms / 86400000);
-  
+
   if (mins < 60) return `${mins}m`;
   if (hours < 24) return `${hours}h`;
   return `${days}d`;
 }
-

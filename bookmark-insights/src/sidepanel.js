@@ -12,7 +12,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 const app = new SidePanel({
-  target: document.body
+  target: document.body,
 });
 
 export default app;
