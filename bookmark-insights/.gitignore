@@ -9,6 +9,7 @@ background.js
 analysis-worker.js
 public/dashboard.js
 public/dashboard.css
+public/dashboard-*.js
 public/sidepanel.js
 public/sidepanel.css
 public/tailwind.css

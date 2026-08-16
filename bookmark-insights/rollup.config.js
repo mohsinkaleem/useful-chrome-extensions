@@ -36,11 +36,19 @@ export default [
   },
   {
     input: 'src/dashboard.js',
+    // The entry exports nothing, so let Rollup fold it into the main chunk
+    // instead of emitting a facade that only re-exports it.
+    preserveEntrySignatures: false,
     output: {
       sourcemap: !production,
       format: 'es',
-      file: 'public/dashboard.js',
-      inlineDynamicImports: true
+      // Split rather than inline: Chart.js is roughly half the bundle and is
+      // only reachable from the Insights tab, which is lazily imported.
+      dir: 'public',
+      entryFileNames: 'dashboard.js',
+      // Unhashed so repeated builds overwrite rather than accumulate chunks
+      // that `npm run dist` would then copy.
+      chunkFileNames: 'dashboard-[name].js'
     },
     plugins: [
       svelte({

@@ -11,7 +11,8 @@
   "scripts": {
     "build:css": "tailwindcss -i ./src/tailwind.css -o ./public/tailwind.css --minify",
     "build:js": "rollup -c",
-    "build": "npm run build:css && npm run build:js && npm run clean:maps",
+    "build": "npm run build:css && npm run clean:chunks && npm run build:js && npm run clean:maps",
+    "clean:chunks": "rm -f public/dashboard-*.js",
     "clean:maps": "rm -f public/*.map background.js.map analysis-worker.js.map",
     "dist": "npm run build && rm -rf dist && mkdir -p dist && cp -r public icons manifest.json dashboard.html sidepanel.html background.js analysis-worker.js dist/ && echo 'Dist size:' && du -sh dist",
     "dev:css": "tailwindcss -i ./src/tailwind.css -o ./public/tailwind.css --watch",

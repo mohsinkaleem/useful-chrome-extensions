@@ -5,7 +5,6 @@
   import SearchBar from './SearchBar.svelte';
   import Sidebar from './Sidebar.svelte';
   import DataExplorer from './DataExplorer.svelte';
-  import VisualInsights from './VisualInsights.svelte';
   import DashboardHeader from './DashboardHeader.svelte';
   import ActiveFilterChips from './ActiveFilterChips.svelte';
   import UselessCategory from './UselessCategory.svelte';
@@ -70,6 +69,26 @@
     return validViews.includes(hash) ? hash : 'bookmarks';
   }
   let currentView = typeof window !== 'undefined' ? getViewFromHash() : 'bookmarks';
+
+  // Chart.js is reachable only from the Insights tab and is about half the
+  // dashboard bundle, so the view is pulled in as its own chunk on first open.
+  let VisualInsights = null;
+  let loadingVisualInsights = false;
+
+  async function loadVisualInsights() {
+    if (VisualInsights || loadingVisualInsights) return;
+    loadingVisualInsights = true;
+    try {
+      VisualInsights = (await import('./VisualInsights.svelte')).default;
+    } catch (err) {
+      console.error('Error loading the Insights view:', err);
+      notify('Could not load the Insights view: ' + err.message, { type: 'error' });
+    } finally {
+      loadingVisualInsights = false;
+    }
+  }
+
+  $: if (currentView === 'insights') loadVisualInsights();
 
   // Pagination variables
   let currentPage = 0;
@@ -1966,19 +1985,27 @@
         </div>
       </div>
     {:else if currentView === 'insights'}
-      <!-- New Visual Insights Component -->
-      <VisualInsights
-        on:filterByCategory={handleInsightCategoryFilter}
-        on:filterByDomain={handleInsightDomainFilter}
-        on:filterByAccessed={handleFilterByAccessed}
-        on:filterByStale={handleFilterByStale}
-        on:filterByDead={handleFilterByDead}
-        on:filterByUnenriched={handleFilterByUnenriched}
-        on:filterByUncategorized={handleFilterByUncategorized}
-        on:showDuplicates={handleShowDuplicates}
-        on:deleteBookmarks={handleBulkDeleteFromInsights}
-        on:searchQuery={handleSearchFromInsights}
-      />
+      {#if VisualInsights}
+        <svelte:component
+          this={VisualInsights}
+          on:filterByCategory={handleInsightCategoryFilter}
+          on:filterByDomain={handleInsightDomainFilter}
+          on:filterByAccessed={handleFilterByAccessed}
+          on:filterByStale={handleFilterByStale}
+          on:filterByDead={handleFilterByDead}
+          on:filterByUnenriched={handleFilterByUnenriched}
+          on:filterByUncategorized={handleFilterByUncategorized}
+          on:showDuplicates={handleShowDuplicates}
+          on:deleteBookmarks={handleBulkDeleteFromInsights}
+          on:searchQuery={handleSearchFromInsights}
+        />
+      {:else}
+        <div class="flex items-center justify-center h-64">
+          <div
+            class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"
+          ></div>
+        </div>
+      {/if}
     {:else if currentView === 'health'}
       <div class="space-y-8">
         {#if loading}

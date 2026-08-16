@@ -163,7 +163,7 @@ CI runs lint, format check, tests, knip and a build on every push and pull reque
 - **UI**: Svelte 4, Tailwind CSS 3
 - **Database**: IndexedDB via Dexie.js
 - **Search**: FlexSearch.js
-- **Charts**: Chart.js 4 (Insights tab only)
+- **Charts**: Chart.js 4 — code-split into its own chunk, loaded the first time the Insights tab is opened
 - **Build**: Rollup
 - **Tooling**: ESLint 9, Prettier, Vitest, Knip
 
