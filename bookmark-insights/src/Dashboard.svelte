@@ -9,19 +9,26 @@
   import DashboardHeader from './DashboardHeader.svelte';
   import ActiveFilterChips from './ActiveFilterChips.svelte';
   import UselessCategory from './UselessCategory.svelte';
+  import ConfirmDialog from './ConfirmDialog.svelte';
+  import ToastHost from './ToastHost.svelte';
+  import Modal from './Modal.svelte';
+  import { confirmAction, notify } from './dialogs.js';
   import { SORT_OPTIONS } from './utils.js';
   import { searchBookmarks, invalidateSearchIndex } from './search.js';
   import {
     findDuplicates,
     findMalformedUrls,
     deleteBookmarks,
-    upsertBookmark,
     getAllBookmarks,
     getDeadLinks,
     exportBookmarks,
     getQuickStats,
     getSettings,
     updateSettings,
+    // Trash
+    getTrashItems,
+    restoreFromTrash,
+    purgeTrash,
     // Backup functions
     downloadBackup,
     restoreFromBackup,
@@ -45,6 +52,7 @@
   import { debounce } from './utils.js';
   import { safeHref } from './url-safety.js';
   import { initDarkMode } from './darkModeStore.js';
+  import { loadViewState, saveViewState } from './viewState.js';
 
   let bookmarks = [];
   let loading = true;
@@ -182,9 +190,18 @@
   let multiSelectMode = false;
   let viewMode = 'list'; // 'list' or 'card'
 
-  // Undo delete state
-  let undoDeleteToast = null;
-  let undoDeleteTimeout = null;
+  // Keyboard navigation cursor over the rendered result list
+  let activeIndex = -1;
+  let searchBarRef;
+  let resultsContainer;
+
+  // Bulk delete progress / cancellation
+  let bulkDeleteProgress = null;
+  let bulkDeleteController = null;
+
+  // Trash
+  let trashItems = [];
+  let loadingTrash = false;
 
   // Captured so onDestroy can detach them
   let onHashChange = null;
@@ -193,6 +210,7 @@
   onMount(async () => {
     try {
       await initDarkMode();
+      await restoreViewState();
 
       // Handle hash changes for navigation
       onHashChange = () => {
@@ -276,8 +294,34 @@
   onDestroy(() => {
     if (onHashChange) window.removeEventListener('hashchange', onHashChange);
     if (onRuntimeMessage) chrome.runtime.onMessage.removeListener(onRuntimeMessage);
-    if (undoDeleteTimeout) clearTimeout(undoDeleteTimeout);
+    bulkDeleteController?.abort();
   });
+
+  // View mode, sort order and filters used to reset on every open even though
+  // chrome.storage.local was already wired up for the dark-mode preference.
+  let viewStateRestored = false;
+
+  async function restoreViewState() {
+    const stored = await loadViewState();
+    if (stored) {
+      if (stored.viewMode) viewMode = stored.viewMode;
+      if (stored.sortBy) currentSortBy = stored.sortBy;
+      if (stored.filters) activeFilters.set(stored.filters);
+      if (typeof stored.query === 'string') searchQueryStore.set(stored.query);
+    }
+    viewStateRestored = true;
+  }
+
+  const persistViewState = debounce((state) => saveViewState(state), 400);
+
+  $: if (viewStateRestored) {
+    persistViewState({
+      viewMode,
+      sortBy: currentSortBy,
+      filters: $activeFilters,
+      query: $searchQueryStore,
+    });
+  }
 
   // Debounced search function to prevent excessive calls during typing
   const debouncedLoadBookmarks = debounce(() => {
@@ -342,6 +386,7 @@
         bookmarks = [...bookmarks, ...result.results];
       } else {
         bookmarks = result.results;
+        activeIndex = -1;
       }
 
       totalCount = result.total;
@@ -362,6 +407,134 @@
     if (!hasMore || loading) return;
     currentPage++;
     loadBookmarks(currentPage, true);
+  }
+
+  // Every destructive path goes through here: one confirmation dialog, one
+  // progress/cancel surface and one undo toast, instead of six copies of a
+  // bare confirm() with no way back.
+  async function runBulkDelete(ids, { title, message, successLabel } = {}) {
+    if (!ids || ids.length === 0) return null;
+
+    if (message) {
+      const accepted = await confirmAction({
+        title: title || 'Delete bookmarks',
+        message,
+        confirmLabel: `Delete ${ids.length}`,
+        danger: true,
+      });
+      if (!accepted) return null;
+    }
+
+    bulkDeleteController = new AbortController();
+    bulkDeleteProgress = { processed: 0, total: ids.length, deleted: 0, failed: 0 };
+    isBulkDeleting = true;
+
+    try {
+      const result = await deleteBookmarks(ids, {
+        signal: bulkDeleteController.signal,
+        onProgress: (progress) => (bulkDeleteProgress = progress),
+      });
+
+      allBookmarks.invalidate();
+      sidebarRef?.refresh?.();
+      getQuickStats().then((s) => (quickStats = s));
+
+      if (result.deletedIds.length > 0) {
+        const noun = result.deletedIds.length === 1 ? 'bookmark' : 'bookmarks';
+        notify(`${successLabel || 'Deleted'} ${result.deletedIds.length} ${noun}`, {
+          timeout: 10000,
+          action: { label: 'Undo', run: () => undoDelete(result.deletedIds) },
+        });
+      }
+      if (result.errors.length > 0) {
+        notify(`${result.errors.length} bookmark(s) could not be deleted`, { type: 'error' });
+      }
+      return result;
+    } catch (err) {
+      console.error('Error deleting bookmarks:', err);
+      notify('Error deleting bookmarks: ' + err.message, { type: 'error' });
+      return null;
+    } finally {
+      bulkDeleteProgress = null;
+      bulkDeleteController = null;
+      setTimeout(() => {
+        isBulkDeleting = false;
+      }, 500);
+    }
+  }
+
+  async function undoDelete(ids) {
+    const { restored, errors } = await restoreFromTrash(ids);
+    allBookmarks.invalidate();
+    invalidateSearchIndex();
+    sidebarRef?.refresh?.();
+    await loadBookmarks(0, false);
+    if (errors.length > 0) {
+      notify(`Restored ${restored}, ${errors.length} could not be restored`, { type: 'error' });
+    } else {
+      notify(`Restored ${restored} bookmark${restored === 1 ? '' : 's'}`, { type: 'success' });
+    }
+  }
+
+  function cancelBulkDelete() {
+    bulkDeleteController?.abort();
+  }
+
+  // Keyboard shortcuts: `/` or Ctrl/Cmd+K focuses search, j/k walk the results,
+  // Enter opens the highlighted row, Escape closes the comparison modal.
+  function handleGlobalKeydown(event) {
+    const target = event.target;
+    const typing =
+      target instanceof HTMLElement &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable);
+
+    if ((event.key === 'k' || event.key === 'K') && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      switchView('bookmarks');
+      searchBarRef?.focus();
+      return;
+    }
+
+    if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+
+    if (event.key === 'Escape' && selectedComparisonPair) {
+      closeComparisonModal();
+      return;
+    }
+
+    if (currentView !== 'bookmarks') return;
+
+    if (event.key === '/') {
+      event.preventDefault();
+      searchBarRef?.focus();
+      return;
+    }
+
+    if (event.key === 'j' || event.key === 'ArrowDown') {
+      if (bookmarks.length === 0) return;
+      event.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, bookmarks.length - 1);
+      scrollActiveIntoView();
+    } else if (event.key === 'k' || event.key === 'ArrowUp') {
+      if (bookmarks.length === 0) return;
+      event.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      scrollActiveIntoView();
+    } else if (event.key === 'Enter' && activeIndex >= 0 && bookmarks[activeIndex]) {
+      event.preventDefault();
+      chrome.tabs.create({ url: bookmarks[activeIndex].url, active: true });
+    }
+  }
+
+  function scrollActiveIntoView() {
+    requestAnimationFrame(() => {
+      resultsContainer
+        ?.querySelectorAll('[data-result-row]')
+        ?.[activeIndex]?.scrollIntoView({ block: 'nearest' });
+    });
   }
 
   function handleSearch(event) {
@@ -435,6 +608,8 @@
 
       // Load enrichment status
       await loadEnrichmentStatus();
+
+      loadTrash();
 
       // Load sections progressively (non-blocking)
       // Duplicates load
@@ -588,23 +763,10 @@
 
   async function handleBulkDeleteFromInsights(event) {
     const { ids } = event.detail;
-    if (!ids || ids.length === 0) return;
-
-    if (confirm(`Are you sure you want to delete ${ids.length} bookmark(s)?`)) {
-      try {
-        isBulkDeleting = true;
-        await deleteBookmarks(ids);
-        // Refresh the current view
-        await loadBookmarks(0, false);
-      } catch (err) {
-        console.error('Error deleting bookmarks:', err);
-        alert('Failed to delete some bookmarks. Please try again.');
-      } finally {
-        setTimeout(() => {
-          isBulkDeleting = false;
-        }, 500);
-      }
-    }
+    const result = await runBulkDelete(ids, {
+      message: `Delete ${ids?.length ?? 0} bookmark(s)?`,
+    });
+    if (result) await loadBookmarks(0, false);
   }
 
   async function handleSearchFromInsights(event) {
@@ -704,21 +866,18 @@
 
   // Delete a single dead link
   async function deleteDeadLink(bookmarkId) {
-    try {
-      await deleteBookmarks([bookmarkId]);
+    const result = await runBulkDelete([bookmarkId]);
+    if (!result) return;
 
-      // Update the dead links list without full reload
-      deadLinks = deadLinks.filter((b) => b.id !== bookmarkId);
+    // Update the dead links list without full reload
+    deadLinks = deadLinks.filter((b) => b.id !== bookmarkId);
 
-      // Update dead link insights
-      if (deadLinkInsights) {
-        deadLinkInsights = {
-          ...deadLinkInsights,
-          total: deadLinkInsights.total - 1,
-        };
-      }
-    } catch (err) {
-      console.error('Error deleting dead link:', err);
+    // Update dead link insights
+    if (deadLinkInsights) {
+      deadLinkInsights = {
+        ...deadLinkInsights,
+        total: deadLinkInsights.total - 1,
+      };
     }
   }
 
@@ -726,39 +885,24 @@
   async function deleteAllDeadLinks() {
     if (deadLinks.length === 0) return;
 
-    const confirmed = confirm(
-      `Are you sure you want to delete all ${deadLinks.length} dead links? This action cannot be undone.`,
-    );
-    if (!confirmed) return;
-
     deletingDeadLinks = true;
-    isBulkDeleting = true;
-
     try {
-      const bookmarkIds = deadLinks.map((b) => b.id);
-      const result = await deleteBookmarks(bookmarkIds);
+      const result = await runBulkDelete(
+        deadLinks.map((b) => b.id),
+        {
+          title: 'Delete dead links',
+          message: `Delete all ${deadLinks.length} dead links? They stay recoverable from the trash for 30 days.`,
+        },
+      );
+      if (!result) return;
 
-      console.log(`Deleted ${result.success} dead links, ${result.errors.length} errors`);
-
-      // Clear the dead links list
       deadLinks = [];
-      deadLinkInsights = null;
-
-      // Refresh dead link insights
-      getDeadLinkInsights().then((insights) => {
-        deadLinkInsights = insights;
-      });
+      deadLinkInsights = await getDeadLinkInsights();
     } catch (err) {
       console.error('Error deleting all dead links:', err);
-      // Reload dead links on error
-      getDeadLinks().then((links) => {
-        deadLinks = links;
-      });
+      deadLinks = await getDeadLinks();
     } finally {
       deletingDeadLinks = false;
-      setTimeout(() => {
-        isBulkDeleting = false;
-      }, 500);
     }
   }
 
@@ -782,9 +926,11 @@
     const remaining = deadLinks.length - toProcess;
     const remainingText = remaining > 0 ? ` (${remaining} will remain for next batch)` : '';
 
-    const confirmed = confirm(
-      `Re-check ${toProcess} dead links?${remainingText}\n\nThis will attempt to fetch each URL again to verify if it's still unreachable.`,
-    );
+    const confirmed = await confirmAction({
+      title: 'Re-check dead links',
+      message: `Re-check ${toProcess} dead links?${remainingText}\n\nEach URL is fetched again to verify whether it is still unreachable.`,
+      confirmLabel: 'Re-check',
+    });
     if (!confirmed) return;
 
     reEnrichingDeadLinks = true;
@@ -831,61 +977,36 @@
 
   // Delete a single malformed/invalid URL bookmark
   async function deleteMalformedUrl(bookmarkId) {
-    try {
-      await deleteBookmarks([bookmarkId]);
-      malformedUrls = malformedUrls.filter((b) => b.id !== bookmarkId);
-    } catch (err) {
-      console.error('Error deleting malformed URL:', err);
-    }
+    const result = await runBulkDelete([bookmarkId]);
+    if (result) malformedUrls = malformedUrls.filter((b) => b.id !== bookmarkId);
   }
 
   // Delete all malformed/invalid URL bookmarks
   async function deleteAllMalformedUrls() {
     if (malformedUrls.length === 0) return;
 
-    const confirmed = confirm(
-      `Are you sure you want to delete all ${malformedUrls.length} invalid URL bookmarks? This action cannot be undone.`,
+    const result = await runBulkDelete(
+      malformedUrls.map((b) => b.id),
+      {
+        title: 'Delete invalid URLs',
+        message: `Delete all ${malformedUrls.length} bookmarks with invalid URLs? They stay recoverable from the trash for 30 days.`,
+      },
     );
-    if (!confirmed) return;
-
-    try {
-      const result = await deleteBookmarks(malformedUrls.map((b) => b.id));
-      console.log(`Deleted ${result.success} invalid URL bookmarks`);
-      malformedUrls = [];
-    } catch (err) {
-      console.error('Error deleting malformed URLs:', err);
-    }
+    if (result) malformedUrls = [];
   }
 
   async function deleteDuplicate(bookmarkId, groupIndex) {
-    try {
-      await deleteBookmarks([bookmarkId]);
+    const result = await runBulkDelete([bookmarkId]);
+    if (!result) return;
 
-      // Update the duplicates list without full reload
-      duplicates = duplicates
-        .map((group, idx) => {
-          if (idx === groupIndex) {
-            return group.filter((b) => b.id !== bookmarkId);
-          }
-          return group;
-        })
-        .filter((group) => group.length > 1); // Remove groups that no longer have duplicates
+    // Update the duplicates list without full reload
+    duplicates = duplicates
+      .map((group, idx) => (idx === groupIndex ? group.filter((b) => b.id !== bookmarkId) : group))
+      .filter((group) => group.length > 1); // Remove groups that no longer have duplicates
 
-      // Remove from selection if selected
-      selectedDuplicates.delete(bookmarkId);
-      selectedDuplicates = selectedDuplicates;
-
-      // Invalidate cache but don't reload the page
-      allBookmarks.invalidate();
-    } catch (err) {
-      console.error('Error deleting bookmark:', err);
-      // Reload duplicates only on error
-      loadingDuplicates = true;
-      findDuplicates().then((dups) => {
-        duplicates = dups;
-        loadingDuplicates = false;
-      });
-    }
+    // Remove from selection if selected
+    selectedDuplicates.delete(bookmarkId);
+    selectedDuplicates = selectedDuplicates;
   }
 
   // Toggle duplicate selection for multi-select
@@ -921,22 +1042,19 @@
     if (selectedDuplicates.size === 0) return;
 
     const toDelete = Array.from(selectedDuplicates);
+    const result = await runBulkDelete(toDelete, {
+      title: 'Delete selected duplicates',
+      message: `Delete ${toDelete.length} selected duplicate(s)? They stay recoverable from the trash for 30 days.`,
+    });
+    if (!result) return;
 
-    try {
-      const result = await deleteBookmarks(toDelete);
-      console.log(`Deleted ${result.success} duplicate bookmarks`);
-    } catch (err) {
-      console.error('Error deleting selected duplicates:', err);
-    }
-
-    // Update local state
+    const deleted = new Set(result.deletedIds);
     duplicates = duplicates
-      .map((group) => group.filter((b) => !selectedDuplicates.has(b.id)))
+      .map((group) => group.filter((b) => !deleted.has(b.id)))
       .filter((group) => group.length > 1);
 
     selectedDuplicates.clear();
     selectedDuplicates = selectedDuplicates;
-    allBookmarks.invalidate();
   }
 
   // Delete all duplicates (keeps first in each group)
@@ -944,18 +1062,15 @@
     const toDelete = duplicates.flatMap((group) => group.slice(1).map((b) => b.id));
     if (toDelete.length === 0) return;
 
-    try {
-      const result = await deleteBookmarks(toDelete);
-      console.log(`Deleted ${result.success} duplicate bookmarks`);
-    } catch (err) {
-      console.error('Error deleting duplicates:', err);
-    }
+    const result = await runBulkDelete(toDelete, {
+      title: 'Delete all duplicates',
+      message: `Delete ${toDelete.length} duplicate(s), keeping the oldest copy in each group? They stay recoverable from the trash for 30 days.`,
+    });
+    if (!result) return;
 
-    // Clear duplicates list since all duplicates are removed
     duplicates = [];
     selectedDuplicates.clear();
     selectedDuplicates = selectedDuplicates;
-    allBookmarks.invalidate();
   }
 
   // Run smart similar detection on demand
@@ -996,35 +1111,29 @@
   }
 
   async function deleteFromComparison(bookmarkId) {
-    try {
-      await deleteBookmarks([bookmarkId]);
+    const result = await runBulkDelete([bookmarkId]);
+    if (!result) return;
 
-      // Remove pairs containing this bookmark
-      enhancedSimilarPairs = enhancedSimilarPairs.filter(
-        (p) => p.bookmark1.id !== bookmarkId && p.bookmark2.id !== bookmarkId,
-      );
+    // Remove pairs containing this bookmark
+    enhancedSimilarPairs = enhancedSimilarPairs.filter(
+      (p) => p.bookmark1.id !== bookmarkId && p.bookmark2.id !== bookmarkId,
+    );
 
-      // Update stats
-      if (enhancedSimilarStats) {
-        enhancedSimilarStats = {
-          ...enhancedSimilarStats,
-          total: enhancedSimilarPairs.length,
-        };
-      }
+    // Update stats
+    if (enhancedSimilarStats) {
+      enhancedSimilarStats = {
+        ...enhancedSimilarStats,
+        total: enhancedSimilarPairs.length,
+      };
+    }
 
-      // Close modal if the deleted bookmark was in comparison
-      if (
-        selectedComparisonPair &&
-        (selectedComparisonPair.bookmark1.id === bookmarkId ||
-          selectedComparisonPair.bookmark2.id === bookmarkId)
-      ) {
-        closeComparisonModal();
-      }
-
-      // Invalidate cache but don't reload the page
-      allBookmarks.invalidate();
-    } catch (err) {
-      console.error('Error deleting bookmark from comparison:', err);
+    // Close modal if the deleted bookmark was in comparison
+    if (
+      selectedComparisonPair &&
+      (selectedComparisonPair.bookmark1.id === bookmarkId ||
+        selectedComparisonPair.bookmark2.id === bookmarkId)
+    ) {
+      closeComparisonModal();
     }
   }
 
@@ -1051,27 +1160,21 @@
   }
 
   async function deleteUselessBookmark(bookmarkId, category) {
-    try {
-      await deleteBookmarks([bookmarkId]);
+    const result = await runBulkDelete([bookmarkId]);
+    if (!result || !uselessBookmarks) return;
 
-      // Update the useless bookmarks list
-      if (uselessBookmarks) {
-        uselessBookmarks = {
-          ...uselessBookmarks,
-          [category]: uselessBookmarks[category].filter((b) => b.id !== bookmarkId),
-          summary: {
-            ...uselessBookmarks.summary,
-            total: uselessBookmarks.summary.total - 1,
-            byCategory: {
-              ...uselessBookmarks.summary.byCategory,
-              [category]: uselessBookmarks.summary.byCategory[category] - 1,
-            },
-          },
-        };
-      }
-    } catch (err) {
-      console.error('Error deleting useless bookmark:', err);
-    }
+    uselessBookmarks = {
+      ...uselessBookmarks,
+      [category]: uselessBookmarks[category].filter((b) => b.id !== bookmarkId),
+      summary: {
+        ...uselessBookmarks.summary,
+        total: uselessBookmarks.summary.total - 1,
+        byCategory: {
+          ...uselessBookmarks.summary.byCategory,
+          [category]: uselessBookmarks.summary.byCategory[category] - 1,
+        },
+      },
+    };
   }
 
   async function deleteAllUselessInCategory(category) {
@@ -1079,19 +1182,17 @@
       return;
 
     const count = uselessBookmarks[category].length;
-    const confirmed = confirm(
-      `Are you sure you want to delete all ${count} bookmarks in "${category}"? This action cannot be undone.`,
-    );
-    if (!confirmed) return;
-
     deletingUseless = true;
-    isBulkDeleting = true;
-
     try {
-      const bookmarkIds = uselessBookmarks[category].map((b) => b.id);
-      await deleteBookmarks(bookmarkIds);
+      const result = await runBulkDelete(
+        uselessBookmarks[category].map((b) => b.id),
+        {
+          title: 'Delete cleanup candidates',
+          message: `Delete all ${count} bookmarks in "${category}"? They stay recoverable from the trash for 30 days.`,
+        },
+      );
+      if (!result) return;
 
-      // Update the useless bookmarks list
       uselessBookmarks = {
         ...uselessBookmarks,
         [category]: [],
@@ -1104,13 +1205,8 @@
           },
         },
       };
-    } catch (err) {
-      console.error('Error deleting useless bookmarks:', err);
     } finally {
       deletingUseless = false;
-      setTimeout(() => {
-        isBulkDeleting = false;
-      }, 500);
     }
   }
 
@@ -1129,7 +1225,7 @@
     selectedBookmarks.clear();
   }
 
-  function openSelectedBookmarks() {
+  async function openSelectedBookmarks() {
     if ($selectedBookmarks.size === 0) return;
 
     const bookmarkIds = Array.from($selectedBookmarks);
@@ -1137,13 +1233,12 @@
 
     // Warn if opening too many URLs
     if (selectedBookmarkObjects.length > 20) {
-      if (
-        !confirm(
-          `You are about to open ${selectedBookmarkObjects.length} URLs. This may slow down your browser. Continue?`,
-        )
-      ) {
-        return;
-      }
+      const accepted = await confirmAction({
+        title: 'Open many tabs',
+        message: `You are about to open ${selectedBookmarkObjects.length} URLs. This may slow down your browser. Continue?`,
+        confirmLabel: 'Open all',
+      });
+      if (!accepted) return;
     }
 
     // Open all selected bookmarks
@@ -1152,146 +1247,34 @@
       const active = index === 0;
       chrome.tabs.create({ url: bookmark.url, active });
     });
-
-    // Optionally clear selection after opening
-    // selectedBookmarks.clear();
   }
 
   async function deleteSelectedBookmarks() {
     if ($selectedBookmarks.size === 0) return;
 
-    if (!confirm(`Are you sure you want to delete ${$selectedBookmarks.size} bookmark(s)?`)) {
-      return;
-    }
+    const bookmarkIds = Array.from($selectedBookmarks);
+    const result = await runBulkDelete(bookmarkIds, {
+      title: 'Delete selected bookmarks',
+      message: `Delete ${bookmarkIds.length} selected bookmark(s)? They stay recoverable from the trash for 30 days.`,
+    });
+    if (!result) return;
 
-    isBulkDeleting = true;
-    try {
-      const bookmarkIds = Array.from($selectedBookmarks);
-      const result = await deleteBookmarks(bookmarkIds);
+    // Update local state immediately without full page reload
+    const deleted = new Set(result.deletedIds);
+    bookmarks = bookmarks.filter((b) => !deleted.has(b.id));
+    totalCount = Math.max(0, totalCount - deleted.size);
 
-      if (result.errors && result.errors.length > 0) {
-        console.error('Some bookmarks could not be deleted:', result.errors);
-      }
-
-      // Update local state immediately without full page reload
-      bookmarks = bookmarks.filter((b) => !bookmarkIds.includes(b.id));
-      const deletedCount = result.success ? bookmarkIds.length : 0;
-      totalCount = Math.max(0, totalCount - deletedCount);
-
-      // Invalidate cache for fresh data on next load
-      allBookmarks.invalidate();
-
-      // Clear selections
-      selectedBookmarks.clear();
-      multiSelectMode = false;
-
-      // Refresh sidebar stats
-      if (sidebarRef && sidebarRef.refresh) {
-        sidebarRef.refresh();
-      }
-
-      // Update quick stats
-      getQuickStats().then((s) => (quickStats = s));
-    } catch (err) {
-      console.error('Error deleting bookmarks:', err);
-      alert('Error deleting bookmarks. Please try again.');
-    } finally {
-      setTimeout(() => {
-        isBulkDeleting = false;
-      }, 500);
-    }
+    selectedBookmarks.clear();
+    multiSelectMode = false;
   }
 
   async function handleDeleteSingle(event) {
     const { bookmarkId } = event.detail;
+    const result = await runBulkDelete([bookmarkId]);
+    if (!result) return;
 
-    // Find the bookmark to store for undo
-    const bookmarkToDelete = bookmarks.find((b) => b.id === bookmarkId);
-    if (!bookmarkToDelete) return;
-
-    try {
-      await deleteBookmarks([bookmarkId]);
-
-      // Update local state immediately without full page reload
-      bookmarks = bookmarks.filter((b) => b.id !== bookmarkId);
-      totalCount = Math.max(0, totalCount - 1);
-
-      // Invalidate cache for fresh data on next load
-      allBookmarks.invalidate();
-
-      // Refresh sidebar stats
-      if (sidebarRef && sidebarRef.refresh) {
-        sidebarRef.refresh();
-      }
-
-      // Clear any existing undo timeout
-      if (undoDeleteTimeout) {
-        clearTimeout(undoDeleteTimeout);
-      }
-
-      // Show undo toast
-      undoDeleteToast = {
-        bookmark: bookmarkToDelete,
-        title: bookmarkToDelete.title || 'Bookmark',
-      };
-
-      // Auto-dismiss after 5 seconds
-      undoDeleteTimeout = setTimeout(() => {
-        undoDeleteToast = null;
-      }, 5000);
-    } catch (err) {
-      console.error('Error deleting bookmark:', err);
-      alert('Error deleting bookmark. Please try again.');
-    }
-  }
-
-  async function handleUndoDelete() {
-    if (!undoDeleteToast) return;
-
-    try {
-      const original = undoDeleteToast.bookmark;
-      // Chrome assigns a fresh id on re-create, so key the restored record to it
-      let restored = { ...original };
-      try {
-        const created = await chrome.bookmarks.create({
-          parentId: original.parentId || '1',
-          title: original.title,
-          url: original.url,
-        });
-        restored = { ...original, id: created.id, parentId: created.parentId };
-      } catch (chromeErr) {
-        console.warn('Could not restore to Chrome bookmarks:', chromeErr);
-      }
-
-      await upsertBookmark(restored);
-
-      // Update local state
-      bookmarks = [...bookmarks, restored].sort((a, b) => b.dateAdded - a.dateAdded);
-      totalCount = totalCount + 1;
-
-      // Invalidate cache
-      allBookmarks.invalidate();
-
-      // Refresh sidebar
-      if (sidebarRef && sidebarRef.refresh) {
-        sidebarRef.refresh();
-      }
-
-      // Clear the toast
-      if (undoDeleteTimeout) {
-        clearTimeout(undoDeleteTimeout);
-      }
-      undoDeleteToast = null;
-    } catch (err) {
-      console.error('Error restoring bookmark:', err);
-    }
-  }
-
-  function dismissUndoToast() {
-    if (undoDeleteTimeout) {
-      clearTimeout(undoDeleteTimeout);
-    }
-    undoDeleteToast = null;
+    bookmarks = bookmarks.filter((b) => b.id !== bookmarkId);
+    totalCount = Math.max(0, totalCount - result.deletedIds.length);
   }
 
   async function handleEnrichBookmark(event) {
@@ -1307,12 +1290,11 @@
         // Refresh the list to show new metadata
         await loadBookmarks(currentPage, false);
       } else {
-        console.error('Enrichment failed:', response.error);
-        alert('Enrichment failed: ' + response.error);
+        notify('Enrichment failed: ' + response.error, { type: 'error' });
       }
     } catch (err) {
       console.error('Error enriching bookmark:', err);
-      alert('Error enriching bookmark. Please try again.');
+      notify('Error enriching bookmark: ' + err.message, { type: 'error' });
     }
   }
 
@@ -1326,13 +1308,14 @@
     try {
       const result = await downloadBackup(backupFormat);
       if (result.success) {
-        alert(
-          `Backup saved: ${result.filename}\n\nContains:\n- ${result.metadata.totalBookmarks} bookmarks\n- ${result.metadata.enrichedCount} enriched\n- ${result.metadata.categorizedCount} categorized`,
+        notify(
+          `Backup saved: ${result.filename} (${result.metadata.totalBookmarks} bookmarks, ${result.metadata.enrichedCount} enriched)`,
+          { type: 'success', timeout: 8000 },
         );
       }
     } catch (err) {
       console.error('Error creating backup:', err);
-      alert('Error creating backup: ' + err.message);
+      notify('Error creating backup: ' + err.message, { type: 'error' });
     } finally {
       backupInProgress = false;
     }
@@ -1340,22 +1323,22 @@
 
   async function handleRestoreBackup() {
     if (!restoreFile) {
-      alert('Please select a backup file first');
+      notify('Please select a backup file first', { type: 'error' });
       return;
     }
 
     if (!backupValidation || !backupValidation.valid) {
-      alert('Please select a valid backup file');
+      notify('Please select a valid backup file', { type: 'error' });
       return;
     }
 
-    if (
-      !confirm(
-        `Restore backup from ${backupValidation.createdAt}?\n\nThis will replace your current data with:\n- ${backupValidation.metadata.totalBookmarks} bookmarks\n- ${backupValidation.metadata.enrichedCount} enriched`,
-      )
-    ) {
-      return;
-    }
+    const accepted = await confirmAction({
+      title: 'Restore backup',
+      message: `Restore the backup from ${backupValidation.createdAt}?\n\nThis replaces your current data with ${backupValidation.metadata.totalBookmarks} bookmarks (${backupValidation.metadata.enrichedCount} enriched).`,
+      confirmLabel: 'Restore',
+      danger: true,
+    });
+    if (!accepted) return;
 
     restoreInProgress = true;
     try {
@@ -1374,9 +1357,9 @@
       const result = await restoreFromBackup(backup);
 
       if (result.success) {
-        alert(
-          `Restore complete!\n\n- ${result.results.bookmarksRestored} bookmarks restored\n\nRefreshing...`,
-        );
+        notify(`Restored ${result.results.bookmarksRestored} bookmarks. Reloading…`, {
+          type: 'success',
+        });
         restoreFile = null;
         backupValidation = null;
         // Reload the page to refresh all data
@@ -1384,7 +1367,7 @@
       }
     } catch (err) {
       console.error('Error restoring backup:', err);
-      alert('Error restoring backup: ' + err.message);
+      notify('Error restoring backup: ' + err.message, { type: 'error' });
     } finally {
       restoreInProgress = false;
     }
@@ -1429,14 +1412,53 @@
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Error exporting bookmarks:', err);
-      alert('Error exporting bookmarks. Please try again.');
+      notify('Error exporting bookmarks: ' + err.message, { type: 'error' });
     }
+  }
+
+  // Trash
+  async function loadTrash() {
+    loadingTrash = true;
+    try {
+      trashItems = await getTrashItems();
+    } finally {
+      loadingTrash = false;
+    }
+  }
+
+  async function restoreTrashItems(ids) {
+    const { restored, errors } = await restoreFromTrash(ids);
+    await loadTrash();
+    allBookmarks.invalidate();
+    invalidateSearchIndex();
+    sidebarRef?.refresh?.();
+    if (errors.length > 0) {
+      notify(`Restored ${restored}, ${errors.length} failed`, { type: 'error' });
+    } else {
+      notify(`Restored ${restored} bookmark${restored === 1 ? '' : 's'}`, { type: 'success' });
+    }
+  }
+
+  async function emptyTrash() {
+    const accepted = await confirmAction({
+      title: 'Empty trash',
+      message: `Permanently delete ${trashItems.length} trashed bookmark(s)? This cannot be undone.`,
+      confirmLabel: 'Empty trash',
+      danger: true,
+    });
+    if (!accepted) return;
+
+    const purged = await purgeTrash();
+    trashItems = [];
+    notify(`Permanently deleted ${purged} bookmark(s)`);
   }
 </script>
 
 <svelte:head>
   <title>Bookmark Insight Dashboard</title>
 </svelte:head>
+
+<svelte:window on:keydown={handleGlobalKeydown} />
 
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
   <DashboardHeader
@@ -1448,7 +1470,13 @@
   <div class="max-w-[96rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
     {#if currentView === 'bookmarks'}
       <div class="mb-4">
-        <SearchBar value={$searchQueryStore} on:search={handleSearch} />
+        <SearchBar bind:this={searchBarRef} value={$searchQueryStore} on:search={handleSearch} />
+        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          Shortcuts: <kbd class="font-mono">/</kbd> search · <kbd class="font-mono">j</kbd>/<kbd
+            class="font-mono">k</kbd
+          >
+          move · <kbd class="font-mono">Enter</kbd> open · <kbd class="font-mono">Esc</kbd> close
+        </p>
       </div>
 
       <div class="flex gap-6 min-h-0">
@@ -1643,29 +1671,43 @@
             {/if}
 
             <!-- Bookmarks Display -->
-            {#if viewMode === 'list'}
-              <div
-                class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700 transition-colors"
-              >
-                <div class="max-w-full overflow-x-auto">
-                  {#each bookmarks as bookmark (bookmark.id)}
-                    <BookmarkListItem
-                      {bookmark}
-                      {multiSelectMode}
-                      {parsedSearchQuery}
-                      on:delete={handleDeleteSingle}
-                      on:enrich={handleEnrichBookmark}
-                    />
+            <div bind:this={resultsContainer}>
+              {#if viewMode === 'list'}
+                <div
+                  class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700 transition-colors"
+                >
+                  <div class="max-w-full overflow-x-auto">
+                    {#each bookmarks as bookmark, index (bookmark.id)}
+                      <div
+                        data-result-row
+                        class:ring-2={index === activeIndex}
+                        class="ring-inset ring-blue-500"
+                      >
+                        <BookmarkListItem
+                          {bookmark}
+                          {multiSelectMode}
+                          {parsedSearchQuery}
+                          on:delete={handleDeleteSingle}
+                          on:enrich={handleEnrichBookmark}
+                        />
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {:else}
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {#each bookmarks as bookmark, index (bookmark.id)}
+                    <div
+                      data-result-row
+                      class:ring-2={index === activeIndex}
+                      class="ring-blue-500 rounded-lg"
+                    >
+                      <BookmarkCard {bookmark} {parsedSearchQuery} />
+                    </div>
                   {/each}
                 </div>
-              </div>
-            {:else}
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {#each bookmarks as bookmark (bookmark.id)}
-                  <BookmarkCard {bookmark} {parsedSearchQuery} />
-                {/each}
-              </div>
-            {/if}
+              {/if}
+            </div>
 
             <!-- Load More Button -->
             {#if hasMore}
@@ -1866,6 +1908,8 @@
               {#if enrichmentProgress && runningEnrichment}
                 <div
                   class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg"
+                  role="status"
+                  aria-live="polite"
                 >
                   <div class="mb-3">
                     <div class="flex justify-between items-center mb-2">
@@ -2150,7 +2194,7 @@
 
               <!-- Progress -->
               {#if runningDeepAnalysis && deepAnalysisProgress}
-                <div class="mb-4">
+                <div class="mb-4" role="status" aria-live="polite">
                   <div class="flex justify-between text-sm text-gray-600 mb-1">
                     <span>Analyzing bookmarks...</span>
                     <span>{deepAnalysisProgress.current} / {deepAnalysisProgress.total}</span>
@@ -2360,6 +2404,8 @@
               {#if reEnrichingDeadLinks && reEnrichProgress}
                 <div
                   class="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800"
+                  role="status"
+                  aria-live="polite"
                 >
                   <div class="flex items-center justify-between mb-2">
                     <span class="text-sm font-medium text-blue-800 dark:text-blue-300"
@@ -3182,6 +3228,81 @@
             </div>
           </div>
 
+          <!-- Trash -->
+          <div
+            class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors"
+          >
+            <div
+              class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center gap-4"
+            >
+              <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
+                  🗑️ Trash {#if !loadingTrash}({trashItems.length}){/if}
+                </h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Deleted bookmarks are kept here for 30 days and can be restored
+                </p>
+              </div>
+              {#if trashItems.length > 0}
+                <div class="flex gap-2 flex-shrink-0">
+                  <button
+                    on:click={() => restoreTrashItems(trashItems.map((b) => b.id))}
+                    class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  >
+                    Restore All
+                  </button>
+                  <button
+                    on:click={emptyTrash}
+                    class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                  >
+                    Empty Trash
+                  </button>
+                </div>
+              {/if}
+            </div>
+            <div class="p-6">
+              {#if loadingTrash}
+                <div class="flex items-center justify-center py-8">
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-500"></div>
+                </div>
+              {:else if trashItems.length === 0}
+                <p class="text-gray-500 dark:text-gray-400">Trash is empty.</p>
+              {:else}
+                <div class="space-y-2 max-h-[24rem] overflow-y-auto">
+                  {#each trashItems as bookmark (bookmark.id)}
+                    <div
+                      class="flex items-start justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700"
+                    >
+                      <div class="flex-1 min-w-0">
+                        <div
+                          class="text-sm font-medium text-gray-800 dark:text-gray-300 truncate"
+                          title={bookmark.title}
+                        >
+                          {bookmark.title}
+                        </div>
+                        <div
+                          class="text-xs text-gray-500 dark:text-gray-400 truncate"
+                          title={bookmark.url}
+                        >
+                          {bookmark.url}
+                        </div>
+                        <div class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                          Deleted {new Date(bookmark.deletedAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <button
+                        on:click={() => restoreTrashItems([bookmark.id])}
+                        class="flex-shrink-0 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
+
           <!-- Backup & Restore Panel -->
           <div
             class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors"
@@ -3357,312 +3478,266 @@
 
 <!-- Comparison Modal for Similar Bookmarks -->
 {#if selectedComparisonPair}
-  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-  <div
-    class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 transition-all backdrop-blur-sm"
-    on:click={closeComparisonModal}
-  >
-    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-    <div
-      class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700 animate-in fade-in zoom-in duration-200"
-      on:click|stopPropagation
-    >
-      <div
-        class="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center z-10"
-      >
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-300">
-          Compare Similar Bookmarks
-        </h3>
-        <button
-          on:click={closeComparisonModal}
-          class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-        >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            ></path>
-          </svg>
-        </button>
-      </div>
-
-      <div class="p-6">
-        <!-- Similarity Score -->
-        <div class="text-center mb-6">
-          <div
-            class="inline-flex items-center px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-full border border-indigo-200 dark:border-indigo-800/50"
-          >
-            <span class="text-2xl font-bold text-indigo-700 dark:text-indigo-400"
-              >{Math.round(selectedComparisonPair.similarity * 100)}%</span
-            >
-            <span class="ml-2 text-sm text-indigo-600 dark:text-indigo-300">Overall Similarity</span
-            >
-          </div>
-        </div>
-
-        <!-- Similarity Breakdown -->
+  <Modal title="Compare Similar Bookmarks" size="max-w-4xl" on:close={closeComparisonModal}>
+    <div class="p-6">
+      <!-- Similarity Score -->
+      <div class="text-center mb-6">
         <div
-          class="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700/50"
+          class="inline-flex items-center px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-full border border-indigo-200 dark:border-indigo-800/50"
         >
-          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
-            Similarity Breakdown
-          </h4>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div class="text-center">
-              <div class="text-lg font-bold text-blue-600 dark:text-blue-400">
-                {Math.round((selectedComparisonPair.breakdown?.titleFuzzy || 0) * 100)}%
-              </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">Title (Fuzzy)</div>
+          <span class="text-2xl font-bold text-indigo-700 dark:text-indigo-400"
+            >{Math.round(selectedComparisonPair.similarity * 100)}%</span
+          >
+          <span class="ml-2 text-sm text-indigo-600 dark:text-indigo-300">Overall Similarity</span>
+        </div>
+      </div>
+
+      <!-- Similarity Breakdown -->
+      <div
+        class="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-700/50"
+      >
+        <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+          Similarity Breakdown
+        </h4>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="text-center">
+            <div class="text-lg font-bold text-blue-600 dark:text-blue-400">
+              {Math.round((selectedComparisonPair.breakdown?.titleFuzzy || 0) * 100)}%
             </div>
-            <div class="text-center">
-              <div class="text-lg font-bold text-green-600 dark:text-green-400">
-                {Math.round((selectedComparisonPair.breakdown?.titleWords || 0) * 100)}%
-              </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">Title (Words)</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">Title (Fuzzy)</div>
+          </div>
+          <div class="text-center">
+            <div class="text-lg font-bold text-green-600 dark:text-green-400">
+              {Math.round((selectedComparisonPair.breakdown?.titleWords || 0) * 100)}%
             </div>
-            <div class="text-center">
-              <div class="text-lg font-bold text-purple-600 dark:text-purple-400">
-                {Math.round((selectedComparisonPair.breakdown?.descriptionWords || 0) * 100)}%
-              </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">Description</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">Title (Words)</div>
+          </div>
+          <div class="text-center">
+            <div class="text-lg font-bold text-purple-600 dark:text-purple-400">
+              {Math.round((selectedComparisonPair.breakdown?.descriptionWords || 0) * 100)}%
             </div>
-            <div class="text-center">
-              <div class="text-lg font-bold text-orange-600 dark:text-orange-400">
-                {Math.round((selectedComparisonPair.breakdown?.keywordsOverlap || 0) * 100)}%
+            <div class="text-xs text-gray-500 dark:text-gray-400">Description</div>
+          </div>
+          <div class="text-center">
+            <div class="text-lg font-bold text-orange-600 dark:text-orange-400">
+              {Math.round((selectedComparisonPair.breakdown?.keywordsOverlap || 0) * 100)}%
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">Keywords</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Side by Side Comparison -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Bookmark 1 -->
+        <div
+          class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800"
+        >
+          <div
+            class="bg-blue-50 dark:bg-blue-900/30 px-4 py-2 border-b border-blue-200 dark:border-blue-800/50"
+          >
+            <span class="text-sm font-medium text-blue-800 dark:text-blue-300">Bookmark 1</span>
+          </div>
+          <div class="p-4 space-y-3">
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">Title</div>
+              <div class="text-sm font-medium text-gray-900 dark:text-gray-300">
+                {selectedComparisonPair.bookmark1.title}
               </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">Keywords</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">URL</div>
+              <a
+                href={safeHref(selectedComparisonPair.bookmark1.url)}
+                target="_blank"
+                rel="noopener"
+                class="text-sm text-blue-600 hover:underline break-all"
+                >{selectedComparisonPair.bookmark1.url}</a
+              >
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Domain</div>
+              <div class="text-sm">{selectedComparisonPair.bookmark1.domain || 'N/A'}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Category</div>
+              <div class="text-sm">
+                {selectedComparisonPair.bookmark1.category || 'Uncategorized'}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Description</div>
+              <div class="text-sm text-gray-600">
+                {selectedComparisonPair.bookmark1.description || 'No description'}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Keywords</div>
+              <div class="flex flex-wrap gap-1">
+                {#if selectedComparisonPair.bookmark1.keywords?.length > 0}
+                  {#each selectedComparisonPair.bookmark1.keywords.slice(0, 5) as keyword}
+                    <span class="px-2 py-0.5 bg-gray-100 text-xs rounded">{keyword}</span>
+                  {/each}
+                {:else}
+                  <span class="text-sm text-gray-400">No keywords</span>
+                {/if}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Added</div>
+              <div class="text-sm">
+                {new Date(selectedComparisonPair.bookmark1.dateAdded).toLocaleDateString()}
+              </div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Metadata Coverage</div>
+              <div class="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  class="bg-blue-600 h-2 rounded-full"
+                  style="width: {selectedComparisonPair.coverage1.percentage}%"
+                ></div>
+              </div>
+              <div class="text-xs text-gray-400 mt-1">
+                {selectedComparisonPair.coverage1.percentage.toFixed(0)}%
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-gray-200 flex gap-2">
+              <a
+                href={safeHref(selectedComparisonPair.bookmark1.url)}
+                target="_blank"
+                rel="noopener"
+                class="flex-1 px-3 py-2 text-center text-sm bg-gray-100 rounded hover:bg-gray-200"
+              >
+                Open
+              </a>
+              <button
+                on:click={() => deleteFromComparison(selectedComparisonPair.bookmark1.id)}
+                class="flex-1 px-3 py-2 text-center text-sm bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete This
+              </button>
             </div>
           </div>
         </div>
 
-        <!-- Side by Side Comparison -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <!-- Bookmark 1 -->
-          <div
-            class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800"
-          >
-            <div
-              class="bg-blue-50 dark:bg-blue-900/30 px-4 py-2 border-b border-blue-200 dark:border-blue-800/50"
-            >
-              <span class="text-sm font-medium text-blue-800 dark:text-blue-300">Bookmark 1</span>
-            </div>
-            <div class="p-4 space-y-3">
-              <div>
-                <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">Title</div>
-                <div class="text-sm font-medium text-gray-900 dark:text-gray-300">
-                  {selectedComparisonPair.bookmark1.title}
-                </div>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">URL</div>
-                <a
-                  href={safeHref(selectedComparisonPair.bookmark1.url)}
-                  target="_blank"
-                  rel="noopener"
-                  class="text-sm text-blue-600 hover:underline break-all"
-                  >{selectedComparisonPair.bookmark1.url}</a
-                >
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Domain</div>
-                <div class="text-sm">{selectedComparisonPair.bookmark1.domain || 'N/A'}</div>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Category</div>
-                <div class="text-sm">
-                  {selectedComparisonPair.bookmark1.category || 'Uncategorized'}
-                </div>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Description</div>
-                <div class="text-sm text-gray-600">
-                  {selectedComparisonPair.bookmark1.description || 'No description'}
-                </div>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Keywords</div>
-                <div class="flex flex-wrap gap-1">
-                  {#if selectedComparisonPair.bookmark1.keywords?.length > 0}
-                    {#each selectedComparisonPair.bookmark1.keywords.slice(0, 5) as keyword}
-                      <span class="px-2 py-0.5 bg-gray-100 text-xs rounded">{keyword}</span>
-                    {/each}
-                  {:else}
-                    <span class="text-sm text-gray-400">No keywords</span>
-                  {/if}
-                </div>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Added</div>
-                <div class="text-sm">
-                  {new Date(selectedComparisonPair.bookmark1.dateAdded).toLocaleDateString()}
-                </div>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Metadata Coverage</div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-blue-600 h-2 rounded-full"
-                    style="width: {selectedComparisonPair.coverage1.percentage}%"
-                  ></div>
-                </div>
-                <div class="text-xs text-gray-400 mt-1">
-                  {selectedComparisonPair.coverage1.percentage.toFixed(0)}%
-                </div>
-              </div>
-
-              <div class="pt-3 border-t border-gray-200 flex gap-2">
-                <a
-                  href={safeHref(selectedComparisonPair.bookmark1.url)}
-                  target="_blank"
-                  rel="noopener"
-                  class="flex-1 px-3 py-2 text-center text-sm bg-gray-100 rounded hover:bg-gray-200"
-                >
-                  Open
-                </a>
-                <button
-                  on:click={() => deleteFromComparison(selectedComparisonPair.bookmark1.id)}
-                  class="flex-1 px-3 py-2 text-center text-sm bg-red-600 text-white rounded hover:bg-red-700"
-                >
-                  Delete This
-                </button>
-              </div>
-            </div>
+        <!-- Bookmark 2 -->
+        <div class="border border-gray-200 rounded-lg overflow-hidden">
+          <div class="bg-green-50 px-4 py-2 border-b border-green-200">
+            <span class="text-sm font-medium text-green-800">Bookmark 2</span>
           </div>
-
-          <!-- Bookmark 2 -->
-          <div class="border border-gray-200 rounded-lg overflow-hidden">
-            <div class="bg-green-50 px-4 py-2 border-b border-green-200">
-              <span class="text-sm font-medium text-green-800">Bookmark 2</span>
+          <div class="p-4 space-y-3">
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Title</div>
+              <div class="text-sm font-medium">{selectedComparisonPair.bookmark2.title}</div>
             </div>
-            <div class="p-4 space-y-3">
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Title</div>
-                <div class="text-sm font-medium">{selectedComparisonPair.bookmark2.title}</div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">URL</div>
+              <a
+                href={safeHref(selectedComparisonPair.bookmark2.url)}
+                target="_blank"
+                rel="noopener"
+                class="text-sm text-blue-600 hover:underline break-all"
+                >{selectedComparisonPair.bookmark2.url}</a
+              >
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Domain</div>
+              <div class="text-sm">{selectedComparisonPair.bookmark2.domain || 'N/A'}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Category</div>
+              <div class="text-sm">
+                {selectedComparisonPair.bookmark2.category || 'Uncategorized'}
               </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">URL</div>
-                <a
-                  href={safeHref(selectedComparisonPair.bookmark2.url)}
-                  target="_blank"
-                  rel="noopener"
-                  class="text-sm text-blue-600 hover:underline break-all"
-                  >{selectedComparisonPair.bookmark2.url}</a
-                >
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Description</div>
+              <div class="text-sm text-gray-600">
+                {selectedComparisonPair.bookmark2.description || 'No description'}
               </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Domain</div>
-                <div class="text-sm">{selectedComparisonPair.bookmark2.domain || 'N/A'}</div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Keywords</div>
+              <div class="flex flex-wrap gap-1">
+                {#if selectedComparisonPair.bookmark2.keywords?.length > 0}
+                  {#each selectedComparisonPair.bookmark2.keywords.slice(0, 5) as keyword}
+                    <span class="px-2 py-0.5 bg-gray-100 text-xs rounded">{keyword}</span>
+                  {/each}
+                {:else}
+                  <span class="text-sm text-gray-400">No keywords</span>
+                {/if}
               </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Category</div>
-                <div class="text-sm">
-                  {selectedComparisonPair.bookmark2.category || 'Uncategorized'}
-                </div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Added</div>
+              <div class="text-sm">
+                {new Date(selectedComparisonPair.bookmark2.dateAdded).toLocaleDateString()}
               </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Description</div>
-                <div class="text-sm text-gray-600">
-                  {selectedComparisonPair.bookmark2.description || 'No description'}
-                </div>
+            </div>
+            <div>
+              <div class="text-xs text-gray-500 uppercase mb-1">Metadata Coverage</div>
+              <div class="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  class="bg-green-600 h-2 rounded-full"
+                  style="width: {selectedComparisonPair.coverage2.percentage}%"
+                ></div>
               </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Keywords</div>
-                <div class="flex flex-wrap gap-1">
-                  {#if selectedComparisonPair.bookmark2.keywords?.length > 0}
-                    {#each selectedComparisonPair.bookmark2.keywords.slice(0, 5) as keyword}
-                      <span class="px-2 py-0.5 bg-gray-100 text-xs rounded">{keyword}</span>
-                    {/each}
-                  {:else}
-                    <span class="text-sm text-gray-400">No keywords</span>
-                  {/if}
-                </div>
+              <div class="text-xs text-gray-400 mt-1">
+                {selectedComparisonPair.coverage2.percentage.toFixed(0)}%
               </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Added</div>
-                <div class="text-sm">
-                  {new Date(selectedComparisonPair.bookmark2.dateAdded).toLocaleDateString()}
-                </div>
-              </div>
-              <div>
-                <div class="text-xs text-gray-500 uppercase mb-1">Metadata Coverage</div>
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    class="bg-green-600 h-2 rounded-full"
-                    style="width: {selectedComparisonPair.coverage2.percentage}%"
-                  ></div>
-                </div>
-                <div class="text-xs text-gray-400 mt-1">
-                  {selectedComparisonPair.coverage2.percentage.toFixed(0)}%
-                </div>
-              </div>
+            </div>
 
-              <div class="pt-3 border-t border-gray-200 flex gap-2">
-                <a
-                  href={safeHref(selectedComparisonPair.bookmark2.url)}
-                  target="_blank"
-                  rel="noopener"
-                  class="flex-1 px-3 py-2 text-center text-sm bg-gray-100 rounded hover:bg-gray-200"
-                >
-                  Open
-                </a>
-                <button
-                  on:click={() => deleteFromComparison(selectedComparisonPair.bookmark2.id)}
-                  class="flex-1 px-3 py-2 text-center text-sm bg-red-600 text-white rounded hover:bg-red-700"
-                >
-                  Delete This
-                </button>
-              </div>
+            <div class="pt-3 border-t border-gray-200 flex gap-2">
+              <a
+                href={safeHref(selectedComparisonPair.bookmark2.url)}
+                target="_blank"
+                rel="noopener"
+                class="flex-1 px-3 py-2 text-center text-sm bg-gray-100 rounded hover:bg-gray-200"
+              >
+                Open
+              </a>
+              <button
+                on:click={() => deleteFromComparison(selectedComparisonPair.bookmark2.id)}
+                class="flex-1 px-3 py-2 text-center text-sm bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete This
+              </button>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
+  </Modal>
 {/if}
 
-<!-- Undo Delete Toast -->
-{#if undoDeleteToast}
-  <div class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 animate-slide-up">
-    <div
-      class="bg-gray-900 dark:bg-gray-700 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3"
-    >
-      <span class="text-sm">
-        Deleted "{undoDeleteToast.title.length > 30
-          ? undoDeleteToast.title.slice(0, 30) + '...'
-          : undoDeleteToast.title}"
+<ConfirmDialog />
+<ToastHost />
+
+<!-- Bulk delete progress + cancel -->
+{#if bulkDeleteProgress}
+  <div
+    class="fixed bottom-4 right-4 z-[60] w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-4"
+    role="status"
+    aria-live="polite"
+  >
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-sm font-medium text-gray-800 dark:text-gray-200">Deleting bookmarks…</span>
+      <span class="text-xs text-gray-500 dark:text-gray-400">
+        {bulkDeleteProgress.processed} / {bulkDeleteProgress.total}
       </span>
-      <button
-        on:click={handleUndoDelete}
-        class="px-3 py-1 text-sm font-medium text-blue-400 hover:text-blue-300 hover:bg-gray-800 dark:hover:bg-gray-600 rounded transition-colors"
-      >
-        Undo
-      </button>
-      <button
-        on:click={dismissUndoToast}
-        class="text-gray-400 hover:text-white transition-colors"
-        title="Dismiss"
-      >
-        ✕
-      </button>
     </div>
+    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+      <div
+        class="bg-red-600 h-2 rounded-full transition-all duration-150"
+        style="width: {(bulkDeleteProgress.processed / bulkDeleteProgress.total) * 100}%"
+      ></div>
+    </div>
+    <button
+      on:click={cancelBulkDelete}
+      class="mt-3 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+    >
+      Cancel
+    </button>
   </div>
 {/if}
-
-<style>
-  @keyframes slide-up {
-    from {
-      opacity: 0;
-      transform: translate(-50%, 20px);
-    }
-    to {
-      opacity: 1;
-      transform: translate(-50%, 0);
-    }
-  }
-
-  .animate-slide-up {
-    animation: slide-up 0.2s ease-out;
-  }
-</style>

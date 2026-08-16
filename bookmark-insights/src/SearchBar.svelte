@@ -10,6 +10,50 @@
   let inputElement;
   let showHelp = false;
 
+  /** Focused by the dashboard's `/` and Ctrl+K shortcuts. */
+  export function focus() {
+    inputElement?.focus();
+    inputElement?.select();
+  }
+
+  // The query language supports 15 field filters that were documented only in
+  // the README. Typing a prefix now offers them inline.
+  const FIELD_HINTS = [
+    { token: 'category:', hint: 'Filter by category' },
+    { token: 'domain:', hint: 'Filter by domain' },
+    { token: 'folder:', hint: 'Filter by folder path' },
+    { token: 'platform:', hint: 'youtube, github, medium, …' },
+    { token: 'channel:', hint: 'Creator / YouTube channel' },
+    { token: 'author:', hint: 'Article author' },
+    { token: 'repo:', hint: 'owner/repo' },
+    { token: 'type:', hint: 'video, article, issue, repo, pr' },
+    { token: 'playlist:', hint: 'YouTube playlist id' },
+    { token: 'hasimage:', hint: 'yes / no' },
+    { token: 'accessed:', hint: 'yes / no' },
+    { token: 'stale:', hint: 'yes / no' },
+    { token: 'enriched:', hint: 'yes / no' },
+    { token: 'dead:', hint: 'yes / no' },
+  ];
+
+  let suggestionIndex = 0;
+
+  $: currentToken = value.split(/\s+/).pop() || '';
+  $: suggestions =
+    currentToken.length > 0 && !currentToken.includes(':')
+      ? FIELD_HINTS.filter((f) => f.token.startsWith(currentToken.toLowerCase())).slice(0, 6)
+      : [];
+  $: if (suggestions.length === 0) suggestionIndex = 0;
+
+  function applySuggestion(token) {
+    const parts = value.split(/(\s+)/);
+    parts[parts.length - 1] = token;
+    value = parts.join('');
+    suggestionIndex = 0;
+    inputElement?.focus();
+    clearTimeout(debounceTimer);
+    dispatch('search', { query: value });
+  }
+
   // Parse query to show visual feedback
   $: parsedQuery = parseQueryForDisplay(value);
 
@@ -63,7 +107,29 @@
   }
 
   function handleKeyDown(event) {
+    if (suggestions.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        suggestionIndex = (suggestionIndex + 1) % suggestions.length;
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        suggestionIndex = (suggestionIndex - 1 + suggestions.length) % suggestions.length;
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        applySuggestion(suggestions[suggestionIndex].token);
+        return;
+      }
+    }
+
     if (event.key === 'Escape') {
+      if (suggestions.length > 0) {
+        suggestionIndex = 0;
+        return;
+      }
       clearSearch();
     } else if (event.key === 'Enter') {
       // Immediate search on Enter
@@ -133,6 +199,39 @@
             ></path>
           </svg>
         </button>
+      {/if}
+
+      <!-- Field-filter autocomplete -->
+      {#if suggestions.length > 0}
+        <ul
+          class="absolute z-30 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden"
+        >
+          {#each suggestions as suggestion, index (suggestion.token)}
+            <li>
+              <button
+                type="button"
+                on:click={() => applySuggestion(suggestion.token)}
+                class="w-full flex items-center gap-3 px-3 py-1.5 text-left text-sm {index ===
+                suggestionIndex
+                  ? 'bg-blue-50 dark:bg-blue-900/40'
+                  : 'hover:bg-gray-50 dark:hover:bg-gray-700'}"
+              >
+                <code
+                  class="px-1.5 py-0.5 rounded text-xs bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-300 whitespace-nowrap"
+                  >{suggestion.token}</code
+                >
+                <span class="text-gray-500 dark:text-gray-400 text-xs truncate"
+                  >{suggestion.hint}</span
+                >
+              </button>
+            </li>
+          {/each}
+          <li
+            class="px-3 py-1 text-[11px] text-gray-400 dark:text-gray-500 border-t border-gray-100 dark:border-gray-700"
+          >
+            Tab to complete · ↑↓ to choose
+          </li>
+        </ul>
       {/if}
     </div>
     <button

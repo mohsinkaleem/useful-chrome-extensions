@@ -11,7 +11,8 @@ export const db = new Dexie('BookmarkInsightsDB');
 // migration (their upgrade bodies only logged), and Dexie upgrades an older
 // store directly to the newest declared version.
 // Version 6 drops `similarities`, which no code ever wrote to.
-db.version(6).stores({
+// Version 7 adds `trash`, the 30-day holding area every delete now passes through.
+db.version(7).stores({
   bookmarks:
     'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId, platform, creator, contentType, publishedDate',
   enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
@@ -20,6 +21,7 @@ db.version(6).stores({
   settings: 'key',
   similarities: null,
   computedMetrics: 'key',
+  trash: 'id, deletedAt',
 });
 
 // Define default settings
@@ -30,6 +32,7 @@ const DEFAULT_SETTINGS = {
   enrichmentFreshnessDays: 30, // Re-enrich bookmarks older than this many days (0 = always re-enrich)
   privacyMode: false, // If true, skip enrichment entirely - no outbound requests
   trackBrowsingBehavior: false, // If false, don't track tab visits (default OFF for privacy)
+  savedSearches: [], // Named queries shown in the sidebar: { id, name, query }
   dataVersion: 0, // Set by background.js; gates the update-time index rebuild
 };
 
@@ -529,6 +532,7 @@ export async function updateReadingListItem(url, hasBeenRead) {
 export async function initializeDatabase() {
   try {
     await initializeSettings();
+    await purgeExpiredTrash();
     console.log('Database initialized');
     return { success: true };
   } catch (error) {
@@ -932,35 +936,149 @@ export async function getDomainsByCount() {
 }
 
 /**
- * Delete multiple bookmarks
+ * Delete bookmarks from Chrome and IndexedDB, keeping a restorable copy in the
+ * `trash` table. Bulk deletes used to be irreversible while single deletes had
+ * an undo toast, which is exactly the wrong way round.
+ *
+ * @param {string[]} bookmarkIds
+ * @param {Object} [options]
+ * @param {(progress: {processed: number, total: number, deleted: number, failed: number}) => void} [options.onProgress]
+ * @param {AbortSignal} [options.signal] Stops the loop between removals.
+ * @returns {Promise<{success: number, deletedIds: string[], errors: Array, cancelled: boolean}>}
  */
-export async function deleteBookmarks(bookmarkIds) {
-  try {
-    const errors = [];
+export async function deleteBookmarks(bookmarkIds, options = {}) {
+  const { onProgress = null, signal = null } = options;
 
-    // Delete from Chrome bookmarks API
+  try {
+    // Snapshot first: after chrome.bookmarks.remove the background listener
+    // prunes the row, so the trash would otherwise keep nothing but the id.
+    const snapshots = await db.bookmarks.bulkGet(bookmarkIds);
+    const recordById = new Map();
+    snapshots.forEach((record, index) => {
+      if (record) recordById.set(bookmarkIds[index], record);
+    });
+
+    const errors = [];
+    const deletedIds = [];
+
     for (const id of bookmarkIds) {
+      if (signal?.aborted) break;
       try {
         await chrome.bookmarks.remove(id);
+        deletedIds.push(id);
       } catch (error) {
         console.error(`Error deleting bookmark ${id}:`, error);
         errors.push({ id, error: error.message });
       }
+      onProgress?.({
+        processed: deletedIds.length + errors.length,
+        total: bookmarkIds.length,
+        deleted: deletedIds.length,
+        failed: errors.length,
+      });
     }
 
-    // Remove from IndexedDB
-    await db.bookmarks.bulkDelete(bookmarkIds);
+    if (deletedIds.length > 0) {
+      const deletedAt = Date.now();
+      const trashRows = deletedIds
+        .map((id) => recordById.get(id))
+        .filter(Boolean)
+        .map((bookmark) => ({ ...bookmark, deletedAt }));
 
-    // Invalidate caches
-    await invalidateMetricCaches('delete');
+      if (trashRows.length > 0) {
+        await db.trash.bulkPut(trashRows);
+      }
+      await db.bookmarks.bulkDelete(deletedIds);
+      await invalidateMetricCaches('delete');
+    }
 
     return {
-      success: bookmarkIds.length - errors.length,
-      errors: errors,
+      success: deletedIds.length,
+      deletedIds,
+      errors,
+      cancelled: Boolean(signal?.aborted),
     };
   } catch (error) {
     console.error('Error deleting bookmarks:', error);
     throw error;
+  }
+}
+
+// =============================================
+// Trash
+// =============================================
+
+const TRASH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Trashed records, newest first. */
+export async function getTrashItems() {
+  try {
+    return await db.trash.orderBy('deletedAt').reverse().toArray();
+  } catch (error) {
+    console.error('Error reading trash:', error);
+    return [];
+  }
+}
+
+/**
+ * Re-create trashed bookmarks in Chrome and restore their enrichment data.
+ * Chrome assigns a fresh id on create, so the restored record is re-keyed to it.
+ * @param {string[]} ids Original bookmark ids, as stored in the trash.
+ */
+export async function restoreFromTrash(ids) {
+  const rows = (await db.trash.bulkGet(ids)).filter(Boolean);
+  const restoredTrashIds = [];
+  const errors = [];
+
+  for (const row of rows) {
+    const bookmark = { ...row };
+    delete bookmark.deletedAt;
+    try {
+      const created = await chrome.bookmarks.create({
+        parentId: bookmark.parentId || '1',
+        title: bookmark.title,
+        url: bookmark.url,
+      });
+      await db.bookmarks.put({ ...bookmark, id: created.id, parentId: created.parentId });
+      restoredTrashIds.push(row.id);
+    } catch (error) {
+      console.error(`Error restoring bookmark ${row.id}:`, error);
+      errors.push({ id: row.id, error: error.message });
+    }
+  }
+
+  if (restoredTrashIds.length > 0) {
+    await db.trash.bulkDelete(restoredTrashIds);
+    await invalidateMetricCaches('add');
+  }
+
+  return { restored: restoredTrashIds.length, errors };
+}
+
+/** Permanently drop trashed records. Omit `ids` to empty the whole trash. */
+export async function purgeTrash(ids = null) {
+  try {
+    if (ids) {
+      await db.trash.bulkDelete(ids);
+      return ids.length;
+    }
+    const count = await db.trash.count();
+    await db.trash.clear();
+    return count;
+  } catch (error) {
+    console.error('Error purging trash:', error);
+    return 0;
+  }
+}
+
+/** Drop anything past the 30-day retention window. Runs at startup. */
+export async function purgeExpiredTrash() {
+  try {
+    const cutoff = Date.now() - TRASH_TTL_MS;
+    return await db.trash.where('deletedAt').below(cutoff).delete();
+  } catch (error) {
+    console.error('Error purging expired trash:', error);
+    return 0;
   }
 }
 

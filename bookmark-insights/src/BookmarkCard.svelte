@@ -1,6 +1,13 @@
 <script>
-  import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard } from './utils.js';
+  import {
+    formatDate,
+    getFaviconUrl,
+    getGeneratedFavicon,
+    getDomainLabel,
+    copyToClipboard,
+  } from './utils.js';
   import { isDead, isEnriched } from './predicates.js';
+  import { safeHref } from './url-safety.js';
   import Highlight from './Highlight.svelte';
   import { selectedBookmarks } from './stores.js';
 
@@ -9,11 +16,21 @@
 
   let showCopied = false;
 
+  // See BookmarkListItem: navigable schemes get a real anchor.
+  $: href = safeHref(bookmark.url);
+
+  function handleImageError(event) {
+    event.target.src = getGeneratedFavicon(bookmark);
+  }
+
   function openBookmark(url, active = true) {
     chrome.tabs.create({ url, active });
   }
 
   function handleBookmarkClick(event) {
+    // The title is a real anchor and the actions are buttons; let them handle
+    // their own clicks rather than opening the bookmark a second time.
+    if (event?.target?.closest?.('a, button, input')) return;
     // Open in background if Shift, Cmd (Mac), or Ctrl (Windows/Linux) is pressed
     const active = !(event && (event.shiftKey || event.metaKey || event.ctrlKey));
     openBookmark(bookmark.url, active);
@@ -62,14 +79,29 @@
   </div>
 
   <div class="flex items-start space-x-3">
-    <img src={getFaviconUrl(bookmark)} alt="Favicon" class="w-4 h-4 mt-1 flex-shrink-0" />
+    <img
+      src={getFaviconUrl(bookmark)}
+      on:error={handleImageError}
+      alt="Favicon"
+      class="w-4 h-4 mt-1 flex-shrink-0"
+    />
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-1.5">
-        <h3
-          class="text-sm font-medium text-gray-900 dark:text-gray-200 truncate flex-1"
-          title={bookmark.title}
-        >
-          <Highlight text={bookmark.title} query={parsedSearchQuery} />
+        <h3 class="text-sm font-medium truncate flex-1 min-w-0" title={bookmark.title}>
+          {#if href}
+            <a
+              {href}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-gray-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
+            >
+              <Highlight text={bookmark.title} query={parsedSearchQuery} />
+            </a>
+          {:else}
+            <span class="text-gray-900 dark:text-gray-200">
+              <Highlight text={bookmark.title} query={parsedSearchQuery} />
+            </span>
+          {/if}
         </h3>
         <!-- Status Icons -->
         <div class="flex items-center gap-1 flex-shrink-0">

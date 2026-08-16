@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { formatDate, getFaviconUrl, getGeneratedFavicon, copyToClipboard } from './utils.js';
   import { isDead, isEnriched } from './predicates.js';
+  import { safeHref } from './url-safety.js';
   import Highlight from './Highlight.svelte';
   import { selectedBookmarks } from './stores.js';
 
@@ -12,6 +13,11 @@
   const dispatch = createEventDispatcher();
 
   let showCopied = false;
+
+  // Navigable schemes get a real anchor, so middle-click, "open in new window",
+  // "copy link address" and the status-bar preview all work. Bookmarklets and
+  // chrome:// URLs are not navigable from a page and keep the scripted open.
+  $: href = safeHref(bookmark.url);
 
   function handleImageError(event) {
     // Fallback to generated icon if the favicon URL fails to load
@@ -76,23 +82,31 @@
     />
 
     <!-- Content -->
-    <div
-      class="flex-1 min-w-0 cursor-pointer"
-      role="button"
-      tabindex="0"
-      on:click={handleTitleClick}
-      on:keydown={(e) => e.key === 'Enter' && handleTitleClick(e)}
-    >
+    <div class="flex-1 min-w-0">
       <div class="flex items-center justify-between gap-2">
         <!-- Left Side: Title, URL, Folder -->
         <div class="flex-1 min-w-0 flex flex-col">
           <!-- Row 1: Title + Status Icons -->
           <div class="flex items-center gap-2">
-            <h3
-              class="text-sm font-medium text-gray-900 dark:text-gray-200 truncate hover:text-blue-600 dark:hover:text-blue-400"
-              title={bookmark.title}
-            >
-              <Highlight text={bookmark.title} query={parsedSearchQuery} />
+            <h3 class="text-sm font-medium truncate min-w-0" title={bookmark.title}>
+              {#if href}
+                <a
+                  {href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-gray-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
+                >
+                  <Highlight text={bookmark.title} query={parsedSearchQuery} />
+                </a>
+              {:else}
+                <button
+                  type="button"
+                  on:click={handleTitleClick}
+                  class="text-left text-gray-900 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
+                >
+                  <Highlight text={bookmark.title} query={parsedSearchQuery} />
+                </button>
+              {/if}
             </h3>
             <!-- Status Icons -->
             <div class="flex items-center gap-1 flex-shrink-0">

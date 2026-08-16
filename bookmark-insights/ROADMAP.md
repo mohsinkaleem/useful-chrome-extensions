@@ -337,12 +337,12 @@ Ordered by value ÷ effort. Everything in Tier 1 uses data the extension already
 - [x] P1, P2 — batch Deep Analysis writes, move it into the existing worker
 - [x] P3, P4, P7 — quadratic dedupe, search materialisation, double loads
 
-### Phase 9 — UX
-- [ ] U1 — real anchors in `BookmarkCard` / `BookmarkListItem`
-- [ ] U2 + N9 — trash table, undo for every delete
-- [ ] U3, U4 — replace `confirm`/`alert`, add progress + cancel
-- [ ] U5, U6, U8 — modal semantics, `aria-live`, card favicon fallback
-- [ ] U9, U10, U11 — persist view state, keyboard shortcuts, in-app syntax hints
+### Phase 9 — UX ✅ done
+- [x] U1 — real anchors in `BookmarkCard` / `BookmarkListItem`
+- [x] U2 + N9 — trash table, undo for every delete
+- [x] U3, U4 — replace `confirm`/`alert`, add progress + cancel
+- [x] U5, U6, U8 — modal semantics, `aria-live`, card favicon fallback
+- [x] U9, U10, U11 — persist view state, keyboard shortcuts, in-app syntax hints
 
 ### Phase 10 — Features
 - [ ] N1 (omnibox) first — best value-to-effort in the document
