@@ -8,6 +8,7 @@
 </head>
 <body>
   <div class="container">
+    <!-- Header -->
     <div class="header">
       <div class="header-left">
         <h1>🎬 TubeFilter</h1>
@@ -17,223 +18,232 @@
       </div>
     </div>
 
-    <!-- Collapsible Filter Sections -->
-    <div class="section" data-section="views">
-      <div class="section-header" data-toggle="views">
-        <h3><span class="section-icon">👁️</span> Views</h3>
-        <span class="toggle-icon">▼</span>
+    <!-- Scrollable body: everything above the pinned action bar -->
+    <div class="scroll-area">
+      <!-- Stats bar -->
+      <div class="stats-bar" id="statsBar">
+        <span class="stats-dot" id="statsDot" aria-hidden="true"></span>
+        <span class="stats-text" id="statsText">Filters off</span>
       </div>
-      <div class="section-content" id="views-content">
-        <div class="filter-chips">
-          <label class="chip" data-type="none">
-            <input type="radio" name="viewFilter" value="none" checked>
-            <span>Off</span>
-          </label>
-          <label class="chip">
-            <input type="radio" name="viewFilter" value="greater">
-            <span>&gt;</span>
-            <input type="text" id="viewMin" placeholder="10k" disabled>
-          </label>
-          <label class="chip">
-            <input type="radio" name="viewFilter" value="less">
-            <span>&lt;</span>
-            <input type="text" id="viewMax" placeholder="100k" disabled>
-          </label>
-          <label class="chip range-chip">
-            <input type="radio" name="viewFilter" value="between">
-            <input type="text" id="viewBetweenMin" placeholder="1k" disabled>
-            <span>–</span>
-            <input type="text" id="viewBetweenMax" placeholder="10k" disabled>
-          </label>
-        </div>
-      </div>
-    </div>
 
-    <div class="section" data-section="duration">
-      <div class="section-header" data-toggle="duration">
-        <h3><span class="section-icon">⏱️</span> Duration</h3>
-        <span class="toggle-icon">▼</span>
+      <!-- Quick toggles -->
+      <div class="quick-toggles" aria-label="Quick toggles">
+        <label class="toggle-card" data-toggle="hideShorts">
+          <input type="checkbox" id="hideShorts">
+          <span class="toggle-card-icon" aria-hidden="true">⚡</span>
+          <span class="toggle-card-label">Shorts</span>
+        </label>
+        <label class="toggle-card" data-toggle="hideLive">
+          <input type="checkbox" id="hideLive">
+          <span class="toggle-card-icon" aria-hidden="true">🔴</span>
+          <span class="toggle-card-label">Live</span>
+        </label>
+        <label class="toggle-card" data-toggle="hideWatched">
+          <input type="checkbox" id="hideWatched">
+          <span class="toggle-card-icon" aria-hidden="true">✓</span>
+          <span class="toggle-card-label">Watched</span>
+        </label>
       </div>
-      <div class="section-content" id="duration-content">
-        <div class="filter-chips">
-          <label class="chip" data-type="none">
-            <input type="radio" name="durationFilter" value="none" checked>
-            <span>Off</span>
-          </label>
-          <label class="chip">
-            <input type="radio" name="durationFilter" value="less">
-            <span>&lt;</span>
-            <input type="text" id="durationLess" placeholder="5m or 5:00" disabled>
-          </label>
-          <label class="chip">
-            <input type="radio" name="durationFilter" value="greater">
-            <span>&gt;</span>
-            <input type="text" id="durationGreater" placeholder="10m or 10:00" disabled>
-          </label>
-          <label class="chip range-chip">
-            <input type="radio" name="durationFilter" value="custom">
-            <input type="text" id="durationMin" placeholder="2m" disabled>
-            <span>–</span>
-            <input type="text" id="durationMax" placeholder="1h or 60:00" disabled>
-          </label>
-        </div>
-      </div>
-    </div>
 
-    <div class="section" data-section="time">
-      <div class="section-header" data-toggle="time">
-        <h3><span class="section-icon">📅</span> Upload Date</h3>
-        <span class="toggle-icon">▼</span>
+      <!-- Presets -->
+      <div class="presets" aria-label="Filter presets">
+        <button type="button" class="preset-btn" data-preset="focus" aria-pressed="false" title="Hide Shorts + watched + clickbait">🎯 Focus</button>
+        <button type="button" class="preset-btn" data-preset="fresh" aria-pressed="false" title="Last 7 days only">🆕 Fresh</button>
+        <button type="button" class="preset-btn" data-preset="long" aria-pressed="false" title="Videos longer than 10 min">🎞 Long</button>
+        <button type="button" class="preset-btn" data-preset="popular" aria-pressed="false" title="Over 100K views">🔥 Popular</button>
       </div>
-      <div class="section-content" id="time-content">
-        <div class="filter-chips vertical">
-          <label class="chip" data-type="none">
-            <input type="radio" name="timeFilter" value="none" checked>
-            <span>Off</span>
-          </label>
-          <label class="chip time-chip">
-            <input type="radio" name="timeFilter" value="less">
-            <span>Newer than</span>
-            <input type="number" id="timeLess" placeholder="7" min="1" disabled>
-            <select id="timeLessUnit" disabled>
-              <option value="hours">hrs</option>
-              <option value="days">days</option>
-              <option value="weeks">wks</option>
-              <option value="months">mos</option>
-              <option value="years">yrs</option>
-            </select>
-          </label>
-          <label class="chip time-chip">
-            <input type="radio" name="timeFilter" value="greater">
-            <span>Older than</span>
-            <input type="number" id="timeGreater" placeholder="30" min="1" disabled>
-            <select id="timeGreaterUnit" disabled>
-              <option value="hours">hrs</option>
-              <option value="days" selected>days</option>
-              <option value="weeks">wks</option>
-              <option value="months">mos</option>
-              <option value="years">yrs</option>
-            </select>
-          </label>
-          <label class="chip time-range-chip">
-            <input type="radio" name="timeFilter" value="between">
-            <span>Between</span>
-            <div class="time-range-inputs">
-              <div class="time-range-row">
-                <input type="number" id="timeBetweenMin" placeholder="7" min="1" disabled>
-                <select id="timeBetweenMinUnit" disabled>
-                  <option value="hours">hrs</option>
-                  <option value="days" selected>days</option>
-                  <option value="weeks">wks</option>
-                  <option value="months">mos</option>
-                  <option value="years">yrs</option>
-                </select>
-              </div>
-              <span class="range-sep">to</span>
-              <div class="time-range-row">
-                <input type="number" id="timeBetweenMax" placeholder="30" min="1" disabled>
-                <select id="timeBetweenMaxUnit" disabled>
-                  <option value="hours">hrs</option>
-                  <option value="days" selected>days</option>
-                  <option value="weeks">wks</option>
-                  <option value="months">mos</option>
-                  <option value="years">yrs</option>
-                </select>
-              </div>
-            </div>
-          </label>
-        </div>
-      </div>
-    </div>
 
-    <div class="section" data-section="keywords">
-      <div class="section-header" data-toggle="keywords">
-        <h3><span class="section-icon">🔍</span> Keywords</h3>
-        <span class="toggle-icon">▼</span>
-      </div>
-      <div class="section-content" id="keywords-content">
-        <div class="keyword-input-wrapper">
-          <textarea id="titleKeywords" placeholder="music, +tutorial, -shorts (use + to include, - to exclude)" rows="2"></textarea>
-          <div class="keyword-options">
-            <div class="option-group">
-              <label class="toggle-pill">
-                <input type="checkbox" id="useRegex">
-                <span>Regex</span>
-              </label>
-              <button type="button" class="help-btn" id="regexHelpBtn" title="Regex Guide">?</button>
-            </div>
-            <div class="option-group mode-options" id="keywordLogicGroup">
-              <label class="mini-chip"><input type="radio" name="keywordLogic" value="AND" checked><span>ALL</span></label>
-              <label class="mini-chip"><input type="radio" name="keywordLogic" value="OR"><span>ANY</span></label>
-            </div>
-            <div class="option-group mode-options">
-              <label class="mini-chip include"><input type="radio" name="keywordMode" value="include" checked><span>Include</span></label>
-              <label class="mini-chip exclude"><input type="radio" name="keywordMode" value="exclude"><span>Exclude</span></label>
-            </div>
+      <!-- Views section -->
+      <div class="section collapsed" data-section="views">
+        <div class="section-header" data-toggle="views" role="button" tabindex="0"
+             aria-expanded="false" aria-controls="views-content">
+          <h3><span class="section-icon" aria-hidden="true">👁️</span> Views</h3>
+          <span class="toggle-icon" aria-hidden="true">▼</span>
+        </div>
+        <div class="section-content" id="views-content">
+          <div class="filter-chips">
+            <label class="chip" data-type="none">
+              <input type="radio" name="viewFilter" value="none" checked>
+              <span>Off</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="viewFilter" value="greater">
+              <span aria-hidden="true">&gt;</span>
+              <input type="text" id="viewMin" placeholder="10k" aria-label="Minimum view count" disabled>
+            </label>
+            <label class="chip">
+              <input type="radio" name="viewFilter" value="less">
+              <span aria-hidden="true">&lt;</span>
+              <input type="text" id="viewMax" placeholder="100k" aria-label="Maximum view count" disabled>
+            </label>
+            <label class="chip range-chip">
+              <input type="radio" name="viewFilter" value="between">
+              <input type="text" id="viewBetweenMin" placeholder="1k" aria-label="View count range, from" disabled>
+              <span aria-hidden="true">–</span>
+              <input type="text" id="viewBetweenMax" placeholder="10k" aria-label="View count range, to" disabled>
+            </label>
           </div>
-          <div id="keyword-preview" class="keyword-preview" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- Duration section -->
+      <div class="section collapsed" data-section="duration">
+        <div class="section-header" data-toggle="duration" role="button" tabindex="0"
+             aria-expanded="false" aria-controls="duration-content">
+          <h3><span class="section-icon" aria-hidden="true">⏱️</span> Duration</h3>
+          <span class="toggle-icon" aria-hidden="true">▼</span>
+        </div>
+        <div class="section-content" id="duration-content">
+          <div class="filter-chips">
+            <label class="chip" data-type="none">
+              <input type="radio" name="durationFilter" value="none" checked>
+              <span>Off</span>
+            </label>
+            <label class="chip">
+              <input type="radio" name="durationFilter" value="less">
+              <span aria-hidden="true">&lt;</span>
+              <input type="text" id="durationLess" placeholder="5m" aria-label="Maximum duration" disabled>
+            </label>
+            <label class="chip">
+              <input type="radio" name="durationFilter" value="greater">
+              <span aria-hidden="true">&gt;</span>
+              <input type="text" id="durationGreater" placeholder="10m" aria-label="Minimum duration" disabled>
+            </label>
+            <label class="chip range-chip">
+              <input type="radio" name="durationFilter" value="custom">
+              <input type="text" id="durationMin" placeholder="2m" aria-label="Duration range, from" disabled>
+              <span aria-hidden="true">–</span>
+              <input type="text" id="durationMax" placeholder="1h" aria-label="Duration range, to" disabled>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload date section -->
+      <div class="section collapsed" data-section="time">
+        <div class="section-header" data-toggle="time" role="button" tabindex="0"
+             aria-expanded="false" aria-controls="time-content">
+          <h3><span class="section-icon" aria-hidden="true">📅</span> Upload Date</h3>
+          <span class="toggle-icon" aria-hidden="true">▼</span>
+        </div>
+        <div class="section-content" id="time-content">
+          <div class="filter-chips vertical">
+            <label class="chip" data-type="none">
+              <input type="radio" name="timeFilter" value="none" checked>
+              <span>Off</span>
+            </label>
+            <label class="chip time-chip">
+              <input type="radio" name="timeFilter" value="less">
+              <span>Newer than</span>
+              <input type="number" id="timeLess" placeholder="7" min="1" aria-label="Newer than, amount" disabled>
+              <select id="timeLessUnit" aria-label="Newer than, unit" disabled>
+                <option value="hours">hrs</option>
+                <option value="days" selected>days</option>
+                <option value="weeks">wks</option>
+                <option value="months">mos</option>
+                <option value="years">yrs</option>
+              </select>
+            </label>
+            <label class="chip time-chip">
+              <input type="radio" name="timeFilter" value="greater">
+              <span>Older than</span>
+              <input type="number" id="timeGreater" placeholder="30" min="1" aria-label="Older than, amount" disabled>
+              <select id="timeGreaterUnit" aria-label="Older than, unit" disabled>
+                <option value="hours">hrs</option>
+                <option value="days" selected>days</option>
+                <option value="weeks">wks</option>
+                <option value="months">mos</option>
+                <option value="years">yrs</option>
+              </select>
+            </label>
+            <label class="chip time-range-chip">
+              <input type="radio" name="timeFilter" value="between">
+              <span>Between</span>
+              <div class="time-range-inputs">
+                <div class="time-range-row">
+                  <input type="number" id="timeBetweenMin" placeholder="7" min="1" aria-label="Upload date range, from amount" disabled>
+                  <select id="timeBetweenMinUnit" aria-label="Upload date range, from unit" disabled>
+                    <option value="hours">hrs</option>
+                    <option value="days" selected>days</option>
+                    <option value="weeks">wks</option>
+                    <option value="months">mos</option>
+                    <option value="years">yrs</option>
+                  </select>
+                </div>
+                <span class="range-sep">to</span>
+                <div class="time-range-row">
+                  <input type="number" id="timeBetweenMax" placeholder="30" min="1" aria-label="Upload date range, to amount" disabled>
+                  <select id="timeBetweenMaxUnit" aria-label="Upload date range, to unit" disabled>
+                    <option value="hours">hrs</option>
+                    <option value="days" selected>days</option>
+                    <option value="weeks">wks</option>
+                    <option value="months">mos</option>
+                    <option value="years">yrs</option>
+                  </select>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keywords section -->
+      <div class="section" data-section="keywords">
+        <div class="section-header" data-toggle="keywords" role="button" tabindex="0"
+             aria-expanded="true" aria-controls="keywords-content">
+          <h3><span class="section-icon" aria-hidden="true">🔍</span> Keywords</h3>
+          <span class="toggle-icon" aria-hidden="true">▼</span>
+        </div>
+        <div class="section-content" id="keywords-content">
+          <div class="keyword-input-wrapper">
+            <textarea id="titleKeywords" aria-label="Title keywords or regex pattern"
+                      placeholder="music, +tutorial, -shorts  (use + to include, - to exclude)" rows="2"></textarea>
+            <div class="keyword-options">
+              <div class="option-group">
+                <label class="toggle-pill">
+                  <input type="checkbox" id="useRegex">
+                  <span>Regex</span>
+                </label>
+                <button type="button" class="help-btn" id="regexHelpBtn"
+                        title="Open the regex guide and tester" aria-label="Open the regex guide and tester">?</button>
+              </div>
+              <div class="option-group mode-options" id="keywordLogicGroup">
+                <label class="mini-chip"><input type="radio" name="keywordLogic" value="AND" checked><span>ALL</span></label>
+                <label class="mini-chip"><input type="radio" name="keywordLogic" value="OR"><span>ANY</span></label>
+              </div>
+              <div class="option-group mode-options">
+                <label class="mini-chip include"><input type="radio" name="keywordMode" value="include" checked><span>Include</span></label>
+                <label class="mini-chip exclude"><input type="radio" name="keywordMode" value="exclude"><span>Exclude</span></label>
+              </div>
+            </div>
+            <div id="keyword-preview" class="keyword-preview" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer options -->
+      <div class="footer-options">
+        <label class="footer-check">
+          <input type="checkbox" id="showBanner" checked>
+          <span>Show “N hidden” banner on the page</span>
+        </label>
+        <div class="footer-hint">
+          Toggle filtering with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>
         </div>
       </div>
     </div>
 
-    <!-- Regex Help Panel (hidden by default) -->
-    <div class="regex-guide" id="regexGuide" style="display:none;">
-      <div class="regex-guide-header">
-        <h4>📘 Regex Quick Guide</h4>
-        <button type="button" class="close-btn" id="closeRegexGuide">×</button>
-      </div>
-      <div class="regex-guide-content">
-        <div class="regex-section">
-          <strong>Basics</strong>
-          <div class="regex-example"><code>tutorial</code> — Match "tutorial" anywhere</div>
-          <div class="regex-example"><code>^How</code> — Starts with "How"</div>
-          <div class="regex-example"><code>2024$</code> — Ends with "2024"</div>
-        </div>
-        <div class="regex-section">
-          <strong>Character Classes</strong>
-          <div class="regex-example"><code>[aeiou]</code> — Any vowel</div>
-          <div class="regex-example"><code>[0-9]</code> — Any digit</div>
-          <div class="regex-example"><code>\d</code> — Digit (same as [0-9])</div>
-          <div class="regex-example"><code>\w</code> — Word character [a-zA-Z0-9_]</div>
-          <div class="regex-example"><code>\s</code> — Whitespace</div>
-        </div>
-        <div class="regex-section">
-          <strong>Quantifiers</strong>
-          <div class="regex-example"><code>a*</code> — Zero or more "a"</div>
-          <div class="regex-example"><code>a+</code> — One or more "a"</div>
-          <div class="regex-example"><code>a?</code> — Zero or one "a"</div>
-          <div class="regex-example"><code>a{3}</code> — Exactly 3 "a"s</div>
-          <div class="regex-example"><code>a{2,5}</code> — 2 to 5 "a"s</div>
-        </div>
-        <div class="regex-section">
-          <strong>Special</strong>
-          <div class="regex-example"><code>.</code> — Any character</div>
-          <div class="regex-example"><code>.*</code> — Any characters (greedy)</div>
-          <div class="regex-example"><code>cat|dog</code> — "cat" OR "dog"</div>
-          <div class="regex-example"><code>(music|song)</code> — Group alternatives</div>
-          <div class="regex-example"><code>(?i)test</code> — Case insensitive</div>
-        </div>
-        <div class="regex-section">
-          <strong>Common Examples</strong>
-          <div class="regex-example"><code>^(How|What|Why)</code> — Questions</div>
-          <div class="regex-example"><code>(?i)(react|vue|angular)</code> — JS frameworks</div>
-          <div class="regex-example"><code>ep(isode)?\s*\d+</code> — Episode numbers</div>
-          <div class="regex-example"><code>\b(2023|2024)\b</code> — Year mentions</div>
-          <div class="regex-example"><code>^(?!.*shorts).*$</code> — Exclude "shorts"</div>
-        </div>
-      </div>
-    </div>
-
+    <!-- Controls (pinned) -->
     <div class="controls">
       <button id="applyFilters" class="btn-primary">
-        <span class="btn-icon">✓</span> Apply
+        <span class="btn-icon" aria-hidden="true">✓</span> Apply
       </button>
       <button id="clearFilters" class="btn-secondary">
-        <span class="btn-icon">✕</span> Clear
+        <span class="btn-icon" aria-hidden="true">✕</span> Clear
       </button>
     </div>
 
-    <div class="status" id="status"></div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
   </div>
 
   <script src="popup.js"></script>

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TubeFilter — popup test harness</title>
+  <link rel="stylesheet" href="../popup.css">
+  <style>
+    /* Match the real popup viewport so height assertions mean something. */
+    html, body { margin: 0; padding: 0; }
+  </style>
+</head>
+<body>
+  <!--
+    Loaded in an iframe by harness.html. The chrome.* stub must exist before
+    popup.js runs, which is why this is a page of its own rather than an
+    innerHTML injection into the content harness.
+  -->
+  <script>
+    window.__popupCalls = { openOptionsPage: 0, sent: [] };
+    window.__stubTabUrl = 'https://www.youtube.com/feed/subscriptions';
+
+    window.chrome = {
+      runtime: {
+        lastError: null,
+        openOptionsPage() { window.__popupCalls.openOptionsPage++; },
+        onMessage: {
+          _listeners: [],
+          addListener(fn) { this._listeners.push(fn); },
+        },
+      },
+      tabs: {
+        query(_q, cb) { cb([{ id: 1, url: window.__stubTabUrl }]); },
+        sendMessage(_tabId, message, cb) {
+          window.__popupCalls.sent.push(message);
+          if (cb) setTimeout(() => cb({ success: true, hiddenCount: 0 }), 0);
+        },
+      },
+      scripting: { executeScript(_o, cb) { if (cb) cb(); } },
+    };
+  </script>
+
+  <div id="popup-root"></div>
+
+  <script>
+    /**
+     * Pull the popup's real markup out of popup.html so the tests can never
+     * drift from the shipped UI, then boot popup.js against it.
+     */
+    async function bootPopup() {
+      const html = await (await fetch('../popup.html')).text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      document.getElementById('popup-root').innerHTML = doc.body.innerHTML;
+      // The markup carries its own <script src="popup.js"> which DOMParser
+      // does not execute; drop it and load the real one.
+      document.querySelectorAll('#popup-root script').forEach((s) => s.remove());
+
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = '../popup.js';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.body.appendChild(s);
+      });
+
+      // popup.js wires itself up on DOMContentLoaded, which already fired.
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+    }
+
+    const $ = (id) => document.getElementById(id);
+    const P = () => window.__tubefilterPopup;
+
+    function setFormDefaults() {
+      P().clearFilters();
+      window.__popupCalls.sent.length = 0;
+    }
+
+    /** Each test returns { ok, want, got }. */
+    const POPUP_TESTS = [
+      {
+        name: 'bug 9: view input "1e6" is rejected, not coerced to 1',
+        run() {
+          const parsed = P().parseViewInput('1e6');
+          setFormDefaults();
+          document.querySelector('input[name="viewFilter"][value="greater"]').checked = true;
+          $('viewMin').value = '1e6';
+          const valid = P().validateFilters(P().collectFilters());
+          return {
+            ok: Number.isNaN(parsed) && valid === false,
+            want: { parsed: 'NaN', valid: false },
+            got: { parsed: String(parsed), valid },
+          };
+        },
+      },
+      {
+        name: 'bug 7: duration "0" fails validation',
+        run() {
+          setFormDefaults();
+          document.querySelector('input[name="durationFilter"][value="less"]').checked = true;
+          $('durationLess').value = '0';
+          const filters = P().collectFilters();
+          const valid = P().validateFilters(filters);
+          return {
+            ok: filters.durationFilter.lessValue === '0:00' && valid === false,
+            want: { lessValue: '0:00', valid: false },
+            got: { lessValue: filters.durationFilter.lessValue, valid },
+          };
+        },
+      },
+      {
+        name: 'bug 2: unclosed regex fails validation with a message',
+        run() {
+          setFormDefaults();
+          $('useRegex').checked = true;
+          $('titleKeywords').value = '(unclosed';
+          const valid = P().validateFilters(P().collectFilters());
+          const status = $('status').textContent;
+          $('useRegex').checked = false;
+          return {
+            ok: valid === false && /invalid regex/i.test(status),
+            want: { valid: false, status: 'mentions "Invalid regex"' },
+            got: { valid, status },
+          };
+        },
+      },
+      {
+        name: 'bug 2: a valid regex still passes validation',
+        run() {
+          setFormDefaults();
+          $('useRegex').checked = true;
+          $('titleKeywords').value = '^(?!.*shorts).+';
+          const valid = P().validateFilters(P().collectFilters());
+          $('useRegex').checked = false;
+          return { ok: valid === true, want: { valid: true }, got: { valid } };
+        },
+      },
+      {
+        name: 'U1: popup fits inside Chrome’s ~600px popup cap',
+        run() {
+          const height = document.body.scrollHeight;
+          const applyBottom = $('applyFilters').getBoundingClientRect().bottom;
+          return {
+            ok: height <= 600 && applyBottom <= 600,
+            want: { height: '<= 600', applyButtonBottom: '<= 600' },
+            got: { height, applyButtonBottom: Math.round(applyBottom) },
+          };
+        },
+      },
+      {
+        name: 'U2: presets show an active state and toggle back off',
+        run() {
+          setFormDefaults();
+          const btn = document.querySelector('.preset-btn[data-preset="focus"]');
+          P().togglePreset('focus');
+          const on = btn.classList.contains('active') && btn.getAttribute('aria-pressed') === 'true';
+          P().togglePreset('focus');
+          const off = !btn.classList.contains('active') && btn.getAttribute('aria-pressed') === 'false';
+          return {
+            ok: on && off,
+            want: { activeAfterFirstClick: true, activeAfterSecondClick: false },
+            got: { activeAfterFirstClick: on, activeAfterSecondClick: !off },
+          };
+        },
+      },
+      {
+        name: 'U2: stacked presets each report their own state',
+        run() {
+          setFormDefaults();
+          P().togglePreset('focus');
+          P().togglePreset('popular');
+          const active = [...document.querySelectorAll('.preset-btn.active')]
+            .map((b) => b.dataset.preset)
+            .sort();
+          setFormDefaults();
+          return {
+            ok: active.length === 2 && active[0] === 'focus' && active[1] === 'popular',
+            want: ['focus', 'popular'],
+            got: active,
+          };
+        },
+      },
+      {
+        name: 'U3: presets refresh the keyword preview',
+        run() {
+          setFormDefaults();
+          P().togglePreset('focus');
+          const preview = $('keyword-preview');
+          const visible = !!preview && preview.style.display !== 'none';
+          setFormDefaults();
+          return {
+            ok: visible,
+            want: { previewVisible: true },
+            got: { previewVisible: visible },
+          };
+        },
+      },
+      {
+        name: 'U4: Clear resets the text and number inputs',
+        run() {
+          $('viewMin').value = '50k';
+          $('durationGreater').value = '20m';
+          $('timeLess').value = '3';
+          P().clearFilters();
+          const got = {
+            viewMin: $('viewMin').value,
+            durationGreater: $('durationGreater').value,
+            timeLess: $('timeLess').value,
+            viewRadio: document.querySelector('input[name="viewFilter"]:checked').value,
+          };
+          return {
+            ok: got.viewMin === '' && got.durationGreater === '' &&
+                got.timeLess === '' && got.viewRadio === 'none',
+            want: { viewMin: '', durationGreater: '', timeLess: '', viewRadio: 'none' },
+            got,
+          };
+        },
+      },
+      {
+        name: 'U5: section headers are keyboard operable and expose state',
+        run() {
+          const header = document.querySelector('.section[data-section="views"] .section-header');
+          const section = header.closest('.section');
+          const roleOk = header.getAttribute('role') === 'button' &&
+                         header.getAttribute('tabindex') === '0';
+
+          const before = section.classList.contains('collapsed');
+          header.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          const after = section.classList.contains('collapsed');
+          const ariaOk = header.getAttribute('aria-expanded') === String(!after);
+          // restore
+          header.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+          return {
+            ok: roleOk && before !== after && ariaOk,
+            want: { role: 'button', tabindex: '0', toggledByEnter: true, ariaExpandedMatches: true },
+            got: {
+              role: header.getAttribute('role'),
+              tabindex: header.getAttribute('tabindex'),
+              toggledByEnter: before !== after,
+              ariaExpandedMatches: ariaOk,
+            },
+          };
+        },
+      },
+      {
+        name: 'U5: inputs carry accessible names',
+        run() {
+          const ids = ['viewMin', 'viewMax', 'durationLess', 'timeLess', 'titleKeywords'];
+          const unnamed = ids.filter((id) => {
+            const el = $(id);
+            return !el || !(el.getAttribute('aria-label') ||
+                            document.querySelector(`label[for="${id}"]`));
+          });
+          return {
+            ok: unnamed.length === 0,
+            want: { inputsWithoutNames: [] },
+            got: { inputsWithoutNames: unnamed },
+          };
+        },
+      },
+      {
+        name: 'U6: collapse state survives a reopen',
+        run() {
+          const header = document.querySelector('.section[data-section="duration"] .section-header');
+          const section = header.closest('.section');
+          const wanted = !section.classList.contains('collapsed');
+          header.click();
+          let stored = {};
+          try {
+            stored = JSON.parse(localStorage.getItem('tubefilter.collapsedSections') || '{}');
+          } catch {}
+          return {
+            ok: stored.duration === wanted,
+            want: { 'stored.duration': wanted },
+            got: { 'stored.duration': stored.duration },
+          };
+        },
+      },
+      {
+        name: 'U7: Apply/Clear are disabled on a non-YouTube tab',
+        run() {
+          window.__stubTabUrl = 'https://example.com/';
+          P().checkUrlAndLoadFilters();
+          const disabled = $('applyFilters').disabled && $('clearFilters').disabled;
+
+          window.__stubTabUrl = 'https://www.youtube.com/feed/subscriptions';
+          P().checkUrlAndLoadFilters();
+          const reEnabled = !$('applyFilters').disabled && !$('clearFilters').disabled;
+
+          return {
+            ok: disabled && reEnabled,
+            want: { disabledOffYouTube: true, enabledOnYouTube: true },
+            got: { disabledOffYouTube: disabled, enabledOnYouTube: reEnabled },
+          };
+        },
+      },
+      {
+        name: 'F1: banner preference travels with the filters',
+        run() {
+          setFormDefaults();
+          $('showBanner').checked = false;
+          const off = P().collectFilters().showBanner;
+          $('showBanner').checked = true;
+          const on = P().collectFilters().showBanner;
+          return {
+            ok: off === false && on === true,
+            want: { unchecked: false, checked: true },
+            got: { unchecked: off, checked: on },
+          };
+        },
+      },
+      {
+        name: 'F3: the ? button opens the options page',
+        run() {
+          const before = window.__popupCalls.openOptionsPage;
+          $('regexHelpBtn').click();
+          const after = window.__popupCalls.openOptionsPage;
+          return {
+            ok: after === before + 1,
+            want: { openOptionsPageCalls: before + 1 },
+            got: { openOptionsPageCalls: after },
+          };
+        },
+      },
+      {
+        name: 'F3: the regex guide no longer ships inside the popup',
+        run() {
+          const guide = document.getElementById('regexGuide');
+          return {
+            ok: guide === null,
+            want: { inPopupRegexGuide: null },
+            got: { inPopupRegexGuide: guide ? 'present' : null },
+          };
+        },
+      },
+    ];
+
+    window.runPopupTests = async function () {
+      const out = [];
+      for (const t of POPUP_TESTS) {
+        let r;
+        try {
+          r = await t.run();
+        } catch (e) {
+          r = { ok: false, want: 'no exception', got: String(e) };
+        }
+        out.push({ name: t.name, ok: r.ok, want: r.want, got: r.got });
+      }
+      return out;
+    };
+
+    window.__popupReady = bootPopup().then(() => true);
+  </script>
+</body>
+</html>

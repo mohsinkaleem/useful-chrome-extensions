@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TubeFilter — Regex Guide</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <h1>🎬 TubeFilter</h1>
+      <p class="subtitle">Regex guide &amp; pattern tester</p>
+    </header>
+
+    <!-- Live tester -->
+    <section class="tester" aria-labelledby="tester-heading">
+      <h2 id="tester-heading">Try a pattern</h2>
+      <p class="tester-note">
+        Patterns are matched against the video title, case-insensitively by
+        default. Wrap in <code>/…/flags</code> to set your own flags.
+      </p>
+
+      <div class="tester-field">
+        <label for="testPattern">Pattern</label>
+        <input type="text" id="testPattern" placeholder="^(How|What|Why)" spellcheck="false">
+      </div>
+
+      <div class="tester-field">
+        <label for="testTitle">Sample title</label>
+        <input type="text" id="testTitle" value="How to Build a Chrome Extension in 2025" spellcheck="false">
+      </div>
+
+      <div class="tester-result" id="testResult" role="status" aria-live="polite">
+        Enter a pattern to test it.
+      </div>
+    </section>
+
+    <!-- Reference -->
+    <section class="guide" aria-labelledby="guide-heading">
+      <h2 id="guide-heading">Reference</h2>
+      <div class="guide-grid">
+        <div class="regex-section">
+          <strong>Basics</strong>
+          <div class="regex-example"><code>tutorial</code> — Match "tutorial" anywhere</div>
+          <div class="regex-example"><code>^How</code> — Starts with "How"</div>
+          <div class="regex-example"><code>2024$</code> — Ends with "2024"</div>
+        </div>
+        <div class="regex-section">
+          <strong>Character classes</strong>
+          <div class="regex-example"><code>[aeiou]</code> — Any vowel</div>
+          <div class="regex-example"><code>\d</code> — Any digit</div>
+          <div class="regex-example"><code>\w</code> — Word character</div>
+          <div class="regex-example"><code>\s</code> — Whitespace</div>
+        </div>
+        <div class="regex-section">
+          <strong>Quantifiers</strong>
+          <div class="regex-example"><code>a*</code> — Zero or more "a"</div>
+          <div class="regex-example"><code>a+</code> — One or more "a"</div>
+          <div class="regex-example"><code>a?</code> — Zero or one "a"</div>
+          <div class="regex-example"><code>a{2,5}</code> — 2 to 5 "a"s</div>
+        </div>
+        <div class="regex-section">
+          <strong>Special</strong>
+          <div class="regex-example"><code>.</code> — Any character</div>
+          <div class="regex-example"><code>cat|dog</code> — "cat" OR "dog"</div>
+          <div class="regex-example"><code>/test/i</code> — Case insensitive</div>
+        </div>
+        <div class="regex-section">
+          <strong>Common examples</strong>
+          <div class="regex-example"><code>^(How|What|Why)</code> — Questions</div>
+          <div class="regex-example"><code>(react|vue|angular)</code> — JS frameworks</div>
+          <div class="regex-example"><code>ep(isode)?\s*\d+</code> — Episode numbers</div>
+          <div class="regex-example"><code>^(?!.*shorts).*$</code> — Exclude "shorts"</div>
+        </div>
+        <div class="regex-section">
+          <strong>Good to know</strong>
+          <div class="regex-example">A pattern that doesn't compile is ignored — TubeFilter shows everything rather than hiding everything.</div>
+          <div class="regex-example">Regex mode uses the whole textarea as one pattern; the comma-separated keyword list is disabled.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="guide" aria-labelledby="shortcut-heading">
+      <h2 id="shortcut-heading">Keyboard shortcut</h2>
+      <p class="tester-note">
+        <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> toggles filtering on the
+        current tab without clearing your filters. Rebind it from
+        <code>chrome://extensions/shortcuts</code>.
+      </p>
+    </section>
+
+    <section class="guide" aria-labelledby="locale-heading">
+      <h2 id="locale-heading">Language support</h2>
+      <p class="tester-note">
+        The view-count, duration and upload-date filters read YouTube's own
+        metadata text and currently understand the <strong>English</strong>
+        UI only. On other languages those three filters are skipped rather
+        than guessed, so nothing is hidden by mistake. Keyword, regex and the
+        Shorts / Live / Watched toggles work in every language.
+      </p>
+    </section>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# playwright-cli session artifacts (console logs + page snapshots)
+.playwright-cli/
+
+# Local verification screenshots — not referenced by docs or tests
+tests/screenshots/

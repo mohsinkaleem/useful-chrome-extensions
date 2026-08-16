@@ -25,6 +25,24 @@
   --radius-lg: 8px;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #ff4444;
+    --primary-dark: #ff0000;
+    --primary-light: #3a1a1a;
+    --primary-border: #5a2222;
+    --text-primary: #e8eaed;
+    --text-secondary: #bdc1c6;
+    --text-muted: #80868b;
+    --bg-main: #202124;
+    --bg-section: #292a2d;
+    --bg-hover: #35363a;
+    --border: #3c4043;
+    --success: #34d399;
+    --error: #f87171;
+  }
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 12px;
@@ -32,11 +50,41 @@ body {
   color: var(--text-primary);
   background: var(--bg-main);
   width: 320px;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
+/*
+ * Chrome caps extension popups at ~600px tall. Bound the container just
+ * under that and scroll the filter body, so Apply/Clear are always on
+ * screen instead of below the fold.
+ */
 .container {
+  display: flex;
+  flex-direction: column;
+  max-height: 584px;
   padding: 10px 12px;
+}
+
+.scroll-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* room so the last section doesn't sit flush against the action bar */
+  padding-bottom: 4px;
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }
 
 /* Header */
@@ -89,6 +137,11 @@ body {
 
 .section-header:hover {
   background: var(--bg-hover);
+}
+
+.section-header:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 .section-header h3 {
@@ -173,6 +226,8 @@ body {
   border-radius: var(--radius-sm);
   font-size: 10px;
   text-align: center;
+  background: var(--bg-main);
+  color: var(--text-primary);
 }
 
 .chip input:disabled {
@@ -205,6 +260,7 @@ body {
   border-radius: var(--radius-sm);
   font-size: 10px;
   background: var(--bg-main);
+  color: var(--text-primary);
   cursor: pointer;
 }
 
@@ -242,6 +298,7 @@ body {
   border-radius: var(--radius-sm);
   font-size: 10px;
   background: var(--bg-main);
+  color: var(--text-primary);
 }
 
 .time-range-row select:disabled {
@@ -270,6 +327,8 @@ body {
   resize: none;
   min-height: 40px;
   font-family: inherit;
+  background: var(--bg-main);
+  color: var(--text-primary);
   transition: border-color 0.15s;
 }
 
@@ -411,95 +470,55 @@ body {
   background: #d93025;
 }
 
-/* Regex Guide */
-.regex-guide {
-  margin: 8px 0;
-  border: 1px solid #90caf9;
+/* Footer options */
+.footer-options {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: #e3f2fd;
-  overflow: hidden;
+  background: var(--bg-section);
 }
 
-.regex-guide-header {
+.footer-check {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  background: #bbdefb;
-}
-
-.regex-guide-header h4 {
-  font-size: 11px;
-  font-weight: 600;
-  color: #1565c0;
-}
-
-.close-btn {
-  width: 18px;
-  height: 18px;
-  border: none;
-  background: none;
-  color: #1565c0;
-  font-size: 16px;
-  font-weight: 600;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: background 0.15s;
 }
 
-.close-btn:hover {
-  background: rgba(0,0,0,0.1);
+.footer-check input {
+  accent-color: var(--primary);
+  width: 12px;
+  height: 12px;
+  margin: 0;
 }
 
-.regex-guide-content {
-  padding: 8px 10px;
-  max-height: 200px;
-  overflow-y: auto;
+.footer-hint {
+  margin-top: 4px;
+  font-size: 9px;
+  color: var(--text-muted);
 }
 
-.regex-section {
-  margin-bottom: 8px;
+.footer-hint kbd {
+  font-family: inherit;
+  font-size: 9px;
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-main);
 }
 
-.regex-section:last-child {
-  margin-bottom: 0;
-}
-
-.regex-section strong {
-  display: block;
-  font-size: 10px;
-  color: #1565c0;
-  margin-bottom: 3px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.regex-example {
-  font-size: 10px;
-  color: #37474f;
-  padding: 2px 0;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.regex-example code {
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
-  background: rgba(255,255,255,0.7);
-  padding: 1px 4px;
-  border-radius: 2px;
-  font-size: 10px;
-  color: #d32f2f;
-}
-
-/* Controls */
+/* Controls — pinned below the scrolling filter body */
 .controls {
+  flex: 0 0 auto;
   display: flex;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-main);
 }
 
 .btn-primary,
@@ -543,6 +562,19 @@ body {
   background: var(--bg-hover);
 }
 
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 /* Status */
 .status {
   margin-top: 6px;
@@ -563,20 +595,6 @@ body {
   background: #ffebee;
 }
 
-/* Scrollbar */
-.regex-guide-content::-webkit-scrollbar {
-  width: 4px;
-}
-
-.regex-guide-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.regex-guide-content::-webkit-scrollbar-thumb {
-  background: #90caf9;
-  border-radius: 2px;
-}
-
 /* Active filter indicator */
 .section.has-filter .section-header h3 {
   color: var(--primary);
@@ -587,4 +605,164 @@ body {
   color: var(--primary);
   font-size: 16px;
   margin-left: 4px;
+}
+
+/* =========================================================================
+ * Stats bar (under the header)
+ * ========================================================================= */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-section);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.stats-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: 0 0 0 2px rgba(154, 160, 166, 0.25);
+}
+
+.stats-dot.active {
+  background: var(--primary);
+  box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.25);
+  animation: tf-pulse 1.6s ease-in-out infinite;
+}
+
+.stats-dot.idle {
+  background: var(--text-muted);
+}
+
+@keyframes tf-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.25); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 0, 0, 0.10); }
+}
+
+.stats-text {
+  font-weight: 500;
+}
+
+/* =========================================================================
+ * Quick toggle cards
+ * ========================================================================= */
+.quick-toggles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.toggle-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: var(--bg-section);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.toggle-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-card:hover {
+  background: var(--bg-hover);
+}
+
+/*
+ * The checkbox itself is visually hidden but stays in the tab order, so the
+ * card has to render the focus ring on its behalf.
+ */
+.toggle-card:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.toggle-card.active {
+  background: var(--primary-light);
+  border-color: var(--primary-border);
+  color: var(--primary-dark);
+}
+
+.toggle-card.active .toggle-card-icon {
+  filter: drop-shadow(0 0 4px rgba(255, 0, 0, 0.35));
+}
+
+.toggle-card-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.toggle-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* =========================================================================
+ * Presets row
+ * ========================================================================= */
+.presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.preset-btn {
+  padding: 5px 4px;
+  background: var(--bg-section);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preset-btn:hover {
+  background: var(--primary-light);
+  border-color: var(--primary-border);
+  color: var(--primary-dark);
+}
+
+.preset-btn:active {
+  transform: scale(0.96);
+}
+
+.preset-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* Presets are toggles: this reflects whether the preset's filters are
+   currently set in the form, so stacked presets are visible. */
+.preset-btn.active {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary-dark);
+  font-weight: 700;
 }

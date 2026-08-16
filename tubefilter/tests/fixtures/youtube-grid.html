@@ -1,0 +1,170 @@
+<!--
+  Static fixture that mimics a slice of the modern YouTube home grid.
+  Includes a mix of card shapes so we exercise both the classic
+  `ytd-rich-item-renderer` selectors AND the newer `yt-lockup-view-model`
+  layout that's being rolled out.
+-->
+<section id="yt-grid" aria-label="YouTube grid fixture">
+
+  <!-- 1. Classic short tutorial video (5:30, 12K views, 2 days old) -->
+  <ytd-rich-item-renderer data-test-id="card-1" class="yt-card">
+    <a id="video-title-link" href="/watch?v=aaa1">
+      <span id="video-title" title="Python Tutorial for Beginners — 5 Minute Crash Course">
+        Python Tutorial for Beginners — 5 Minute Crash Course
+      </span>
+    </a>
+    <ytd-thumbnail-overlay-time-status-renderer>
+      <span id="text">5:30</span>
+    </ytd-thumbnail-overlay-time-status-renderer>
+    <div id="metadata-line">
+      <span class="inline-metadata-item">12K views</span>
+      <span class="inline-metadata-item">2 days ago</span>
+    </div>
+  </ytd-rich-item-renderer>
+
+  <!-- 2. Classic long lecture (1:42:10, 850K views, 3 weeks old) -->
+  <ytd-rich-item-renderer data-test-id="card-2" class="yt-card">
+    <a id="video-title-link" href="/watch?v=aaa2">
+      <span id="video-title" title="Deep Learning Full Course — 2024 Edition">
+        Deep Learning Full Course — 2024 Edition
+      </span>
+    </a>
+    <ytd-thumbnail-overlay-time-status-renderer>
+      <span id="text">1:42:10</span>
+    </ytd-thumbnail-overlay-time-status-renderer>
+    <div id="metadata-line">
+      <span class="inline-metadata-item">850K views</span>
+      <span class="inline-metadata-item">3 weeks ago</span>
+    </div>
+  </ytd-rich-item-renderer>
+
+  <!-- 3. Music video (3:45, 1.2M views, 5 months old) -->
+  <ytd-rich-item-renderer data-test-id="card-3" class="yt-card">
+    <a id="video-title-link" href="/watch?v=aaa3">
+      <span id="video-title" title="Best Lo-Fi Music Mix">Best Lo-Fi Music Mix</span>
+    </a>
+    <ytd-thumbnail-overlay-time-status-renderer>
+      <span id="text">3:45</span>
+    </ytd-thumbnail-overlay-time-status-renderer>
+    <div id="metadata-line">
+      <span class="inline-metadata-item">1.2M views</span>
+      <span class="inline-metadata-item">5 months ago</span>
+    </div>
+  </ytd-rich-item-renderer>
+
+  <!-- 4. Clickbait reaction (8:11, 300K views, 1 day old) -->
+  <ytd-rich-item-renderer data-test-id="card-4" class="yt-card">
+    <a id="video-title-link" href="/watch?v=aaa4">
+      <span id="video-title" title="YOU WON'T BELIEVE THIS REACTION! (CLICKBAIT)">
+        YOU WON'T BELIEVE THIS REACTION! (CLICKBAIT)
+      </span>
+    </a>
+    <ytd-thumbnail-overlay-time-status-renderer>
+      <span id="text">8:11</span>
+    </ytd-thumbnail-overlay-time-status-renderer>
+    <div id="metadata-line">
+      <span class="inline-metadata-item">300K views</span>
+      <span class="inline-metadata-item">1 day ago</span>
+    </div>
+  </ytd-rich-item-renderer>
+
+  <!-- 5. NEW lockup view model (2025+ class names, sans "wiz" suffix) —
+       React tutorial (22:00, 45K views, 6 hours ago). This exercises the
+       selectors that match the production DOM on @channel/videos pages. -->
+  <ytd-rich-item-renderer data-test-id="card-5" class="yt-card">
+    <yt-lockup-view-model>
+      <h3 class="ytLockupMetadataViewModelHeadingReset">
+        <a class="ytLockupMetadataViewModelTitle"
+           href="/watch?v=bbb5"
+           title="React Hooks Deep Dive 2025"
+           aria-label="React Hooks Deep Dive 2025 by Jane Dev, 22 minutes, 45K views, 6 hours ago">
+          <span class="ytAttributedStringHost">React Hooks Deep Dive 2025</span>
+        </a>
+      </h3>
+      <yt-thumbnail-badge-view-model>
+        <badge-shape><div class="ytBadgeShapeText">22:00</div></badge-shape>
+      </yt-thumbnail-badge-view-model>
+      <div class="ytContentMetadataViewModelMetadataRow">
+        <span class="ytContentMetadataViewModelMetadataText">45K views</span>
+        <span class="ytContentMetadataViewModelMetadataText">6 hours ago</span>
+      </div>
+    </yt-lockup-view-model>
+  </ytd-rich-item-renderer>
+
+  <!-- 6. NEW lockup (2025+ class names) — Old crypto video (15:45, 2.5M views, 2 years old) -->
+  <ytd-rich-item-renderer data-test-id="card-6" class="yt-card">
+    <yt-lockup-view-model>
+      <h3 class="ytLockupMetadataViewModelHeadingReset">
+        <a class="ytLockupMetadataViewModelTitle"
+           href="/watch?v=bbb6"
+           title="Crypto Made Simple — A Beginner's Guide">
+          <span class="ytAttributedStringHost">Crypto Made Simple — A Beginner's Guide</span>
+        </a>
+      </h3>
+      <yt-thumbnail-badge-view-model>
+        <badge-shape><div class="ytBadgeShapeText">15:45</div></badge-shape>
+      </yt-thumbnail-badge-view-model>
+      <div class="ytContentMetadataViewModelMetadataRow">
+        <span class="ytContentMetadataViewModelMetadataText">2.5M views</span>
+        <span class="ytContentMetadataViewModelMetadataText">2 years ago</span>
+      </div>
+    </yt-lockup-view-model>
+  </ytd-rich-item-renderer>
+
+  <!-- 7. Live stream -->
+  <ytd-rich-item-renderer data-test-id="card-7" class="yt-card">
+    <a id="video-title-link" href="/watch?v=live1">
+      <span id="video-title" title="Breaking News Live Coverage">Breaking News Live Coverage</span>
+    </a>
+    <ytd-thumbnail-overlay-time-status-renderer overlay-style="LIVE">
+      <span id="text">LIVE</span>
+    </ytd-thumbnail-overlay-time-status-renderer>
+    <div id="metadata-line">
+      <span class="inline-metadata-item">12K watching</span>
+      <span class="inline-metadata-item">Streamed live</span>
+    </div>
+  </ytd-rich-item-renderer>
+
+  <!-- 8. YouTube Short -->
+  <ytm-shorts-lockup-view-model data-test-id="card-8" class="yt-card">
+    <a href="/shorts/sss1"></a>
+    <h3 class="shortsLockupViewModelHostMetadataTitle" title="Quick Coding Tip #shorts">
+      Quick Coding Tip #shorts
+    </h3>
+    <div class="shortsLockupViewModelHostMetadataSubhead">820K views</div>
+  </ytm-shorts-lockup-view-model>
+
+  <!-- 9. Watched video (progress bar at 65%) -->
+  <ytd-rich-item-renderer data-test-id="card-9" class="yt-card">
+    <a id="video-title-link" href="/watch?v=watched1">
+      <span id="video-title" title="JavaScript Async/Await Explained">
+        JavaScript Async/Await Explained
+      </span>
+    </a>
+    <ytd-thumbnail-overlay-time-status-renderer>
+      <span id="text">12:34</span>
+    </ytd-thumbnail-overlay-time-status-renderer>
+    <div id="progress" style="width: 65%;"></div>
+    <div id="metadata-line">
+      <span class="inline-metadata-item">90K views</span>
+      <span class="inline-metadata-item">4 days ago</span>
+    </div>
+  </ytd-rich-item-renderer>
+
+  <!-- 10. Gaming review (45:00, 65K views, 10 days ago) -->
+  <ytd-rich-item-renderer data-test-id="card-10" class="yt-card">
+    <a id="video-title-link" href="/watch?v=aaa10">
+      <span id="video-title" title="Game Review: New Indie Adventure">
+        Game Review: New Indie Adventure
+      </span>
+    </a>
+    <ytd-thumbnail-overlay-time-status-renderer>
+      <span id="text">45:00</span>
+    </ytd-thumbnail-overlay-time-status-renderer>
+    <div id="metadata-line">
+      <span class="inline-metadata-item">65K views</span>
+      <span class="inline-metadata-item">10 days ago</span>
+    </div>
+  </ytd-rich-item-renderer>
+
+</section>

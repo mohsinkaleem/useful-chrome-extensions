@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>TubeFilter — content-script test harness</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 16px; color: #cc0000; margin-bottom: 8px; }
+    #yt-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
+    .yt-card {
+      border: 1px solid #ddd; padding: 10px; border-radius: 6px;
+      background: #fafafa; min-height: 80px;
+    }
+    .yt-card #video-title, .yt-card .yt-lockup-metadata-view-model-wiz__title,
+    .yt-card .shortsLockupViewModelHostMetadataTitle {
+      font-weight: 600; font-size: 13px; display: block; margin-bottom: 4px;
+    }
+    .yt-card .inline-metadata-item,
+    .yt-card .yt-content-metadata-view-model-wiz__metadata-text,
+    .yt-card .shortsLockupViewModelHostMetadataSubhead { color: #5f6368; font-size: 11px; margin-right: 6px; }
+    ytd-thumbnail-overlay-time-status-renderer, .ytThumbnailOverlayBadgeViewModelHost {
+      display: inline-block; background: #000; color: #fff; padding: 2px 6px;
+      border-radius: 3px; font-size: 11px; margin-bottom: 4px;
+    }
+    .badge-shape-wiz__text { color: white; }
+    [overlay-style="LIVE"] { background: #cc0000 !important; }
+    #progress { display: inline-block; width: 50%; height: 3px; background: #cc0000; margin-top: 4px; }
+    .controls { background: #f1f3f4; padding: 8px; border-radius: 6px; }
+    .pass { color: #1e8e3e; font-weight: 600; }
+    .fail { color: #d93025; font-weight: 600; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 6px; font-size: 11px; overflow: auto; max-height: 300px; }
+    .summary { margin-top: 12px; padding: 8px; border-radius: 6px; }
+    .summary.pass-all { background: #e8f5e9; border: 1px solid #c8e6c9; }
+    .summary.fail-any { background: #ffebee; border: 1px solid #ffcdd2; }
+  </style>
+</head>
+<body>
+  <h1>🎬 TubeFilter — Content-script test harness</h1>
+  <p>
+    Loads a static fixture of YouTube cards plus the real
+    <code>content.js</code> and runs assertion-driven scenarios. The
+    <code>chrome.*</code> APIs the content script uses are stubbed
+    locally so the script behaves exactly as it would on YouTube, but
+    in a context controllable from <code>playwright-cli</code>.
+  </p>
+  <div class="controls">
+    <button id="run-all">▶ Run all tests</button>
+    <button id="reset">↺ Reset</button>
+    <span id="status" style="margin-left: 10px; font-weight: 600;"></span>
+  </div>
+
+  <!-- Test results -->
+  <div id="results"></div>
+  <div id="summary" class="summary" style="display:none;"></div>
+
+  <!-- Fixture container -->
+  <div id="fixture-host"></div>
+
+  <!-- Popup suite: its own document so the chrome.* stub can be installed
+       before popup.js runs. Sized to the real popup viewport so the
+       height assertion is meaningful. -->
+  <h2 style="font-size:13px;margin-top:16px;color:#5f6368;">Popup (320×600)</h2>
+  <iframe id="popup-frame" src="./popup-harness.html" title="Popup harness"
+          width="320" height="600"
+          style="border:1px solid #ddd;border-radius:6px;"></iframe>
+
+  <!-- ===========================================================
+       chrome.* shim (just enough for content.js to load happily)
+       =========================================================== -->
+  <script>
+    window.__messages = [];
+    window.chrome = {
+      runtime: {
+        onMessage: {
+          _listeners: [],
+          addListener(fn) { this._listeners.push(fn); },
+          removeListener(fn) {
+            const i = this._listeners.indexOf(fn);
+            if (i >= 0) this._listeners.splice(i, 1);
+          },
+        },
+        sendMessage(msg) {
+          window.__messages.push(msg);
+          return Promise.resolve({ ok: true });
+        },
+        lastError: null,
+      },
+    };
+
+    // Helper: dispatch a message to the content script as if from the popup.
+    window.dispatchToContentScript = function (request) {
+      return new Promise((resolve) => {
+        const listeners = chrome.runtime.onMessage._listeners.slice();
+        let responded = false;
+        const respond = (r) => { if (!responded) { responded = true; resolve(r); } };
+        if (listeners.length === 0) return resolve(undefined);
+        listeners.forEach((fn) => {
+          try { fn(request, { id: 'test-harness' }, respond); }
+          catch (e) { console.error('listener threw', e); }
+        });
+        // Fallback: if no listener calls sendResponse synchronously,
+        // resolve after a short tick.
+        setTimeout(() => respond(undefined), 100);
+      });
+    };
+  </script>
+
+  <!-- Load fixture into the page synchronously before content.js -->
+  <script>
+    async function injectFixture() {
+      const resp = await fetch('./fixtures/youtube-grid.html');
+      const html = await resp.text();
+      document.getElementById('fixture-host').innerHTML = html;
+    }
+  </script>
+
+  <!-- ============================================================
+       The test runner
+       ============================================================ -->
+  <script>
+    /**
+     * Each test:
+     *   filters: filter object to send
+     *   expectedVisible: array of data-test-id values that must remain visible
+     */
+    const TESTS = [
+      {
+        name: 'no filter ⇒ everything visible',
+        filters: {
+          viewFilter: { type: 'none' }, durationFilter: { type: 'none' },
+          timeFilter: { type: 'none' }, titleKeywords: [], excludeKeywords: [],
+          keywordMode: 'include', keywordLogic: 'AND', useRegex: false,
+        },
+        expectedVisible: [
+          'card-1','card-2','card-3','card-4','card-5','card-6',
+          'card-7','card-8','card-9','card-10',
+        ],
+      },
+      {
+        name: 'hide Shorts only',
+        filters: {
+          viewFilter: { type: 'none' }, durationFilter: { type: 'none' },
+          timeFilter: { type: 'none' }, titleKeywords: [], excludeKeywords: [],
+          keywordMode: 'include', keywordLogic: 'AND', useRegex: false,
+          hideShorts: true,
+        },
+        expectedVisible: [
+          'card-1','card-2','card-3','card-4','card-5','card-6','card-7','card-9','card-10',
+        ],
+      },
+      {
+        name: 'hide Live + Watched',
+        filters: {
+          viewFilter: { type: 'none' }, durationFilter: { type: 'none' },
+          timeFilter: { type: 'none' }, titleKeywords: [], excludeKeywords: [],
+          keywordMode: 'include', keywordLogic: 'AND', useRegex: false,
+          hideLive: true, hideWatched: true,
+        },
+        expectedVisible: [
+          'card-1','card-2','card-3','card-4','card-5','card-6','card-8','card-10',
+        ],
+      },
+      {
+        name: 'views > 100K (excluding shorts/live)',
+        filters: {
+          viewFilter: { type: 'greater', min: 100000 },
+          durationFilter: { type: 'none' }, timeFilter: { type: 'none' },
+          titleKeywords: [], excludeKeywords: [],
+          keywordMode: 'include', keywordLogic: 'AND', useRegex: false,
+        },
+        // card-1 12K → hidden, card-2 850K → keep, card-3 1.2M → keep,
+        // card-4 300K → keep, card-5 45K → hidden, card-6 2.5M → keep,
+        // card-7 live (untouched by views), card-8 short, card-9 90K → hidden, card-10 65K → hidden
+        expectedVisible: ['card-2','card-3','card-4','card-6','card-7','card-8'],
+      },
+      {
+        name: 'duration > 10 minutes',
+        filters: {
+          viewFilter: { type: 'none' },
+          durationFilter: { type: 'greater', greaterValue: '10:00' },
+          timeFilter: { type: 'none' },
+          titleKeywords: [], excludeKeywords: [],
+          keywordMode: 'include', keywordLogic: 'AND', useRegex: false,
+        },
+        // > 600s: card-2 (6130), card-5 (1320), card-6 (945), card-9 (754), card-10 (2700)
+        // < 600s: card-1 (330), card-3 (225), card-4 (491) → hidden
+        // card-7 live → untouched. card-8 short → no duration, untouched.
+        expectedVisible: ['card-2','card-5','card-6','card-7','card-8','card-9','card-10'],
+      },
+      {
+        name: 'less than 7 days old',
+        filters: {
+          viewFilter: { type: 'none' }, durationFilter: { type: 'none' },
+          timeFilter: { type: 'less', lessValue: 7, lessUnit: 'days' },
+          titleKeywords: [], excludeKeywords: [],
+          keywordMode: 'include', keywordLogic: 'AND', useRegex: false,
+        },
+        // < 168h: card-1 (48h), card-4 (24h), card-5 (6h), card-9 (96h)
+        // ≥ 168h: card-2 (504h), card-3 (~3600h), card-6 (17520h), card-10 (240h) → hidden
+        // card-7/8 have no recognisable "ago" → untouched (kept visible).
+        expectedVisible: ['card-1','card-4','card-5','card-7','card-8','card-9'],
+      },
+      {
+        name: 'keywords: include "tutorial"',
+        filters: {
+          viewFilter: { type: 'none' }, durationFilter: { type: 'none' },
+          timeFilter: { type: 'none' },
+          titleKeywords: ['tutorial'], excludeKeywords: [],
+          keywordMode: 'include', keywordLogic: 'AND', useRegex: false,
+        },
+        // titles containing "tutorial" → card-1 only.
+        expectedVisible: ['card-1'],
+      },
+      {
+        name: 'keywords: exclude "clickbait,reaction"',
+        filters: {
+          viewFilter: { type: 'none' }, durationFilter: { type: 'none' },
+          timeFilter: { type: 'none' },
+          titleKeywords: ['clickbait','reaction'],
+          excludeKeywords: [],
+          keywordMode: 'exclude', keywordLogic: 'OR', useRegex: false,
+        },
+        expectedVisible: [
+          'card-1','card-2','card-3','card-5','card-6','card-7','card-8','card-9','card-10',
+        ],
+      },
+      {
+        name: 'regex: ^(?!.*shorts).* anywhere',
+        filters: {
+          viewFilter: { type: 'none' }, durationFilter: { type: 'none' },
+          timeFilter: { type: 'none' },
+          titleKeywords: ['^(?!.*shorts).+'], excludeKeywords: [],
+          keywordMode: 'include', keywordLogic: 'AND', useRegex: true,
+        },
+        // Should match every card whose title does NOT contain "shorts"
+        // → card-8 ("Quick Coding Tip #shorts") is hidden.
+        expectedVisible: [
+          'card-1','card-2','card-3','card-4','card-5','card-6','card-7','card-9','card-10',
+        ],
+      },
+      {
+        name: 'combined: hide Shorts + views < 100K + exclude clickbait',
+        filters: {
+          viewFilter: { type: 'less', max: 100000 },
+          durationFilter: { type: 'none' },
+          timeFilter: { type: 'none' },
+          titleKeywords: ['clickbait'],
+          excludeKeywords: [],
+          keywordMode: 'exclude', keywordLogic: 'OR', useRegex: false,
+          hideShorts: true,
+        },
+        // views < 100K kept → card-1 (12K), card-5 (45K), card-9 (90K), card-10 (65K)
+        // (card-4 300K is hidden by views, would also be by clickbait)
+        // shorts (card-8) hidden by toggle.
+        // card-7 live → views/duration don't apply, kept.
+        expectedVisible: ['card-1','card-5','card-7','card-9','card-10'],
+      },
+    ];
+
+    // -----------------------------------------------------------------
+    // Regression tests for the reviewed bugs / features. These need more
+    // than a filters-in / visible-cards-out assertion, so each one runs
+    // its own scenario and returns { ok, want, got }.
+    // -----------------------------------------------------------------
+    const NO_FILTERS = {
+      viewFilter: { type: 'none' }, durationFilter: { type: 'none' },
+      timeFilter: { type: 'none' }, titleKeywords: [], excludeKeywords: [],
+      keywordMode: 'include', keywordLogic: 'AND', useRegex: false,
+    };
+
+    const flush = () =>
+      new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    function makeCard(id, { title = '', duration = '10:00', views = '5K views', ago = '1 day ago' } = {}) {
+      const card = document.createElement('ytd-rich-item-renderer');
+      card.setAttribute('data-test-id', id);
+      card.className = 'yt-card';
+      card.innerHTML = `
+        <a id="video-title-link" href="/watch?v=${id}">
+          <span id="video-title" title="${title}">${title}</span>
+        </a>
+        <ytd-thumbnail-overlay-time-status-renderer><span id="text">${duration}</span></ytd-thumbnail-overlay-time-status-renderer>
+        <div id="metadata-line">
+          <span class="inline-metadata-item">${views}</span>
+          <span class="inline-metadata-item">${ago}</span>
+        </div>`;
+      document.getElementById('yt-grid').appendChild(card);
+      return card;
+    }
+
+    function setTitle(card, title) {
+      const node = card.querySelector('#video-title');
+      node.setAttribute('title', title);
+      node.textContent = title;
+    }
+
+    const isHidden = (el) => el.classList.contains('tubefilter-hidden');
+
+    const CUSTOM_TESTS = [
+      {
+        name: 'bug 1: a title that renders late is re-evaluated, not frozen',
+        async run() {
+          // Both cards paint their duration badge before their title — a
+          // very common ordering on a lazily-rendering feed. One title will
+          // match the include filter, the other won't, so the test proves
+          // the card is genuinely re-read rather than just left visible.
+          const matching = makeCard('late-match', { title: '' });
+          const other = makeCard('late-nomatch', { title: '' });
+          try {
+            await window.dispatchToContentScript({
+              action: 'applyFilters',
+              filters: { ...NO_FILTERS, titleKeywords: ['python'], keywordMode: 'include' },
+            });
+            await flush();
+            const hiddenWhileTitleMissing = isHidden(matching);
+
+            setTitle(matching, 'Advanced Python Deep Dive');
+            setTitle(other, 'Sourdough Bread From Scratch');
+            window.__tubefilter.applyFilters();
+            await flush();
+
+            const got = {
+              hiddenWhileTitleMissing,
+              matchingHiddenAfterTitleArrives: isHidden(matching),
+              nonMatchingHiddenAfterTitleArrives: isHidden(other),
+            };
+            return {
+              ok: !got.hiddenWhileTitleMissing &&
+                  !got.matchingHiddenAfterTitleArrives &&
+                  got.nonMatchingHiddenAfterTitleArrives,
+              want: {
+                hiddenWhileTitleMissing: false,
+                matchingHiddenAfterTitleArrives: false,
+                nonMatchingHiddenAfterTitleArrives: true,
+              },
+              got,
+            };
+          } finally {
+            matching.remove();
+            other.remove();
+          }
+        },
+      },
+      {
+        name: 'bug 2: an invalid regex shows everything instead of hiding everything',
+        async run() {
+          await window.dispatchToContentScript({
+            action: 'applyFilters',
+            filters: { ...NO_FILTERS, useRegex: true, titleKeywords: ['(unclosed'], keywordMode: 'include' },
+          });
+          await flush();
+          const visible = visibleCardIds().length;
+          return {
+            ok: visible === 10,
+            want: { visibleCards: 10 },
+            got: { visibleCards: visible },
+          };
+        },
+      },
+      {
+        name: 'bug 3: Clear pushes a zeroed statsUpdate for the badge',
+        async run() {
+          await window.dispatchToContentScript({
+            action: 'applyFilters',
+            filters: { ...NO_FILTERS, hideShorts: true },
+          });
+          await flush();
+          window.__messages.length = 0;
+
+          await window.dispatchToContentScript({ action: 'clearFilters' });
+          const stats = window.__messages.filter((m) => m && m.action === 'statsUpdate');
+          return {
+            ok: stats.length > 0 && stats[stats.length - 1].hiddenCount === 0,
+            want: { statsUpdatesOnClear: '>= 1 ending in 0' },
+            got: { statsUpdatesOnClear: stats.map((m) => m.hiddenCount) },
+          };
+        },
+      },
+      {
+        name: 'bug 5: re-injecting content.js does not create a second instance',
+        async run() {
+          const before = chrome.runtime.onMessage._listeners.length;
+          await new Promise((resolve) => {
+            const s = document.createElement('script');
+            s.src = '../content.js?reinject=1';
+            s.onload = resolve;
+            s.onerror = resolve;
+            document.body.appendChild(s);
+          });
+          const after = chrome.runtime.onMessage._listeners.length;
+          return {
+            ok: after === before,
+            want: { messageListeners: before },
+            got: { messageListeners: after },
+          };
+        },
+      },
+      {
+        name: 'bug 6: a 0%-width progress bar behind a wrapper is not "watched"',
+        async run() {
+          const card = makeCard('watched-zero', { title: 'Unwatched Video' });
+          // Wrapper first in document order, real segment (0%) second —
+          // exactly the shape that made querySelector pick the wrong node.
+          const wrapper = document.createElement('div');
+          wrapper.className = 'ytd-thumbnail-overlay-resume-playback-renderer';
+          const segment = document.createElement('div');
+          segment.id = 'progress';
+          segment.setAttribute('style', 'width: 0%');
+          wrapper.appendChild(segment);
+          card.appendChild(wrapper);
+
+          try {
+            const detected = window.__tubefilter.detectWatched(card);
+            await window.dispatchToContentScript({
+              action: 'applyFilters',
+              filters: { ...NO_FILTERS, hideWatched: true },
+            });
+            await flush();
+            const hidden = isHidden(card);
+            return {
+              ok: detected === false && hidden === false,
+              want: { detectWatched: false, hidden: false },
+              got: { detectWatched: detected, hidden },
+            };
+          } finally {
+            card.remove();
+          }
+        },
+      },
+      {
+        name: 'bug 6: a partially watched card is still detected',
+        async run() {
+          const card = makeCard('watched-partial', { title: 'Half Watched Video' });
+          const wrapper = document.createElement('div');
+          wrapper.className = 'ytd-thumbnail-overlay-resume-playback-renderer';
+          const segment = document.createElement('div');
+          segment.id = 'progress';
+          segment.setAttribute('style', 'width: 42%');
+          wrapper.appendChild(segment);
+          card.appendChild(wrapper);
+          try {
+            const detected = window.__tubefilter.detectWatched(card);
+            return { ok: detected === true, want: { detectWatched: true }, got: { detectWatched: detected } };
+          } finally {
+            card.remove();
+          }
+        },
+      },
+      {
+        name: 'bug 8: attribute mutations do not retrigger the filter pass',
+        async run() {
+          await window.dispatchToContentScript({
+            action: 'applyFilters',
+            filters: { ...NO_FILTERS, hideShorts: true },
+          });
+          await flush();
+          await sleep(700); // let any scheduled retry settle
+          window.__messages.length = 0;
+
+          // hideEl/showEl write a class and a data attribute on every pass;
+          // if attributes were observed this would loop forever.
+          document
+            .querySelector('[data-test-id="card-1"]')
+            .setAttribute('data-noise', String(Date.now()));
+          await sleep(450);
+
+          const retriggered = window.__messages.filter((m) => m && m.action === 'statsUpdate');
+          return {
+            ok: retriggered.length === 0,
+            want: { filterPassesAfterAttributeChange: 0 },
+            got: { filterPassesAfterAttributeChange: retriggered.length },
+          };
+        },
+      },
+      {
+        name: 'bug 11: no dead debug-outline rule is injected',
+        run() {
+          const css = document.getElementById('tubefilter-style').textContent;
+          return {
+            ok: !css.includes('tubefilter-debug-outline'),
+            want: { debugOutlineRule: false },
+            got: { debugOutlineRule: css.includes('tubefilter-debug-outline') },
+          };
+        },
+      },
+      {
+        name: 'F1: banner reports the hidden count and reveals on demand',
+        async run() {
+          await window.dispatchToContentScript({
+            action: 'applyFilters',
+            filters: { ...NO_FILTERS, hideShorts: true, showBanner: true },
+          });
+          await flush();
+
+          const banner = document.getElementById('tubefilter-banner');
+          const text = banner ? banner.querySelector('.tubefilter-banner-text').textContent : '';
+          const short = document.querySelector('[data-test-id="card-8"]');
+          const hiddenBefore = getComputedStyle(short).display === 'none';
+
+          banner.querySelector('.tubefilter-banner-btn').click();
+          const revealedVisible = getComputedStyle(short).display !== 'none';
+          // Still flagged as filtered — reveal must not clear filter state.
+          const stillMarked = isHidden(short);
+
+          banner.querySelector('.tubefilter-banner-btn').click();
+          const hiddenAgain = getComputedStyle(short).display === 'none';
+
+          return {
+            ok: /hiding 1 video\b/i.test(text) && hiddenBefore && revealedVisible &&
+                stillMarked && hiddenAgain,
+            want: {
+              text: 'TubeFilter is hiding 1 video',
+              hiddenBefore: true, revealedVisible: true,
+              stillMarkedHidden: true, hiddenAgain: true,
+            },
+            got: { text, hiddenBefore, revealedVisible, stillMarkedHidden: stillMarked, hiddenAgain },
+          };
+        },
+      },
+      {
+        name: 'F1: the banner can be opted out of',
+        async run() {
+          await window.dispatchToContentScript({
+            action: 'applyFilters',
+            filters: { ...NO_FILTERS, hideShorts: true, showBanner: false },
+          });
+          await flush();
+          const banner = document.getElementById('tubefilter-banner');
+          return {
+            ok: banner === null,
+            want: { banner: null },
+            got: { banner: banner ? 'present' : null },
+          };
+        },
+      },
+      {
+        name: 'F2: toggleFilters flips filtering without discarding the filters',
+        async run() {
+          await window.dispatchToContentScript({
+            action: 'applyFilters',
+            filters: { ...NO_FILTERS, hideShorts: true },
+          });
+          await flush();
+          const short = document.querySelector('[data-test-id="card-8"]');
+          const hiddenInitially = isHidden(short);
+
+          const off = await window.dispatchToContentScript({ action: 'toggleFilters' });
+          await flush();
+          const hiddenAfterOff = isHidden(short);
+          const kept = await window.dispatchToContentScript({ action: 'getFilters' });
+
+          const on = await window.dispatchToContentScript({ action: 'toggleFilters' });
+          await flush();
+          const hiddenAfterOn = isHidden(short);
+
+          const filtersRetained = !!(kept && kept.filters && kept.filters.hideShorts === true);
+          return {
+            ok: hiddenInitially && !hiddenAfterOff && filtersRetained && hiddenAfterOn &&
+                off.active === false && on.active === true,
+            want: {
+              hiddenInitially: true, hiddenAfterOff: false,
+              filtersRetained: true, hiddenAfterOn: true,
+            },
+            got: { hiddenInitially, hiddenAfterOff, filtersRetained, hiddenAfterOn },
+          };
+        },
+      },
+    ];
+
+    function visibleCardIds() {
+      const all = document.querySelectorAll('#yt-grid [data-test-id]');
+      const visible = [];
+      all.forEach((el) => {
+        if (!el.classList.contains('tubefilter-hidden')) {
+          visible.push(el.getAttribute('data-test-id'));
+        }
+      });
+      return visible;
+    }
+
+    function deepEqualSets(a, b) {
+      if (a.length !== b.length) return false;
+      const setB = new Set(b);
+      return a.every((v) => setB.has(v));
+    }
+
+    async function runTest(test) {
+      // Clear filters first
+      await window.dispatchToContentScript({ action: 'clearFilters' });
+      // Apply this test's filters
+      await window.dispatchToContentScript({
+        action: 'applyFilters', filters: test.filters,
+      });
+      // Give requestAnimationFrame a chance to flush.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+      const got = visibleCardIds();
+      const want = test.expectedVisible.slice().sort();
+      const gotSorted = got.slice().sort();
+      const ok = deepEqualSets(gotSorted, want);
+      return { test, ok, got: gotSorted, want };
+    }
+
+    async function runCustomTest(test) {
+      // Start from a clean slate so one scenario can't leak into the next.
+      await window.dispatchToContentScript({ action: 'clearFilters' });
+      try {
+        const r = await test.run();
+        return { name: test.name, ok: !!r.ok, want: r.want, got: r.got };
+      } catch (e) {
+        return { name: test.name, ok: false, want: 'no exception', got: String(e) };
+      }
+    }
+
+    async function runPopupSuite() {
+      const frame = document.getElementById('popup-frame');
+      if (!frame) return [];
+      try {
+        // Wait for the iframe to finish booting popup.js.
+        for (let i = 0; i < 100 && !frame.contentWindow?.__popupReady; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (!frame.contentWindow?.__popupReady) {
+          return [{ name: 'popup harness boots', ok: false, want: 'ready', got: 'timed out' }];
+        }
+        await frame.contentWindow.__popupReady;
+        return await frame.contentWindow.runPopupTests();
+      } catch (e) {
+        return [{ name: 'popup harness boots', ok: false, want: 'no exception', got: String(e) }];
+      }
+    }
+
+    function renderRow(results, r) {
+      const div = document.createElement('div');
+      div.style.marginTop = '6px';
+      div.innerHTML =
+        `<span class="${r.ok ? 'pass' : 'fail'}">${r.ok ? '✔' : '✘'}</span> ` +
+        `<code>${r.name}</code>` +
+        (r.ok ? '' :
+          `<pre>want: ${JSON.stringify(r.want)}\n got: ${JSON.stringify(r.got)}</pre>`);
+      results.appendChild(div);
+    }
+
+    async function runAll() {
+      const results = document.getElementById('results');
+      const summary = document.getElementById('summary');
+      const status = document.getElementById('status');
+      results.innerHTML = '';
+      summary.style.display = 'none';
+      status.textContent = '…running';
+
+      const out = [];
+
+      for (const t of TESTS) {
+        const r = await runTest(t);
+        const row = { name: r.test.name, ok: r.ok, want: r.want, got: r.got };
+        out.push(row);
+        renderRow(results, row);
+      }
+
+      for (const t of CUSTOM_TESTS) {
+        const row = await runCustomTest(t);
+        out.push(row);
+        renderRow(results, row);
+      }
+
+      // Reset the page before handing over to the popup suite.
+      await window.dispatchToContentScript({ action: 'clearFilters' });
+
+      for (const row of await runPopupSuite()) {
+        out.push(row);
+        renderRow(results, row);
+      }
+
+      const passed = out.filter((r) => r.ok).length;
+      const total = out.length;
+      summary.className = 'summary ' + (passed === total ? 'pass-all' : 'fail-any');
+      summary.style.display = 'block';
+      summary.textContent = `${passed}/${total} tests passed`;
+      status.textContent = passed === total ? 'PASS' : 'FAIL';
+
+      // Expose for the CLI to read
+      window.__testResults = { passed, total, ok: passed === total, details: out };
+      return window.__testResults;
+    }
+
+    document.getElementById('run-all').addEventListener('click', runAll);
+    document.getElementById('reset').addEventListener('click', async () => {
+      await window.dispatchToContentScript({ action: 'clearFilters' });
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('summary').style.display = 'none';
+      document.getElementById('status').textContent = 'reset';
+    });
+
+    // Boot
+    (async () => {
+      await injectFixture();
+      // Now load content.js. It self-initialises against the chrome shim.
+      const s = document.createElement('script');
+      s.src = '../content.js';
+      s.onload = () => {
+        document.getElementById('status').textContent = 'ready';
+      };
+      s.onerror = (e) => {
+        document.getElementById('status').textContent = 'content.js failed to load';
+        console.error(e);
+      };
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

@@ -1,32 +1,21 @@
 # 🎬 TubeFilter - YouTube Video Filter Extension
 
-A simple and fast Chrome extension to filter YouTube videos by view count, duration, upload time, and title keywords.
+A fast Chrome extension to filter YouTube videos by view count, duration, upload time, and title keywords — plus one-click toggles to hide Shorts, live streams, and already-watched videos.
 
 ## 🚀 Features
 
-- **View Count Filter**: Filter videos by view count ranges
-  - Greater than X views
-  - Less than X views  
-  - Between X and Y views
-- **Duration Filter**: Filter by video length
-  - Less than X minutes
-  - Greater than X minutes
-  - Custom duration range
-- **Upload Time Filter**: Filter videos by when they were posted
-  - Less than X time ago (e.g., less than 7 days ago)
-  - Greater than X time ago (e.g., greater than 30 days ago)
-  - Between two time periods (e.g., between 7 days and 30 days ago)
-  - Supports multiple time units: hours, days, weeks, months, years
-- **Title Keyword Filter**: Show only videos containing specific keywords OR exclude videos containing specific keywords
-  - **Multiple Keywords**: Enter multiple keywords separated by commas
-  - **AND/OR Logic**: Choose whether videos must contain ALL keywords (AND) or ANY keywords (OR)
-  - **Regex Support**: Use regular expressions for advanced pattern matching (e.g., `^\[.*?\]` to match titles starting with brackets)
-  - Include mode: Show only videos matching the keyword criteria
-  - Exclude mode: Hide videos matching the keyword criteria
-  - **Smart Preview**: See a preview of your keyword logic before applying
-- **Dynamic Filtering**: Works with YouTube's infinite scroll
-- **Non-intrusive**: Clean, simple interface
-- **Fast Performance**: Vanilla JavaScript, no dependencies
+- **Quick toggles**: Hide all **Shorts**, all **Live** streams, or anything you've already **Watched** with a single click
+- **Presets**: 🎯 Focus · 🆕 Fresh · 🎞 Long · 🔥 Popular — pre-configured filter combos
+- **View Count Filter**: Greater than, less than, or between two view counts (e.g. `10k`, `1.2m`)
+- **Duration Filter**: Less than / greater than / custom range (`5m`, `1h30m`, or `5:30`)
+- **Upload Time Filter**: Newer than, older than, or between two time periods (hrs · days · wks · mos · yrs)
+- **Title Keyword Filter** with `+` (include) / `-` (exclude) prefixes, ALL/ANY logic, and full regex support
+- **In-page banner** — "TubeFilter is hiding 14 videos — show anyway" lets you peek at what's filtered without clearing anything (opt-out in the popup)
+- **Keyboard shortcut** — <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> toggles filtering on the current tab without losing your filter settings
+- **Regex guide & live tester** on the extension's options page
+- **Live hidden count** in the popup and on the toolbar badge
+- **Dark mode** that follows your system setting
+- **Works with the new YouTube layout** (`yt-lockup-view-model`, Shorts shelves, lockup metadata) and the classic one (`ytd-rich-item-renderer`, sidebar, search results, channel grids)
 
 ## 📦 Installation
 
@@ -68,8 +57,14 @@ The extension includes placeholder PNG files. For better appearance:
    - Enter multiple keywords separated by commas (e.g., "tutorial, beginner, coding")
    - Choose AND/OR logic for keyword matching
    - Choose whether to include or exclude videos with those keywords
-4. **Click "Apply Filters"** to activate filtering
-5. **Use "Clear All"** to remove all filters and show all videos
+4. **Click "Apply"** to activate filtering
+5. **Use "Clear"** to remove all filters and show all videos
+6. Press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> to toggle filtering on and
+   off without losing your settings (rebind it at
+   `chrome://extensions/shortcuts`)
+7. While filters are active, an in-page banner shows how many videos are
+   hidden and offers **"show anyway"** to peek at them — untick *Show "N
+   hidden" banner on the page* in the popup to turn it off
 Filter Examples
 
 **Upload Time Filter Examples:**
@@ -128,33 +123,127 @@ Enable the "Use Regular Expression (Regex)" checkbox to use these patterns:
 - Videos that don't match the criteria are hidden using CSS
 - The extension adapts to YouTube's dynamic content loading
 
+## 🌍 Language support
+
+The **keyword**, **regex**, and **Shorts / Live / Watched** filters read
+structural signals and work on any YouTube UI language.
+
+The **view count**, **duration**, and **upload date** filters parse YouTube's
+own metadata text (`"1.2M views"`, `"3 weeks ago"`) and currently understand
+the **English** UI only. On a non-English YouTube the parsers return
+"unknown" and those three filters are **skipped** rather than guessed — so
+nothing is ever hidden by mistake, but they will silently have no effect.
+
+| Input | Parsed as |
+| --- | --- |
+| `1.2M views` | `1200000` |
+| `1,234 views` | `1234` |
+| `No views` | `0` |
+| `1,2 Mio. Aufrufe` | unknown → filter skipped |
+| `vor 2 Tagen` | unknown → filter skipped |
+
 ## 📁 File Structure
 
 ```text
 tubefilter/
-├── manifest.json          # Extension configuration
+├── manifest.json          # Extension configuration (MV3)
 ├── popup.html             # Filter interface HTML
-├── popup.css              # Interface styling
-├── popup.js               # Popup logic and validation
-├── content.js             # Main filtering logic
+├── popup.css              # Interface styling (with dark-mode support)
+├── popup.js               # Popup logic, validation, and tab messaging
+├── content.js             # Content script — DOM filtering on YouTube
+├── background.js          # Service worker — toolbar badge + keyboard command
+├── options.html           # Options page — regex guide and live pattern tester
+├── options.css            # Options page styling
+├── options.js             # Options page logic
 ├── icons/                 # Extension icons
 │   ├── icon.svg          # SVG template
 │   ├── icon16.png        # 16x16 icon
 │   ├── icon32.png        # 32x32 icon
 │   ├── icon48.png        # 48x48 icon
 │   └── icon128.png       # 128x128 icon
+├── tests/                 # Automated test harness
+│   ├── harness.html      # In-browser harness that loads content.js
+│   ├── popup-harness.html # Boots popup.js against a chrome.* stub
+│   ├── fixtures/         # Static YouTube DOM fixtures
+│   └── run.sh            # One-shot test runner (playwright-cli)
 ├── create_icons.sh        # Icon creation helper
 └── README.md             # This file
 ```
 
+## 🧪 Testing
+
+The extension ships with an in-browser test suite. It exercises the real
+`content.js` against a static fixture mimicking YouTube cards (both the
+classic `ytd-rich-item-renderer` shape and the new `yt-lockup-view-model`
+shape, plus Shorts, live streams, and watched videos), and the real
+`popup.js` against a `chrome.*` stub in a 320x600 iframe — so popup layout,
+validation and accessibility are covered too.
+
+Run all tests:
+
+```bash
+./tests/run.sh
+```
+
+The runner uses [`playwright-cli`](https://www.npmjs.com/package/playwright-cli):
+
+```text
+▶ starting static server on :8765
+▶ opening harness in playwright
+▶ running assertions
+  ✔ no filter ⇒ everything visible
+  ✔ hide Shorts only
+  ✔ hide Live + Watched
+  ✔ views > 100K (excluding shorts/live)
+  ✔ duration > 10 minutes
+  ✔ less than 7 days old
+  ✔ keywords: include "tutorial"
+  ✔ keywords: exclude "clickbait,reaction"
+  ✔ regex: ^(?!.*shorts).* anywhere
+  ✔ combined: hide Shorts + views < 100K + exclude clickbait
+  ✔ bug 1: a title that renders late is re-evaluated, not frozen
+  ✔ bug 2: an invalid regex shows everything instead of hiding everything
+  ✔ bug 3: Clear pushes a zeroed statsUpdate for the badge
+  ✔ bug 5: re-injecting content.js does not create a second instance
+  ✔ bug 6: a 0%-width progress bar behind a wrapper is not "watched"
+  ✔ bug 6: a partially watched card is still detected
+  ✔ bug 8: attribute mutations do not retrigger the filter pass
+  ✔ bug 11: no dead debug-outline rule is injected
+  ✔ F1: banner reports the hidden count and reveals on demand
+  ✔ F1: the banner can be opted out of
+  ✔ F2: toggleFilters flips filtering without discarding the filters
+  ✔ bug 9: view input "1e6" is rejected, not coerced to 1
+  ✔ bug 7: duration "0" fails validation
+  ✔ bug 2: unclosed regex fails validation with a message
+  ✔ bug 2: a valid regex still passes validation
+  ✔ U1: popup fits inside Chrome's ~600px popup cap
+  ✔ U2: presets show an active state and toggle back off
+  ✔ U2: stacked presets each report their own state
+  ✔ U3: presets refresh the keyword preview
+  ✔ U4: Clear resets the text and number inputs
+  ✔ U5: section headers are keyboard operable and expose state
+  ✔ U5: inputs carry accessible names
+  ✔ U6: collapse state survives a reopen
+  ✔ U7: Apply/Clear are disabled on a non-YouTube tab
+  ✔ F1: banner preference travels with the filters
+  ✔ F3: the ? button opens the options page
+  ✔ F3: the regex guide no longer ships inside the popup
+
+✅ 37/37 tests passed
+```
+
+You can also open `tests/harness.html` manually in any browser and click
+"Run all tests" — no extension reload required.
+
 ## 🔧 Technical Details
 
 - **Manifest Version**: 3 (Chrome Extensions Manifest V3)
-- **Permissions**: `activeTab`, `storage`
-- **Host Permissions**: `https://www.youtube.com/*`
-- **Architecture**: Content script + popup interface
-- **Storage**: Chrome sync storage for filter persistence
-- **Compatibility**: Modern Chrome browsers
+- **Permissions**: `activeTab`, `scripting`
+- **Host Permissions**: `https://www.youtube.com/*`, `https://m.youtube.com/*`
+- **Architecture**: Content script + popup + background service worker
+- **Compatibility**: Modern Chromium browsers (Chrome, Edge, Brave, Arc, Opera)
+- **Resilience**: Multi-selector cascade with fallbacks; survives YouTube DOM changes
+- **Performance**: Batched DOM writes via `requestAnimationFrame`; per-filter version cache; debounced mutation observer
 
 ## 🐛 Troubleshooting
 
@@ -180,13 +269,10 @@ tubefilter/
 
 - Like/dislike ratio filtering (if available)
 - Export/import filter presets
-- Keyboard shortcuts
+- Localised metadata parsing for non-English YouTube UIs
 - Statistics dashboard
-- Regex support for advanced keyword matching
 - Keyword highlighting in video titles
 - Filter history
-- Quick filter presetmatching
-- Keyword highlighting in video titles
 
 ## 📝 License
 
