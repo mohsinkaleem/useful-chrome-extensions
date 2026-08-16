@@ -105,11 +105,13 @@ export async function enrichBookmark(bookmarkId, options = {}) {
       console.log(`Skipping non-fetchable bookmark: ${bookmark.url}`);
       // Write the terminal state once, otherwise this row stays "pending
       // enrichment" forever and is re-queued on every sync.
+      let wrote = false;
       if (bookmark.enrichable !== false) {
         bookmark.enrichable = false;
         await upsertBookmark(bookmark);
+        wrote = true;
       }
-      return { success: false, error: 'Not a public HTTP URL', skipped: true };
+      return { success: false, error: 'Not a public HTTP URL', skipped: true, wrote };
     }
 
     // Skip if recently enriched (based on freshness settings) - unless force is true
@@ -133,12 +135,41 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     const platformData = parseBookmarkUrl(bookmark.url);
 
     // Check dead links first (quick HEAD request)
-    const isAlive = await checkBookmarkAlive(bookmark.url);
+    const check = await checkBookmarkAlive(bookmark.url);
+    bookmark.lastStatus = check.status ?? null;
 
-    // If dead, just update the isAlive status and skip metadata fetching
-    if (isAlive === false) {
-      bookmark.isAlive = false;
+    let state = check.state;
+    if (check.networkError) {
+      // Ambiguous failure. Count it, and only commit to "dead" once it has
+      // happened on separate runs - otherwise one VPN-less afternoon marks
+      // every internal host in the library dead.
+      bookmark.checkFailures = (bookmark.checkFailures || 0) + 1;
+      if (bookmark.checkFailures >= NETWORK_FAILURE_THRESHOLD) {
+        state = LINK_DEAD;
+      } else {
+        // Deliberately not stamping lastChecked: that is the freshness guard,
+        // and setting it here would park the row for 30 days before the second
+        // attempt that settles the verdict. The counter terminates the retry
+        // after one more pass regardless.
+        await upsertBookmark(bookmark);
+        return { success: true, skipped: true, unreachable: true, wrote: true };
+      }
+    } else {
+      bookmark.checkFailures = 0;
+    }
+
+    const isAlive = state === LINK_DEAD ? false : state === LINK_UNKNOWN ? null : true;
+    bookmark.accessBlocked = state === LINK_BLOCKED;
+
+    // Dead or blocked: record the verdict and skip metadata fetching. A page
+    // that just refused an anonymous HEAD will refuse an anonymous GET too.
+    if (state === LINK_DEAD || state === LINK_BLOCKED) {
+      bookmark.isAlive = isAlive;
       bookmark.lastChecked = Date.now();
+      // Terminal for the enrichment queue. Without this the row stays "pending
+      // enrichment" forever and is re-queued on every sync - 218 of 531 pending
+      // in a real profile were dead links being re-queued indefinitely.
+      bookmark.enrichable = true;
       // Still populate platform data even for dead links
       if (platformData) {
         bookmark.platform = platformData.platform;
@@ -148,8 +179,14 @@ export async function enrichBookmark(bookmarkId, options = {}) {
       }
       // Topics will be detected separately via Deep Analysis
       await upsertBookmark(bookmark);
-      await logEvent(bookmarkId, 'enrichment', { isAlive: false });
-      return { success: true, isAlive: false, skipped: true };
+      await logEvent(bookmarkId, 'enrichment', { isAlive, blocked: state === LINK_BLOCKED });
+      return {
+        success: true,
+        isAlive,
+        blocked: state === LINK_BLOCKED,
+        skipped: true,
+        wrote: true,
+      };
     }
 
     // Fetch page metadata
@@ -172,6 +209,7 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     bookmark.enrichedAt = Date.now();
     bookmark.enrichable = true;
     bookmark.enrichmentError = null;
+    bookmark.accessBlocked = false;
     bookmark.faviconUrl = metadata.faviconUrl || bookmark.faviconUrl;
     bookmark.contentSnippet = metadata.snippet || bookmark.contentSnippet;
     bookmark.rawMetadata = metadata.rawMetadata || bookmark.rawMetadata; // Store comprehensive metadata
@@ -201,6 +239,7 @@ export async function enrichBookmark(bookmarkId, options = {}) {
       description: metadata.description,
       platform: enrichedPlatformData?.platform,
       isAlive,
+      wrote: true,
     };
   } catch (error) {
     console.error(`Error enriching bookmark ${bookmarkId}:`, error);
@@ -220,7 +259,7 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     }
 
     await logEvent(bookmarkId, 'enrichment', { success: false, error: error.message });
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, wrote: true };
   }
 }
 
@@ -264,34 +303,81 @@ function noteHostResponse(url, response) {
   hostNextAllowedAt.set(host, Date.now() + Math.min(delay, HOST_MAX_BACKOFF_MS));
 }
 
-// Check if a bookmark URL is still alive
-async function checkBookmarkAlive(url) {
-  if (!isFetchableUrl(url)) return null;
+// Statuses that say nothing about whether the page exists: a rate limit, a
+// gateway hiccup, or a TLS misconfiguration at the edge. The old check counted
+// every one of these as dead, so a single rate-limited burst against one host
+// permanently condemned every bookmark on it.
+const TRANSIENT_STATUSES = new Set([
+  408, 425, 429, 500, 502, 503, 504,
+  // Cloudflare edge failures - the origin is having a bad day, not gone.
+  520, 521, 522, 523, 524, 525, 526,
+]);
+
+// Reachable, just not by an anonymous client. `safeFetch` sends
+// `credentials: 'omit'`, so login-gated and bot-protected pages answer with
+// these. The page is up; we simply cannot see it.
+const RESTRICTED_STATUSES = new Set([401, 403, 406, 451]);
+
+export const LINK_ALIVE = 'alive';
+export const LINK_DEAD = 'dead';
+export const LINK_BLOCKED = 'blocked';
+export const LINK_UNKNOWN = 'unknown';
+
+// A thrown fetch is ambiguous: a domain that no longer resolves and a host that
+// needs a VPN we are not on look identical from here. Require this many checks
+// in a row to fail before recording "dead".
+const NETWORK_FAILURE_THRESHOLD = 2;
+
+/** @param {number} status @returns {'alive'|'dead'|'blocked'|'unknown'} */
+export function classifyStatus(status) {
+  if (status >= 200 && status < 400) return LINK_ALIVE;
+  if (TRANSIENT_STATUSES.has(status)) return LINK_UNKNOWN;
+  if (RESTRICTED_STATUSES.has(status)) return LINK_BLOCKED;
+  return LINK_DEAD; // 404 / 410 and friends
+}
+
+/**
+ * Probe a URL and classify the outcome.
+ *
+ * HEAD on its own is not trustworthy - plenty of servers answer it with
+ * 404/405/406 for pages a GET serves fine - so only a GET is allowed to declare
+ * a link dead. The extra request costs one round-trip per genuinely dead link,
+ * which is the right trade against offering to delete live bookmarks.
+ *
+ * @returns {Promise<{state: string, status: number|null, networkError: boolean}>}
+ */
+export async function checkBookmarkAlive(url) {
+  const unknown = { state: LINK_UNKNOWN, status: null, networkError: false };
+  if (!isFetchableUrl(url)) return unknown;
 
   await awaitHostSlot(url);
 
   try {
     const response = await safeFetch(url, { method: 'HEAD', timeout: 5000, readBody: false });
     noteHostResponse(url, response);
-    // Consider 2xx and 3xx as alive
-    return response.ok || (response.status >= 300 && response.status < 400);
+    const state = classifyStatus(response.status);
+    if (state !== LINK_DEAD) return { state, status: response.status, networkError: false };
   } catch (error) {
     if (error.name === 'AbortError') {
       console.log(`Timeout checking ${url}`);
-      return null; // Unknown - timeout
+      return unknown;
     }
+    // Some servers reject HEAD outright; fall through to the GET.
+  }
 
-    // Some servers reject HEAD; retry once with a ranged GET before declaring it dead.
-    await awaitHostSlot(url);
-    try {
-      const response = await safeFetch(url, { method: 'GET', timeout: 5000, maxBytes: 1024 });
-      noteHostResponse(url, response);
-      return response.ok || (response.status >= 300 && response.status < 400);
-    } catch (error2) {
-      if (error2.name === 'AbortError') return null;
-      console.log(`Error checking ${url}:`, error2.message);
-      return false; // Likely dead
-    }
+  await awaitHostSlot(url);
+  try {
+    const response = await safeFetch(url, { method: 'GET', timeout: 5000, maxBytes: 1024 });
+    noteHostResponse(url, response);
+    return {
+      state: classifyStatus(response.status),
+      status: response.status,
+      networkError: false,
+    };
+  } catch (error) {
+    if (error.name === 'AbortError') return unknown;
+    console.log(`Error checking ${url}:`, error.message);
+    return { state: LINK_UNKNOWN, status: null, networkError: true };
   }
 }
 
@@ -324,21 +410,29 @@ async function fetchPageMetadata(url) {
     };
 
     // Clean HTML for better content extraction
-    // Remove scripts, styles, navs, headers, footers to avoid noise
-    const cleanHtml = html
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gim, '')
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gim, '')
-      .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gim, '')
-      .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gim, '')
-      .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gim, '')
-      .replace(/<!--[\s\S]*?-->/g, '');
+    // Remove scripts, styles, navs, headers, footers to avoid noise.
+    //
+    // Everything below except the paragraph scan reads from <head>, so the
+    // document is split there first: the cleanup used to run six sequential
+    // full-string replaces over a body of up to 512 KB, allocating a fresh copy
+    // each time - ~3 MB of transient strings per bookmark, on the service-worker
+    // thread, at concurrency up to 20. The five tag strips are also one
+    // alternation pass now rather than five.
+    const stripNoise = (source) =>
+      source
+        .replace(/<(script|style|nav|header|footer)\b[^>]*>[\s\S]*?<\/\1>/gim, '')
+        .replace(/<!--[\s\S]*?-->/g, '');
+
+    const headEnd = html.search(/<\/head\s*>/i);
+    const cleanHead = stripNoise(headEnd === -1 ? html : html.slice(0, headEnd));
+    const cleanBody = stripNoise(headEnd === -1 ? html : html.slice(headEnd));
 
     // Extract all meta tags using regex.
-    // Read from cleanHtml so values inside <script> bodies or comments can't be injected.
+    // Read from cleanHead so values inside <script> bodies or comments can't be injected.
     const metaTagRegex = /<meta\s+([^>]*?)>/gi;
     let metaMatch;
 
-    while ((metaMatch = metaTagRegex.exec(cleanHtml)) !== null) {
+    while ((metaMatch = metaTagRegex.exec(cleanHead)) !== null) {
       const metaTag = metaMatch[1];
 
       // Extract name/property and content attributes
@@ -360,7 +454,7 @@ async function fetchPageMetadata(url) {
     }
 
     // Extract JSON-LD structured data.
-    // Must read raw html - cleanHtml has already stripped every <script> block.
+    // Must read raw html - the cleanup above has already stripped every <script>.
     const jsonLdRegex = /<script\s+type=["']application\/ld\+json["']>(.*?)<\/script>/gis;
     let jsonLdMatch;
 
@@ -374,21 +468,21 @@ async function fetchPageMetadata(url) {
     }
 
     // Extract title tag
-    const titleMatch = cleanHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const titleMatch = cleanHead.match(/<title[^>]*>([^<]+)<\/title>/i);
     if (titleMatch) {
       rawMetadata.other.title = titleMatch[1].trim();
     }
 
     // Extract canonical link
     const canonicalMatch =
-      cleanHtml.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i) ||
-      cleanHtml.match(/<link\s+href=["']([^"']+)["']\s+rel=["']canonical["']/i);
+      cleanHead.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']+)["']/i) ||
+      cleanHead.match(/<link\s+href=["']([^"']+)["']\s+rel=["']canonical["']/i);
     if (canonicalMatch) {
       rawMetadata.other.canonical = canonicalMatch[1];
     }
 
     // Extract language attribute
-    const langMatch = cleanHtml.match(/<html[^>]*\slang=["']([^"']+)["']/i);
+    const langMatch = cleanHead.match(/<html[^>]*\slang=["']([^"']+)["']/i);
     if (langMatch) {
       rawMetadata.other.language = langMatch[1];
     }
@@ -424,7 +518,7 @@ async function fetchPageMetadata(url) {
     }
 
     // Get favicon using regex
-    const faviconMatch = cleanHtml.match(
+    const faviconMatch = cleanHead.match(
       /<link\s+([^>]*rel=["'](?:icon|shortcut icon)["'][^>]*)>/i,
     );
     if (faviconMatch) {
@@ -440,7 +534,7 @@ async function fetchPageMetadata(url) {
     let pMatch;
     const paragraphs = [];
 
-    while ((pMatch = pRegex.exec(cleanHtml)) !== null) {
+    while ((pMatch = pRegex.exec(cleanBody)) !== null) {
       const text = pMatch[1]
         .replace(/&nbsp;/g, ' ')
         .replace(/&amp;/g, '&')
@@ -785,6 +879,10 @@ export async function processEnrichmentBatch(
     let failed = 0;
     let skipped = 0;
     let completed = 0;
+    // Dead links are counted as `skipped`, so gating invalidation on `success`
+    // left the Health header quoting a 5-minute-stale dead-link count directly
+    // above the freshly-updated list.
+    let wroteAnyRecord = false;
 
     // Process bookmarks with concurrency control
     const processBookmark = async (item, index) => {
@@ -805,6 +903,7 @@ export async function processEnrichmentBatch(
         }
 
         const result = await enrichBookmark(item.bookmarkId, { force });
+        if (result.wrote) wroteAnyRecord = true;
 
         // Update counters
         if (result.success) {
@@ -892,7 +991,7 @@ export async function processEnrichmentBatch(
     // Wait for all workers to complete
     await Promise.all(workers);
 
-    if (success > 0) {
+    if (wroteAnyRecord) {
       await invalidateMetricCaches('enrich');
     }
 

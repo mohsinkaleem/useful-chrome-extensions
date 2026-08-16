@@ -3,10 +3,12 @@ node_modules/
 *.map
 
 # Build output
+# Leading slash matters: a bare `background.js` matches at any depth and was
+# silently excluding src/background.js, the actual source file, from the repo.
 dist/
 extension/
-background.js
-analysis-worker.js
+/background.js
+/analysis-worker.js
 public/dashboard.js
 public/dashboard.css
 public/dashboard-*.js
@@ -16,3 +18,7 @@ public/tailwind.css
 
 # Local data exports (contain personal browsing data)
 *backup-*.json
+
+# Review notes written from real exports: quote live bookmark URLs and internal
+# hostnames, so they stay local. This repo is public.
+IMPROVEMENTS.md

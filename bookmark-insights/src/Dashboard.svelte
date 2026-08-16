@@ -22,6 +22,7 @@
     mergeBookmarks,
     getAllBookmarks,
     getDeadLinks,
+    getBlockedLinks,
     getQuickStats,
     getSettings,
     updateSettings,
@@ -108,6 +109,12 @@
   let malformedUrls = [];
   let deadLinks = [];
   let loadingDeadLinks = false;
+  // Reachable, but not by an anonymous fetch: login walls, bot protection, and
+  // VPN-gated internal hosts. Kept separate from dead links so they are never
+  // swept up by "Delete All".
+  let blockedLinks = [];
+  let blockedDisplayLimit = 10;
+  let reVerifyingDeadLinks = false;
   let quickStats = null;
 
   // Search result stats for sidebar (domains/folders from search results)
@@ -682,6 +689,14 @@
           loadingDeadLinks = false;
         });
 
+      getBlockedLinks()
+        .then((links) => {
+          blockedLinks = links;
+        })
+        .catch((err) => {
+          console.error('Error loading blocked links:', err);
+        });
+
       // Dead link insights load
       getDeadLinkInsights()
         .then((insights) => {
@@ -910,6 +925,43 @@
 
   function loadMoreDeadLinks() {
     deadLinksDisplayLimit += 10;
+  }
+
+  function loadMoreBlocked() {
+    blockedDisplayLimit += 10;
+  }
+
+  // Clear every stored dead-link verdict so the corrected checker re-decides
+  // them. Earlier versions treated any non-2xx/3xx HEAD as dead, which counted
+  // rate limits, login walls and HEAD-hostile servers as gone.
+  async function reVerifyDeadLinks() {
+    const confirmed = await confirmAction({
+      title: 'Re-verify dead links',
+      message:
+        `Clear the stored verdict on all ${deadLinks.length} dead links and check them again? ` +
+        'Nothing is deleted - they will be re-checked in the background.',
+      confirmLabel: 'Re-verify',
+    });
+    if (!confirmed) return;
+
+    reVerifyingDeadLinks = true;
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'resetDeadLinkVerdicts' });
+      if (!response?.success) throw new Error(response?.error || 'Re-verify failed');
+      const reset = response.reset ?? 0;
+      deadLinks = await getDeadLinks();
+      blockedLinks = await getBlockedLinks();
+      quickStats = await getQuickStats();
+      deadLinkInsights = await getDeadLinkInsights();
+      notify(`Cleared ${reset} dead-link verdict${reset === 1 ? '' : 's'} for re-checking`, {
+        type: 'success',
+      });
+    } catch (err) {
+      console.error('Error re-verifying dead links:', err);
+      notify('Could not re-verify dead links', { type: 'error' });
+    } finally {
+      reVerifyingDeadLinks = false;
+    }
   }
 
   // Delete a single dead link
@@ -2040,6 +2092,17 @@
                 </div>
                 <div class="text-xs text-gray-500 dark:text-gray-400">Dead Links</div>
               </div>
+              {#if quickStats.blockedLinks > 0}
+                <div
+                  class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow text-center transition-colors"
+                  title="Reachable, but refused an anonymous request: login walls, bot protection, VPN-only hosts"
+                >
+                  <div class="text-2xl font-bold text-amber-600 dark:text-amber-400">
+                    {quickStats.blockedLinks}
+                  </div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">Blocked</div>
+                </div>
+              {/if}
               <div
                 class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow text-center transition-colors"
               >
@@ -2569,14 +2632,16 @@
                   Dead Links {#if !loadingDeadLinks}({deadLinks.length}){/if}
                 </h3>
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Bookmarks detected as unreachable during enrichment
+                  Bookmarks that returned "not found" to a full GET request. Pages that merely
+                  refused us — login walls, bot protection, VPN-only hosts — are listed as Blocked
+                  below instead.
                 </p>
               </div>
               {#if deadLinks.length > 0}
                 <div class="flex gap-2 flex-shrink-0">
                   <button
                     on:click={reEnrichDeadLinks}
-                    disabled={reEnrichingDeadLinks || deletingDeadLinks}
+                    disabled={reEnrichingDeadLinks || deletingDeadLinks || reVerifyingDeadLinks}
                     class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
                     title="Re-check dead links to see if they're alive again"
                   >
@@ -2585,6 +2650,19 @@
                       Re-checking...
                     {:else}
                       🔄 Re-check
+                    {/if}
+                  </button>
+                  <button
+                    on:click={reVerifyDeadLinks}
+                    disabled={reEnrichingDeadLinks || deletingDeadLinks || reVerifyingDeadLinks}
+                    class="px-3 py-1.5 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                    title="Clear every stored dead-link verdict and check them again from scratch"
+                  >
+                    {#if reVerifyingDeadLinks}
+                      <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Clearing...
+                    {:else}
+                      ♻️ Re-verify all
                     {/if}
                   </button>
                   <button
@@ -2941,6 +3019,90 @@
               {/if}
             </div>
           </div>
+
+          <!-- Blocked Links Section -->
+          {#if blockedLinks.length > 0}
+            <div
+              class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors"
+            >
+              <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
+                  Blocked Links ({blockedLinks.length})
+                </h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  These pages are up — they just refused an anonymous request (401, 403, 406, 451).
+                  Login walls, bot protection and hosts that need a VPN land here. They are not dead
+                  and are never included in "Delete All".
+                </p>
+              </div>
+              <div class="p-6">
+                <div class="space-y-2 max-h-[32rem] overflow-y-auto">
+                  {#each blockedLinks.slice(0, blockedDisplayLimit) as bookmark (bookmark.id)}
+                    <div
+                      class="p-3 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800"
+                    >
+                      <div class="flex items-start justify-between">
+                        <div class="flex-1 min-w-0">
+                          <a
+                            href={safeHref(bookmark.url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="block group"
+                          >
+                            <div
+                              class="text-sm font-medium text-gray-800 dark:text-gray-400 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400"
+                            >
+                              {bookmark.title}
+                            </div>
+                            <div
+                              class="text-xs text-gray-500 dark:text-gray-400 truncate group-hover:underline"
+                            >
+                              {bookmark.url}
+                            </div>
+                          </a>
+                          <div
+                            class="text-xs text-amber-700 dark:text-amber-400 mt-1 flex items-center gap-3"
+                          >
+                            {#if bookmark.lastStatus}
+                              <span>HTTP {bookmark.lastStatus}</span>
+                            {/if}
+                            <span
+                              >Last checked: {bookmark.lastChecked
+                                ? new Date(bookmark.lastChecked).toLocaleDateString()
+                                : 'Unknown'}</span
+                            >
+                            {#if bookmark.domain}
+                              <span class="text-gray-500 dark:text-gray-500"
+                                >• {bookmark.domain}</span
+                              >
+                            {/if}
+                          </div>
+                        </div>
+                        <a
+                          href={safeHref(bookmark.url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="px-2 py-1 ml-2 flex-shrink-0 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                        >
+                          Open
+                        </a>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+                {#if blockedLinks.length > blockedDisplayLimit}
+                  <div class="mt-4 text-center">
+                    <button
+                      on:click={loadMoreBlocked}
+                      class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                    >
+                      Load More ({blockedDisplayLimit} of {blockedLinks.length} shown)
+                    </button>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
 
           <!-- Duplicates & Similarities (Unified) -->
           <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
@@ -3360,6 +3522,15 @@
                   No cleanup candidates found. Your bookmarks look great!
                 </p>
               {:else}
+                {#if uselessBookmarks.hasVisitData === false}
+                  <div
+                    class="mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300"
+                  >
+                    <strong>No visit data.</strong> Browsing-behaviour tracking has never recorded an
+                    open, so "Old &amp; Unused" here means "old", not "unopened" — every bookmark looks
+                    unaccessed. Enable tracking in Settings for a real signal.
+                  </div>
+                {/if}
                 <!-- Summary Cards -->
                 <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
                   <div

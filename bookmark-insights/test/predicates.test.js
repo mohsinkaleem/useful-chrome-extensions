@@ -4,8 +4,10 @@ import {
   isEnrichable,
   isPendingEnrichment,
   isDead,
+  isBlocked,
   isNeverAccessed,
   isStale,
+  hasAccessData,
   STALE_AGE_DAYS,
 } from '../src/predicates.js';
 
@@ -59,6 +61,20 @@ describe('isPendingEnrichment', () => {
     expect(isPendingEnrichment({ url: 'https://a.com', enrichedAt: 1 })).toBe(false);
     expect(isPendingEnrichment({ url: 'chrome://a' })).toBe(false);
   });
+
+  it('excludes dead links, which can never produce metadata', () => {
+    // These used to sit in the pending count forever, so the progress bar had a
+    // floor it could not reach and every sync re-queued them.
+    expect(isPendingEnrichment({ url: 'https://a.com', isAlive: false })).toBe(false);
+  });
+
+  it('excludes blocked links', () => {
+    expect(isPendingEnrichment({ url: 'https://a.com', accessBlocked: true })).toBe(false);
+  });
+
+  it('still includes links whose status is merely unknown', () => {
+    expect(isPendingEnrichment({ url: 'https://a.com', isAlive: null })).toBe(true);
+  });
 });
 
 describe('isDead', () => {
@@ -67,6 +83,36 @@ describe('isDead', () => {
     expect(isDead({ isAlive: true })).toBe(false);
     expect(isDead({ isAlive: null })).toBe(false);
     expect(isDead({})).toBe(false);
+  });
+});
+
+describe('isBlocked', () => {
+  it('is true only for links explicitly recorded as access-blocked', () => {
+    expect(isBlocked({ accessBlocked: true })).toBe(true);
+    expect(isBlocked({ accessBlocked: false })).toBe(false);
+    expect(isBlocked({})).toBe(false);
+    expect(isBlocked(null)).toBe(false);
+  });
+
+  it('does not overlap with dead - a blocked page is up', () => {
+    const blocked = { accessBlocked: true, isAlive: true };
+    expect(isBlocked(blocked)).toBe(true);
+    expect(isDead(blocked)).toBe(false);
+  });
+});
+
+describe('hasAccessData', () => {
+  it('is false when tracking has never recorded a visit', () => {
+    expect(hasAccessData([{ accessCount: 0 }, { accessCount: 0 }, {}])).toBe(false);
+  });
+
+  it('is true as soon as any bookmark has been opened', () => {
+    expect(hasAccessData([{ accessCount: 0 }, { accessCount: 2 }])).toBe(true);
+  });
+
+  it('handles empty and missing input', () => {
+    expect(hasAccessData([])).toBe(false);
+    expect(hasAccessData(null)).toBe(false);
   });
 });
 

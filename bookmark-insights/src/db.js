@@ -2,7 +2,8 @@
 // This provides a structured, indexed storage layer for bookmarks and enrichment data
 
 import Dexie from 'dexie';
-import { isDead, isEnrichable, isEnriched } from './predicates.js';
+import { isBlocked, isDead, isEnrichable, isEnriched, isPendingEnrichment } from './predicates.js';
+import { isFetchableUrl } from './url-safety.js';
 
 // Initialize Dexie database
 export const db = new Dexie('BookmarkInsightsDB');
@@ -217,11 +218,45 @@ export async function bulkUpsertBookmarks(bookmarks) {
   }
 }
 
+/** The shape a bookmark starts life with, before anything has enriched it. */
+export const ENRICHMENT_DEFAULTS = {
+  description: null,
+  keywords: [],
+  category: null,
+  tags: [],
+  isAlive: null,
+  lastChecked: null,
+  enrichedAt: null,
+  enrichable: null,
+  enrichmentError: null,
+  faviconUrl: null,
+  contentSnippet: null,
+  rawMetadata: null,
+  lastAccessed: null,
+  accessCount: 0,
+  // Platform-specific fields
+  platform: null,
+  creator: null,
+  contentType: null,
+  platformData: null,
+};
+
+// The fields Chrome owns. Everything else on a stored record belongs to this
+// extension and must survive a sync untouched.
+const CHROME_OWNED_FIELDS = [
+  'title',
+  'url',
+  'dateAdded',
+  'parentId',
+  'folderPath',
+  'domain',
+];
+
 /**
  * Smart merge bookmarks - preserves enrichment data during sync
  * This fixes the issue where extension updates reset enrichment progress
  * @param {Array} newBookmarks - Fresh bookmarks from Chrome API
- * @returns {Promise<boolean>} Success status
+ * @returns {Promise<{success: boolean, removedIds: Array<string>}>}
  */
 export async function smartMergeBookmarks(newBookmarks) {
   try {
@@ -229,71 +264,43 @@ export async function smartMergeBookmarks(newBookmarks) {
     const existingBookmarks = await db.bookmarks.toArray();
     const existingMap = new Map(existingBookmarks.map((b) => [b.id, b]));
 
-    // Merge new bookmarks with existing enrichment data
-    const mergedBookmarks = newBookmarks.map((newBookmark) => {
-      const existing = existingMap.get(newBookmark.id);
+    // Rows whose Chrome-owned fields actually differ from what is stored. The
+    // merge used to bulkPut every record on every sync — ~29 MB of writes on
+    // each browser start to reflect, typically, zero changes.
+    const changed = [];
+    let addedCount = 0;
 
-      if (existing) {
-        // Preserve enrichment data from existing bookmark
-        return {
-          // Chrome bookmark fields (always take fresh)
-          id: newBookmark.id,
-          title: newBookmark.title,
-          url: newBookmark.url,
-          dateAdded: newBookmark.dateAdded,
-          parentId: newBookmark.parentId,
-          folderPath: newBookmark.folderPath,
-          domain: newBookmark.domain,
-          // Enrichment fields (preserve existing)
-          description: existing.description ?? null,
-          keywords: existing.keywords ?? [],
-          category: existing.category ?? null,
-          tags: existing.tags ?? [],
-          isAlive: existing.isAlive ?? null,
-          lastChecked: existing.lastChecked ?? null,
-          enrichedAt: existing.enrichedAt ?? null,
-          enrichable: existing.enrichable ?? null,
-          enrichmentError: existing.enrichmentError ?? null,
-          faviconUrl: existing.faviconUrl ?? null,
-          contentSnippet: existing.contentSnippet ?? null,
-          rawMetadata: existing.rawMetadata ?? null,
-          lastAccessed: existing.lastAccessed ?? null,
-          accessCount: existing.accessCount ?? 0,
-          // Platform-specific fields (preserve existing)
-          platform: existing.platform ?? null,
-          creator: existing.creator ?? null,
-          contentType: existing.contentType ?? null,
-          platformData: existing.platformData ?? null,
-        };
+    for (const incoming of newBookmarks) {
+      const existing = existingMap.get(incoming.id);
+
+      if (!existing) {
+        changed.push({ ...ENRICHMENT_DEFAULTS, ...incoming });
+        addedCount++;
+        continue;
       }
 
-      // New bookmark - use default enrichment fields
-      return {
-        ...newBookmark,
-        description: null,
-        keywords: [],
-        category: null,
-        tags: [],
-        isAlive: null,
-        lastChecked: null,
-        enrichedAt: null,
-        enrichable: null,
-        enrichmentError: null,
-        faviconUrl: null,
-        contentSnippet: null,
-        rawMetadata: null,
-        lastAccessed: null,
-        accessCount: 0,
-        // Platform-specific fields
-        platform: null,
-        creator: null,
-        contentType: null,
-        platformData: null,
-      };
-    });
+      if (CHROME_OWNED_FIELDS.every((field) => existing[field] === incoming[field])) {
+        continue;
+      }
 
-    // Bulk upsert the merged bookmarks
-    await db.bookmarks.bulkPut(mergedBookmarks);
+      // Spread the stored record first so fields this function has never heard
+      // of — topics, smartTags, readingTime, publishedDate, contentQualityScore
+      // and anything a future analysis pass adds — survive the sync. The old
+      // whitelist rebuilt each record from scratch and silently destroyed every
+      // field it did not enumerate.
+      //
+      // Overwriting straight from CHROME_OWNED_FIELDS keeps the set compared
+      // above and the set copied here from drifting apart.
+      const merged = { ...existing, id: incoming.id };
+      for (const field of CHROME_OWNED_FIELDS) {
+        merged[field] = incoming[field];
+      }
+      changed.push(merged);
+    }
+
+    if (changed.length > 0) {
+      await db.bookmarks.bulkPut(changed);
+    }
 
     // Chrome is the source of truth: anything still stored but no longer present
     // upstream was deleted while the service worker was suspended, or on another
@@ -305,10 +312,12 @@ export async function smartMergeBookmarks(newBookmarks) {
       await db.bookmarks.bulkDelete(removedIds);
     }
 
-    invalidateBookmarkCorpus();
+    if (changed.length > 0 || removedIds.length > 0) {
+      invalidateBookmarkCorpus();
+    }
 
     console.log(
-      `Smart merged ${mergedBookmarks.length} bookmarks (${newBookmarks.length - existingMap.size} new, ${existingMap.size} updated, ${removedIds.length} pruned)`,
+      `Smart merged ${newBookmarks.length} bookmarks (${addedCount} new, ${changed.length - addedCount} updated, ${newBookmarks.length - changed.length} unchanged, ${removedIds.length} pruned)`,
     );
     return { success: true, removedIds };
   } catch (error) {
@@ -884,18 +893,22 @@ export async function getQuickStats() {
       const enrichable = bookmarks.filter(isEnrichable);
       const enriched = enrichable.filter(isEnriched).length;
       const deadLinks = bookmarks.filter(isDead).length;
+      const blockedLinks = bookmarks.filter(isBlocked).length;
       const uniqueDomains = new Set(bookmarks.map((b) => b.domain).filter((d) => d)).size;
 
       return {
         total: bookmarks.length,
         enriched,
-        pending: enrichable.length - enriched,
+        // Through the predicate, not by subtraction: dead and blocked links are
+        // enrichable-but-unenrichable and used to sit in this number forever.
+        pending: enrichable.filter(isPendingEnrichment).length,
         enrichedPercentage:
           enrichable.length > 0 ? Math.round((enriched / enrichable.length) * 100) : 0,
         duplicateGroups: duplicates.length,
         uncategorized: uncategorized.length,
         malformed: malformed.length,
         deadLinks,
+        blockedLinks,
         uniqueDomains,
         addedThisWeek: bookmarks.filter((b) => now - b.dateAdded < oneWeek).length,
         addedThisMonth: bookmarks.filter((b) => now - b.dateAdded < oneMonth).length,
@@ -1192,6 +1205,82 @@ export async function getDeadLinks() {
   } catch (error) {
     console.error('Error getting dead links:', error);
     return [];
+  }
+}
+
+/**
+ * Bookmarks that answered, but not to us - login walls, bot protection, and
+ * hosts that need a VPN. Up, and deliberately kept out of the dead-link list.
+ */
+export async function getBlockedLinks() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    return bookmarks.filter(isBlocked);
+  } catch (error) {
+    console.error('Error getting blocked links:', error);
+    return [];
+  }
+}
+
+/**
+ * One-off correction for `isAlive: false` values written by the old dead-link
+ * check, which treated any non-2xx/3xx HEAD as dead. That collapsed rate limits
+ * (429/503), anonymous rejections (401/403) and HEAD-hostile servers (405/406)
+ * into "gone" - roughly 130 of 218 flagged dead links in a real profile were
+ * live pages, all offered up to a one-click "delete all dead links".
+ *
+ * Clearing the verdict rather than guessing a new one lets the corrected check
+ * re-decide each row on its own merits.
+ *
+ * @returns {Promise<{reset: number, markedUnfetchable: number, resetIds: Array<string>}>}
+ */
+export async function resetStaleDeadLinkVerdicts() {
+  try {
+    const bookmarks = await getAllBookmarks();
+    const updates = [];
+    const resetIds = [];
+    let markedUnfetchable = 0;
+
+    for (const bookmark of bookmarks) {
+      if (!isDead(bookmark)) continue;
+
+      // Rows written before isFetchableUrl started rejecting private hosts:
+      // localhost bookmarks carrying isAlive: false. They are not dead, they are
+      // simply not checkable - a terminal state, not a pending one.
+      if (!isFetchableUrl(bookmark.url)) {
+        updates.push({
+          ...bookmark,
+          isAlive: null,
+          enrichable: false,
+          accessBlocked: false,
+          checkFailures: 0,
+        });
+        markedUnfetchable++;
+        continue;
+      }
+
+      updates.push({
+        ...bookmark,
+        isAlive: null,
+        accessBlocked: false,
+        checkFailures: 0,
+        // The freshness guard keys off lastChecked; leaving it set would make
+        // the corrected check skip these rows for another 30 days.
+        lastChecked: null,
+      });
+      resetIds.push(bookmark.id);
+    }
+
+    if (updates.length > 0) {
+      await db.bookmarks.bulkPut(updates);
+      invalidateBookmarkCorpus();
+      await invalidateMetricCaches('enrich');
+    }
+
+    return { reset: resetIds.length, markedUnfetchable, resetIds };
+  } catch (error) {
+    console.error('Error resetting dead-link verdicts:', error);
+    return { reset: 0, markedUnfetchable: 0, resetIds: [] };
   }
 }
 
