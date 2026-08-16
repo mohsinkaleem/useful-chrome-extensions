@@ -2,6 +2,8 @@
 // Uses normalized-URL matching plus fuzzy title comparison, with caching.
 
 import { getAllBookmarks, getCache, setCache, CACHE_DURATIONS, CACHE_KEYS } from './db.js';
+import { isDead, isNeverAccessed } from './predicates.js';
+import { runSimilarityAnalysis } from './analysis-client.js';
 
 // Placeholder titles Chrome or the user left behind. Matched against the whole
 // title (optionally with a trailing suffix) - a substring test would flag any
@@ -47,224 +49,19 @@ function isTemporaryUrl(url) {
 }
 
 /**
- * Get bookmarks from database
+ * Get bookmarks from database (corpus-cached in db.js)
  */
-async function getBookmarksCached() {
-  return await getAllBookmarks();
-}
-
-// Calculate TF-IDF scores for a document
-
-// Calculate cosine similarity between two TF-IDF vectors
-
-// Extract meaningful words from bookmark
-
-// Find similar bookmarks using TF-IDF and cosine similarity
-
-// Find duplicate bookmarks (exact or very similar URLs)
-
-// Find bookmarks that might be related (same domain, similar category)
-
-// =============================================
-// Improved On-Demand Similarity Computation
-// =============================================
+const getBookmarksCached = getAllBookmarks;
 
 // =============================================
 // Enhanced Fuzzy Similarity Detection
 // =============================================
 
 /**
- * Calculate Levenshtein distance between two strings
- */
-function levenshteinDistance(str1, str2) {
-  const m = str1.length;
-  const n = str2.length;
-
-  if (m === 0) return n;
-  if (n === 0) return m;
-
-  const dp = Array(m + 1)
-    .fill(null)
-    .map(() => Array(n + 1).fill(0));
-
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
-    }
-  }
-
-  return dp[m][n];
-}
-
-/**
- * Calculate fuzzy title similarity using normalized Levenshtein distance
- */
-function fuzzyTitleSimilarity(title1, title2) {
-  const t1 = title1.toLowerCase().trim();
-  const t2 = title2.toLowerCase().trim();
-
-  if (t1 === t2) return 1.0;
-
-  const maxLen = Math.max(t1.length, t2.length);
-  if (maxLen === 0) return 0;
-
-  const distance = levenshteinDistance(t1, t2);
-  return 1 - distance / maxLen;
-}
-
-/**
- * Calculate word-level Jaccard similarity
- */
-function wordJaccardSimilarity(text1, text2) {
-  const words1 = new Set(
-    text1
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 2),
-  );
-  const words2 = new Set(
-    text2
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 2),
-  );
-
-  if (words1.size === 0 || words2.size === 0) return 0;
-
-  const intersection = [...words1].filter((w) => words2.has(w)).length;
-  const union = new Set([...words1, ...words2]).size;
-
-  return intersection / union;
-}
-
-/**
- * Calculate metadata coverage score
- * Higher score = more metadata available for comparison
- */
-function getMetadataCoverage(bookmark) {
-  let coverage = 0;
-  let fields = 0;
-
-  if (bookmark.title && bookmark.title.length > 3) {
-    coverage += 1;
-    fields++;
-  }
-  if (bookmark.description && bookmark.description.length > 10) {
-    coverage += 1;
-    fields++;
-  }
-  if (bookmark.keywords && bookmark.keywords.length > 0) {
-    coverage += 1;
-    fields++;
-  }
-  if (bookmark.category) {
-    coverage += 1;
-    fields++;
-  }
-  if (bookmark.domain) {
-    coverage += 1;
-    fields++;
-  }
-
-  return { coverage, fields, percentage: fields > 0 ? (coverage / 5) * 100 : 0 };
-}
-
-/**
- * Calculate comprehensive similarity score using fuzzy matching and metadata
- */
-function calculateComprehensiveSimilarity(bookmark1, bookmark2) {
-  const scores = {
-    titleFuzzy: 0,
-    titleWords: 0,
-    descriptionWords: 0,
-    keywordsOverlap: 0,
-    categoryMatch: 0,
-    domainMatch: 0,
-    urlPathSimilarity: 0,
-  };
-
-  // 1. Fuzzy title similarity (edit distance)
-  if (bookmark1.title && bookmark2.title) {
-    scores.titleFuzzy = fuzzyTitleSimilarity(bookmark1.title, bookmark2.title);
-    scores.titleWords = wordJaccardSimilarity(bookmark1.title, bookmark2.title);
-  }
-
-  // 2. Description word similarity
-  if (bookmark1.description && bookmark2.description) {
-    scores.descriptionWords = wordJaccardSimilarity(bookmark1.description, bookmark2.description);
-  }
-
-  // 3. Keywords overlap
-  if (bookmark1.keywords?.length > 0 && bookmark2.keywords?.length > 0) {
-    const kw1 = new Set(bookmark1.keywords.map((k) => k.toLowerCase()));
-    const kw2 = new Set(bookmark2.keywords.map((k) => k.toLowerCase()));
-    const intersection = [...kw1].filter((k) => kw2.has(k)).length;
-    const union = new Set([...kw1, ...kw2]).size;
-    scores.keywordsOverlap = intersection / union;
-  }
-
-  // 4. Category match
-  if (bookmark1.category && bookmark2.category) {
-    scores.categoryMatch = bookmark1.category === bookmark2.category ? 1 : 0;
-  }
-
-  // 5. Domain match
-  if (bookmark1.domain && bookmark2.domain) {
-    scores.domainMatch = bookmark1.domain === bookmark2.domain ? 1 : 0;
-  }
-
-  // 6. URL path similarity (for same domain)
-  if (scores.domainMatch === 1) {
-    try {
-      const path1 = new URL(bookmark1.url).pathname;
-      const path2 = new URL(bookmark2.url).pathname;
-      scores.urlPathSimilarity = fuzzyTitleSimilarity(path1, path2);
-    } catch (e) {
-      // Invalid URL
-    }
-  }
-
-  // Calculate weighted combined score
-  // Weight higher for same-domain comparisons
-  let combinedScore;
-  if (scores.domainMatch === 1) {
-    // Same domain: emphasize title, path, and content similarity
-    combinedScore =
-      scores.titleFuzzy * 0.25 +
-      scores.titleWords * 0.2 +
-      scores.urlPathSimilarity * 0.2 +
-      scores.descriptionWords * 0.15 +
-      scores.keywordsOverlap * 0.1 +
-      scores.categoryMatch * 0.1;
-  } else {
-    // Different domain: emphasize content similarity
-    combinedScore =
-      scores.titleFuzzy * 0.3 +
-      scores.titleWords * 0.25 +
-      scores.descriptionWords * 0.2 +
-      scores.keywordsOverlap * 0.15 +
-      scores.categoryMatch * 0.1;
-  }
-
-  return {
-    combined: combinedScore,
-    breakdown: scores,
-    sameDomain: scores.domainMatch === 1,
-    sameCategory: scores.categoryMatch === 1,
-  };
-}
-
-// Helper to yield control to main thread to prevent UI freezing
-const yieldToMain = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-/**
- * Find similar bookmarks using enhanced fuzzy matching on same domain + metadata
- * Returns pairs with detailed comparison data for side-by-side viewing
- * Supports caching for faster subsequent loads
+ * Find similar bookmarks using fuzzy title/metadata matching.
+ * Returns pairs with the per-signal breakdown the side-by-side view renders.
+ * The scoring itself runs in a Web Worker (see analysis-client.js); this
+ * function only handles the cache round-trip around it.
  */
 export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
   const {
@@ -279,8 +76,8 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
   } = options;
 
   try {
-    // Check cache first (unless forceRefresh)
     const cacheKey = `enhanced_similar_${minSimilarity}_${maxPairs}`;
+
     if (useCache && !forceRefresh) {
       const cached = await getCache(cacheKey);
       if (
@@ -288,7 +85,6 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
         cached.pairs &&
         Date.now() - cached.timestamp < CACHE_DURATIONS[CACHE_KEYS.SIMILARITIES]
       ) {
-        console.log('Returning cached enhanced similar results');
         return {
           pairs: cached.pairs,
           stats: cached.stats,
@@ -298,7 +94,6 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
         };
       }
 
-      // If we only want from cache and none found, return empty
       if (onlyFromCache) {
         return { pairs: [], stats: null, fromCache: false, noCache: true };
       }
@@ -310,127 +105,19 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
       return { pairs: [], stats: { total: 0, sameDomain: 0, crossDomain: 0 }, fromCache: false };
     }
 
-    // Pre-filter bookmarks with sufficient metadata if required
-    let candidateBookmarks = bookmarks;
-    if (requireHighCoverage) {
-      candidateBookmarks = bookmarks.filter((b) => {
-        const { percentage } = getMetadataCoverage(b);
-        return percentage >= minCoveragePercent;
-      });
-    }
-
-    // Group by domain for efficient same-domain comparison
-    const domainGroups = new Map();
-    candidateBookmarks.forEach((b) => {
-      const domain = b.domain || 'unknown';
-      if (!domainGroups.has(domain)) {
-        domainGroups.set(domain, []);
-      }
-      domainGroups.get(domain).push(b);
+    const { pairs, stats } = await runSimilarityAnalysis(bookmarks, {
+      minSimilarity,
+      maxPairs,
+      prioritizeSameDomain,
+      requireHighCoverage,
+      minCoveragePercent,
     });
 
-    const pairs = [];
-    let operationsCount = 0;
-    const YIELD_THRESHOLD = 100; // Yield every 100 comparisons
-
-    // Phase 1: Compare within same domains (highest priority)
-    for (const groupBookmarks of domainGroups.values()) {
-      if (groupBookmarks.length < 2) continue;
-
-      for (let i = 0; i < groupBookmarks.length; i++) {
-        for (let j = i + 1; j < groupBookmarks.length; j++) {
-          operationsCount++;
-          if (operationsCount % YIELD_THRESHOLD === 0) await yieldToMain();
-
-          const b1 = groupBookmarks[i];
-          const b2 = groupBookmarks[j];
-
-          // Skip exact URL duplicates
-          if (b1.url === b2.url) continue;
-
-          const similarity = calculateComprehensiveSimilarity(b1, b2);
-
-          if (similarity.combined >= minSimilarity) {
-            pairs.push({
-              bookmark1: b1,
-              bookmark2: b2,
-              similarity: similarity.combined,
-              breakdown: similarity.breakdown,
-              sameDomain: true,
-              sameCategory: similarity.sameCategory,
-              coverage1: getMetadataCoverage(b1),
-              coverage2: getMetadataCoverage(b2),
-            });
-          }
-        }
-      }
-    }
-
-    // Phase 2: Cross-domain comparison (if we don't have enough pairs)
-    if (!prioritizeSameDomain || pairs.length < maxPairs / 2) {
-      // Sample bookmarks for cross-domain comparison (to avoid O(n²))
-      const sampleSize = Math.min(200, candidateBookmarks.length);
-      const sampledBookmarks = candidateBookmarks
-        .sort(() => Math.random() - 0.5)
-        .slice(0, sampleSize);
-
-      for (let i = 0; i < sampledBookmarks.length; i++) {
-        for (let j = i + 1; j < sampledBookmarks.length; j++) {
-          operationsCount++;
-          if (operationsCount % YIELD_THRESHOLD === 0) await yieldToMain();
-
-          const b1 = sampledBookmarks[i];
-          const b2 = sampledBookmarks[j];
-
-          // Skip if same domain (already handled) or same URL
-          if (b1.domain === b2.domain || b1.url === b2.url) continue;
-
-          const similarity = calculateComprehensiveSimilarity(b1, b2);
-
-          // Higher threshold for cross-domain
-          if (similarity.combined >= minSimilarity + 0.1) {
-            pairs.push({
-              bookmark1: b1,
-              bookmark2: b2,
-              similarity: similarity.combined,
-              breakdown: similarity.breakdown,
-              sameDomain: false,
-              sameCategory: similarity.sameCategory,
-              coverage1: getMetadataCoverage(b1),
-              coverage2: getMetadataCoverage(b2),
-            });
-          }
-        }
-
-        if (pairs.length >= maxPairs * 2) break;
-      }
-    }
-
-    // Sort by similarity and limit
-    const sortedPairs = pairs.sort((a, b) => b.similarity - a.similarity).slice(0, maxPairs);
-
-    // Calculate stats
-    const stats = {
-      total: sortedPairs.length,
-      sameDomain: sortedPairs.filter((p) => p.sameDomain).length,
-      crossDomain: sortedPairs.filter((p) => !p.sameDomain).length,
-      avgSimilarity:
-        sortedPairs.length > 0
-          ? sortedPairs.reduce((sum, p) => sum + p.similarity, 0) / sortedPairs.length
-          : 0,
-    };
-
-    // Cache results for future use
     if (useCache) {
-      await setCache(cacheKey, {
-        pairs: sortedPairs,
-        stats: stats,
-        timestamp: Date.now(),
-      });
-      console.log('Cached enhanced similar results');
+      await setCache(cacheKey, { pairs, stats, timestamp: Date.now() });
     }
 
-    return { pairs: sortedPairs, stats, fromCache: false };
+    return { pairs, stats, fromCache: false };
   } catch (error) {
     console.error('Error finding similar bookmarks with fuzzy matching:', error);
     return { pairs: [], stats: { total: 0, sameDomain: 0, crossDomain: 0 }, fromCache: false };
@@ -481,13 +168,13 @@ function calculateUsefulnessScore(bookmark) {
   }
 
   // Negative factors
-  if (bookmark.isAlive === false) {
+  if (isDead(bookmark)) {
     score -= 40;
     reasons.push('Dead link');
   }
 
   const daysSinceCreated = (Date.now() - bookmark.dateAdded) / (1000 * 60 * 60 * 24);
-  if (daysSinceCreated > 365 && !bookmark.lastAccessed) {
+  if (daysSinceCreated > 365 && isNeverAccessed(bookmark)) {
     score -= 20;
     reasons.push('Old & never accessed');
   }
@@ -557,16 +244,13 @@ export async function findUselessBookmarks(options = {}) {
       };
 
       // Dead links
-      if (includeDeadLinks && bookmark.isAlive === false) {
+      if (includeDeadLinks && isDead(bookmark)) {
         results.deadLinks.push(enrichedBookmark);
       }
 
       // Old and never accessed
       if (includeOldUnused) {
-        const isOld = bookmark.dateAdded < sixMonthsAgo;
-        const neverAccessed =
-          !bookmark.lastAccessed && (!bookmark.accessCount || bookmark.accessCount === 0);
-        if (isOld && neverAccessed) {
+        if (bookmark.dateAdded < sixMonthsAgo && isNeverAccessed(bookmark)) {
           results.oldUnused.push(enrichedBookmark);
         }
       }

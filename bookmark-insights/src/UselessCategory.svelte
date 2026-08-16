@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
+  import { safeHref } from './url-safety.js';
 
   export let title;
   export let bookmarks = [];
@@ -75,7 +76,7 @@
           <div class="flex gap-1 ml-2 flex-shrink-0">
             {#if showTryLink}
               <a
-                href={bookmark.url}
+                href={safeHref(bookmark.url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 class="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"

@@ -227,6 +227,22 @@ export function debounce(func, wait = 300) {
 }
 
 /**
+ * Fisher-Yates shuffle returning a new array.
+ * `sort(() => Math.random() - 0.5)` is a non-transitive comparator and yields a
+ * heavily biased permutation, so the same items keep resurfacing.
+ * @param {Array} items
+ * @returns {Array} A shuffled copy
+ */
+export function shuffle(items) {
+  const result = items.slice();
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+/**
  * Sort options for bookmarks
  */
 export const SORT_OPTIONS = {

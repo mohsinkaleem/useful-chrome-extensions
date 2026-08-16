@@ -6,6 +6,7 @@ node_modules/
 dist/
 extension/
 background.js
+analysis-worker.js
 public/dashboard.js
 public/dashboard.css
 public/sidepanel.js

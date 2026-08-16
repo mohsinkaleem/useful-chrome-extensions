@@ -432,7 +432,7 @@ Ordered by value ÷ effort. All are achievable with data the extension **already
 
 ## 10. Suggested order of work
 
-> **Status:** phases 0-4 are complete as of 2026-08-15. Phases 5 and 6 remain.
+> **Status:** phases 0-5 are complete as of 2026-08-15. Phase 6 remains.
 
 ### Phase 0 — Stop the bleeding ✅
 - [x] C1 — remove the 29 MB backup from git, purge history, `.gitignore` it
@@ -473,15 +473,18 @@ Ordered by value ÷ effort. All are achievable with data the extension **already
 - [x] Split `Dashboard.svelte` — `DashboardHeader`, `ActiveFilterChips`, `UselessCategory`; B25 `onDestroy` cleanup added
 - [x] Rewrite `README` / `TECHNICAL_DOCUMENTATION` / `TROUBLESHOOTING` against reality; changelog moved to `CHANGELOG.md`
 
-### Phase 5 — Performance
+### Phase 5 — Performance ✅
 - [x] B7, B8 — MV3 lifecycle: synchronous listener registration, `onStartup`
-- [ ] B9 — persist in-memory state across worker suspension
-- [ ] P1 — stop re-reading the corpus on every keystroke
-- [ ] P3/P4 — debounce index serialization, guard the update-time rebuild
-- [ ] P7/P8 — rolling-row Levenshtein, hoisted topic regexes
-- [ ] Move similarity + topics to a Web Worker
+- [x] B9 — worker state now survives suspension: the URL→bookmark map mirrors into `chrome.storage.session` with in-flight build dedupe; the access debounce moved onto the record's own `lastAccessed` inside a Dexie `modify()` transaction (also fixes B4's lost increments and the unbounded `Map`); `removeFromIndex` lazily loads the index instead of no-oping on a cold worker (fixes B1)
+- [x] P1 — one 30 s corpus cache in `db.js` behind `getAllBookmarks()`; all ~33 call sites and the `stores.js` wrapper now share a single read. Invalidated by every write path and by the dashboard on `bookmarksChanged` / enrichment progress
+- [x] P3/P4 — index serialization coalesced into one debounced save; the update-time rebuild + topic migration now gated on a `dataVersion` setting
+- [x] P7/P8 — rolling-row Levenshtein with an exact length-ratio upper-bound early exit; topic regexes hoisted into a module-level `Map` (and the subtopic double-count against `allText` removed)
+- [x] Similarity scoring moved to a Web Worker (`analysis-worker.js` + `analysis-core.js` + `analysis-client.js`), with an inline fallback. Bookmarks are projected to the seven fields the scorer reads and pairs come back as ids, so the clone stays small
+      - Topic detection deliberately stayed on the main path: its only callers are the enrichment pipeline and the update migration, both of which run in the MV3 service worker, which cannot spawn a worker. P8 covers it instead.
+- [x] Also folded in: P5 (same-domain groups capped by a title-sorted comparison window; the biased `Math.random() - 0.5` shuffles replaced with Fisher-Yates in `utils.shuffle`), P11 (`bulkAddToEnrichmentQueue` replaces the per-bookmark queue insert during sync), P10 (Data Explorer search debounced, and the per-record `JSON.stringify` replaced with a scalar-field scan), B26 (table-name allowlist in `db-explorer`)
 
 ### Phase 6 — Features
+Not started.
 - [ ] Tier 1 (items 1-7) — mostly unlocked for free by the C2 fix
 - [ ] Tier 2 (items 8-14) — auto-foldering first; it's the biggest latent win
 

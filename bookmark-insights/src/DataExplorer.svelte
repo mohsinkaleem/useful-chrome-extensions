@@ -14,6 +14,8 @@
     formatTimestamp,
     formatTimeRemaining,
   } from './db-explorer.js';
+  import { debounce } from './utils.js';
+  import { safeHref } from './url-safety.js';
 
   // State
   let loading = true;
@@ -167,6 +169,9 @@
     tablePagination.page = 0;
     await loadTableData();
   }
+
+  // The slow path reloads the whole table, so search-as-you-type is debounced.
+  const debouncedSearch = debounce(handleSearch, 300);
 
   function clearSearch() {
     searchQuery = '';
@@ -416,6 +421,7 @@
           <input
             type="text"
             bind:value={searchQuery}
+            on:input={debouncedSearch}
             on:keydown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="Search records..."
             class="w-full pl-8 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:border-blue-400"
@@ -543,7 +549,7 @@
                           </button>
                           {#if record.url}
                             <a
-                              href={record.url}
+                              href={safeHref(record.url)}
                               target="_blank"
                               rel="noopener"
                               on:click|stopPropagation

@@ -46,6 +46,37 @@ const KNOWN_METRICS = Object.values(CACHE_KEYS).map((key) => ({
 }));
 
 /**
+ * Resolve a table by name. Bracket access on `db` would otherwise let a name
+ * like 'constructor' or '_dbSchema' reach a Dexie internal.
+ */
+function table(tableName) {
+  if (!Object.prototype.hasOwnProperty.call(TABLE_META, tableName)) {
+    throw new Error(`Unknown table: ${tableName}`);
+  }
+  return db[tableName];
+}
+
+/**
+ * Case-insensitive substring match over a record's scalar fields.
+ * JSON.stringify on whole records allocated tens of MB per query on the
+ * bookmarks table, most of it nested `rawMetadata` blobs nobody searches for.
+ */
+function recordMatchesQuery(record, query) {
+  for (const value of Object.values(record)) {
+    if (value === null || value === undefined) continue;
+
+    if (Array.isArray(value)) {
+      if (value.some((item) => String(item).toLowerCase().includes(query))) return true;
+      continue;
+    }
+
+    if (typeof value === 'object') continue;
+    if (String(value).toLowerCase().includes(query)) return true;
+  }
+  return false;
+}
+
+/**
  * Get all table names and record counts
  */
 export async function getDatabaseOverview() {
@@ -100,9 +131,9 @@ export async function getTableRecords(tableName, options = {}) {
 
   // Fast path: no filtering needed, use Dexie's native pagination
   if (!needsClientFilter && !sortBy) {
-    const totalCount = await db[tableName].count();
+    const totalCount = await table(tableName).count();
     const totalPages = Math.ceil(totalCount / pageSize);
-    const records = await db[tableName]
+    const records = await table(tableName)
       .offset(page * pageSize)
       .limit(pageSize)
       .toArray();
@@ -119,7 +150,7 @@ export async function getTableRecords(tableName, options = {}) {
   }
 
   // Slow path: need to load all for client-side filtering/sorting
-  let records = await db[tableName].toArray();
+  let records = await table(tableName).toArray();
 
   // Apply field filter (show only records with/without a specific field)
   if (fieldFilter) {
@@ -139,7 +170,7 @@ export async function getTableRecords(tableName, options = {}) {
     const query = searchQuery.toLowerCase();
     records = records.filter((record) => {
       if (searchField === 'all') {
-        return JSON.stringify(record).toLowerCase().includes(query);
+        return recordMatchesQuery(record, query);
       }
       const value = record[searchField];
       return value && String(value).toLowerCase().includes(query);
@@ -185,7 +216,7 @@ export async function getTableRecords(tableName, options = {}) {
  * Analyze field coverage in a table
  */
 export async function analyzeTableFields(tableName) {
-  const records = await db[tableName].toArray();
+  const records = await table(tableName).toArray();
   const fieldStats = {};
 
   records.forEach((record) => {
@@ -243,7 +274,7 @@ export async function analyzeTableFields(tableName) {
  * Get the list of field names for a table
  */
 export async function getTableFields(tableName) {
-  const records = await db[tableName].limit(100).toArray();
+  const records = await table(tableName).limit(100).toArray();
   const fields = new Set();
 
   records.forEach((record) => {

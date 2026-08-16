@@ -2,88 +2,38 @@
 // This centralizes the stats and enables real-time updates
 
 import { writable } from 'svelte/store';
-import { getAllBookmarksWithReadingList } from './db.js';
+import { getAllBookmarksWithReadingList, invalidateBookmarkCorpus } from './db.js';
 
 // =============================================
 // UI State Stores - Filters, Search, Selection
 // =============================================
 
-// Store for all bookmarks with caching to avoid repeated fetching
+// Thin reactive wrapper over the corpus cache in db.js. Caching lives there so
+// search, insights and similarity share one read; this store only mirrors the
+// latest result for components that want it reactively.
 function createBookmarksStore() {
   const { subscribe, set } = writable([]);
-  let lastFetchTime = 0;
-  let fetchPromise = null;
-  const CACHE_TTL = 30000; // 30 seconds cache
+
+  const load = async () => {
+    try {
+      const bookmarks = await getAllBookmarksWithReadingList();
+      set(bookmarks);
+      return bookmarks;
+    } catch (error) {
+      console.error('Error fetching bookmarks:', error);
+      return [];
+    }
+  };
 
   return {
     subscribe,
     set,
-    /**
-     * Get cached bookmarks or fetch fresh if stale
-     * @param {number} maxAge - Max age in ms before refresh (default: 30s)
-     * @returns {Promise<Array>} Bookmarks array
-     */
-    getCached: async (maxAge = CACHE_TTL) => {
-      const now = Date.now();
-      let currentData = [];
-
-      // Get current value synchronously
-      const unsubscribe = subscribe((value) => {
-        currentData = value;
-      });
-      unsubscribe();
-
-      // Return cached if fresh enough
-      if (currentData.length > 0 && now - lastFetchTime < maxAge) {
-        return currentData;
-      }
-
-      // Return existing promise if fetching
-      if (fetchPromise) {
-        const result = await fetchPromise;
-        return result !== null ? result : currentData;
-      }
-
-      // Fetch fresh data
-      fetchPromise = (async () => {
-        try {
-          const bookmarks = await getAllBookmarksWithReadingList();
-          set(bookmarks);
-          lastFetchTime = Date.now();
-          return bookmarks;
-        } catch (error) {
-          console.error('Error fetching bookmarks:', error);
-          return null;
-        } finally {
-          fetchPromise = null;
-        }
-      })();
-
-      const result = await fetchPromise;
-      return result !== null ? result : currentData;
-    },
+    getCached: load,
     refresh: async () => {
-      // Force new fetch
-      fetchPromise = (async () => {
-        try {
-          const bookmarks = await getAllBookmarksWithReadingList();
-          set(bookmarks);
-          lastFetchTime = Date.now();
-          return bookmarks;
-        } catch (error) {
-          console.error('Error refreshing bookmarks:', error);
-          return null;
-        } finally {
-          fetchPromise = null;
-        }
-      })();
-
-      const result = await fetchPromise;
-      return result !== null ? result : [];
+      invalidateBookmarkCorpus();
+      return load();
     },
-    invalidate: () => {
-      lastFetchTime = 0;
-    },
+    invalidate: invalidateBookmarkCorpus,
   };
 }
 

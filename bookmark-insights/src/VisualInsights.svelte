@@ -10,6 +10,7 @@
     getPlatformDistribution,
     getCreatorLeaderboard,
   } from './insights.js';
+  import { safeHref } from './url-safety.js';
   import { getPlatformDisplayName, getPlatformIcon } from './url-parsers.js';
 
   Chart.register(...registerables);
@@ -640,7 +641,7 @@
               >
                 <div class="flex-1 min-w-0">
                   <a
-                    href={bookmark.url}
+                    href={safeHref(bookmark.url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 line-clamp-1"

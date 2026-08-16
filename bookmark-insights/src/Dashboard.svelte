@@ -40,6 +40,7 @@
     selectedBookmarks,
   } from './stores.js';
   import { debounce } from './utils.js';
+  import { safeHref } from './url-safety.js';
   import { initDarkMode } from './darkModeStore.js';
 
   let bookmarks = [];
@@ -223,6 +224,10 @@
     onRuntimeMessage = (message) => {
       if (message.action === 'enrichmentProgress' && message.progress) {
         enrichmentProgress = message.progress;
+
+        // Enrichment writes happen in the service worker, so this context's
+        // corpus cache has to be dropped or the list renders pre-enrichment rows.
+        allBookmarks.invalidate();
 
         // Add to logs for detailed tracking
         const logEntry = {
@@ -2549,14 +2554,14 @@
 
                 <!-- Dead Links List -->
                 <div class="space-y-2 max-h-[32rem] overflow-y-auto">
-                  {#each deadLinks.slice(0, deadLinksDisplayLimit) as bookmark}
+                  {#each deadLinks.slice(0, deadLinksDisplayLimit) as bookmark (bookmark.id)}
                     <div
                       class="p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800"
                     >
                       <div class="flex items-start justify-between">
                         <div class="flex-1 min-w-0">
                           <a
-                            href={bookmark.url}
+                            href={safeHref(bookmark.url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             class="block group"
@@ -2594,7 +2599,7 @@
                         </div>
                         <div class="flex gap-1 ml-2 flex-shrink-0">
                           <a
-                            href={bookmark.url}
+                            href={safeHref(bookmark.url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             class="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
@@ -2747,7 +2752,7 @@
                   </div>
 
                   <div class="space-y-6 max-h-[32rem] overflow-y-auto">
-                    {#each duplicates.slice(0, duplicatesDisplayLimit) as group, groupIndex}
+                    {#each duplicates.slice(0, duplicatesDisplayLimit) as group, groupIndex (group[0].url)}
                       <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                         <h4
                           class="font-medium text-gray-900 dark:text-gray-200 mb-3 truncate"
@@ -2756,7 +2761,7 @@
                           {group[0].url}
                         </h4>
                         <div class="space-y-2">
-                          {#each group as bookmark, index}
+                          {#each group as bookmark, index (bookmark.id)}
                             <div
                               class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900/50 rounded {selectedDuplicates.has(
                                 bookmark.id,
@@ -2855,7 +2860,7 @@
                   {/if}
 
                   <div class="space-y-3 max-h-[40rem] overflow-y-auto">
-                    {#each enhancedSimilarPairs.slice(0, similarDisplayLimit) as pair, idx}
+                    {#each enhancedSimilarPairs.slice(0, similarDisplayLimit) as pair, idx (`${pair.bookmark1.id}-${pair.bookmark2.id}`)}
                       <div
                         class="border {pair.sameDomain
                           ? 'border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30'
@@ -2918,7 +2923,7 @@
                               </div>
                               <div class="flex gap-1">
                                 <a
-                                  href={pair.bookmark1.url}
+                                  href={safeHref(pair.bookmark1.url)}
                                   target="_blank"
                                   rel="noopener"
                                   class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
@@ -2959,7 +2964,7 @@
                               </div>
                               <div class="flex gap-1">
                                 <a
-                                  href={pair.bookmark2.url}
+                                  href={safeHref(pair.bookmark2.url)}
                                   target="_blank"
                                   rel="noopener"
                                   class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
@@ -3135,7 +3140,7 @@
                 <p class="text-gray-500 dark:text-gray-400">All bookmark URLs are valid.</p>
               {:else}
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {#each malformedUrls as bookmark}
+                  {#each malformedUrls as bookmark (bookmark.id)}
                     <div
                       class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50 dark:bg-gray-900/50"
                     >
@@ -3447,7 +3452,7 @@
               <div>
                 <div class="text-xs text-gray-500 dark:text-gray-400 uppercase mb-1">URL</div>
                 <a
-                  href={selectedComparisonPair.bookmark1.url}
+                  href={safeHref(selectedComparisonPair.bookmark1.url)}
                   target="_blank"
                   rel="noopener"
                   class="text-sm text-blue-600 hover:underline break-all"
@@ -3503,7 +3508,7 @@
 
               <div class="pt-3 border-t border-gray-200 flex gap-2">
                 <a
-                  href={selectedComparisonPair.bookmark1.url}
+                  href={safeHref(selectedComparisonPair.bookmark1.url)}
                   target="_blank"
                   rel="noopener"
                   class="flex-1 px-3 py-2 text-center text-sm bg-gray-100 rounded hover:bg-gray-200"
@@ -3533,7 +3538,7 @@
               <div>
                 <div class="text-xs text-gray-500 uppercase mb-1">URL</div>
                 <a
-                  href={selectedComparisonPair.bookmark2.url}
+                  href={safeHref(selectedComparisonPair.bookmark2.url)}
                   target="_blank"
                   rel="noopener"
                   class="text-sm text-blue-600 hover:underline break-all"
@@ -3589,7 +3594,7 @@
 
               <div class="pt-3 border-t border-gray-200 flex gap-2">
                 <a
-                  href={selectedComparisonPair.bookmark2.url}
+                  href={safeHref(selectedComparisonPair.bookmark2.url)}
                   target="_blank"
                   rel="noopener"
                   class="flex-1 px-3 py-2 text-center text-sm bg-gray-100 rounded hover:bg-gray-200"

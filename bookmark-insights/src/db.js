@@ -4,6 +4,7 @@
 import Dexie from 'dexie';
 import { STOP_WORDS } from './utils.js';
 import { isFetchableUrl, safeFetch } from './url-safety.js';
+import { isDead, isEnrichable, isEnriched } from './predicates.js';
 
 // Initialize Dexie database
 export const db = new Dexie('BookmarkInsightsDB');
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS = {
   deadLinkCheckEnabled: true,
   privacyMode: false, // If true, skip enrichment entirely
   trackBrowsingBehavior: false, // If false, don't track tab visits (default OFF for privacy)
+  dataVersion: 0, // Set by background.js; gates the update-time index rebuild
 };
 
 // Initialize settings
@@ -134,10 +136,64 @@ export async function migrateFromChromeStorage() {
   }
 }
 
-// Get all bookmarks from IndexedDB
+// =============================================
+// Corpus cache
+// =============================================
+
+// Reading the whole bookmarks table is the hot path for search, insights and
+// similarity - a single keystroke used to trigger several multi-MB reads. These
+// caches hold the deserialized rows for a short window; every write path in
+// this module invalidates them, and other contexts invalidate via
+// invalidateBookmarkCorpus() when they receive a `bookmarksChanged` message.
+const CORPUS_TTL_MS = 30 * 1000;
+
+function createTtlCache(load, ttlMs) {
+  let value = null;
+  let loadedAt = 0;
+  let inflight = null;
+
+  return {
+    async get() {
+      if (value && Date.now() - loadedAt < ttlMs) return value;
+      if (inflight) return inflight;
+
+      inflight = load()
+        .then((result) => {
+          value = result;
+          loadedAt = Date.now();
+          return result;
+        })
+        .finally(() => {
+          inflight = null;
+        });
+
+      return inflight;
+    },
+    invalidate() {
+      value = null;
+      loadedAt = 0;
+    },
+  };
+}
+
+const bookmarkCorpus = createTtlCache(() => db.bookmarks.toArray(), CORPUS_TTL_MS);
+const readingListCorpus = createTtlCache(() => getReadingListItems(), CORPUS_TTL_MS);
+
+/**
+ * Drop the cached corpus. Called by every write path here, and by UI contexts
+ * when the background script reports a change.
+ */
+export function invalidateBookmarkCorpus() {
+  bookmarkCorpus.invalidate();
+  readingListCorpus.invalidate();
+}
+
+// Get all bookmarks from IndexedDB.
+// Returns a shallow copy so callers may sort or splice the array freely; the
+// bookmark objects themselves are shared and must be treated as read-only.
 export async function getAllBookmarks() {
   try {
-    return await db.bookmarks.toArray();
+    return (await bookmarkCorpus.get()).slice();
   } catch (error) {
     console.error('Error getting bookmarks:', error);
     return [];
@@ -152,8 +208,8 @@ export async function getAllBookmarks() {
 export async function getAllBookmarksWithReadingList() {
   try {
     const [bookmarks, readingListItems] = await Promise.all([
-      db.bookmarks.toArray(),
-      getReadingListItems(),
+      bookmarkCorpus.get(),
+      readingListCorpus.get(),
     ]);
 
     // Reading list items already have isReadingListItem: true from getReadingListItems
@@ -178,6 +234,7 @@ export async function getBookmark(id) {
 export async function upsertBookmark(bookmark) {
   try {
     await db.bookmarks.put(bookmark);
+    invalidateBookmarkCorpus();
     return true;
   } catch (error) {
     console.error('Error upserting bookmark:', error);
@@ -189,6 +246,7 @@ export async function upsertBookmark(bookmark) {
 export async function bulkUpsertBookmarks(bookmarks) {
   try {
     await db.bookmarks.bulkPut(bookmarks);
+    invalidateBookmarkCorpus();
     return true;
   } catch (error) {
     console.error('Error bulk upserting bookmarks:', error);
@@ -230,6 +288,9 @@ export async function smartMergeBookmarks(newBookmarks) {
           tags: existing.tags ?? [],
           isAlive: existing.isAlive ?? null,
           lastChecked: existing.lastChecked ?? null,
+          enrichedAt: existing.enrichedAt ?? null,
+          enrichable: existing.enrichable ?? null,
+          enrichmentError: existing.enrichmentError ?? null,
           faviconUrl: existing.faviconUrl ?? null,
           contentSnippet: existing.contentSnippet ?? null,
           rawMetadata: existing.rawMetadata ?? null,
@@ -252,6 +313,9 @@ export async function smartMergeBookmarks(newBookmarks) {
         tags: [],
         isAlive: null,
         lastChecked: null,
+        enrichedAt: null,
+        enrichable: null,
+        enrichmentError: null,
         faviconUrl: null,
         contentSnippet: null,
         rawMetadata: null,
@@ -268,13 +332,25 @@ export async function smartMergeBookmarks(newBookmarks) {
     // Bulk upsert the merged bookmarks
     await db.bookmarks.bulkPut(mergedBookmarks);
 
+    // Chrome is the source of truth: anything still stored but no longer present
+    // upstream was deleted while the service worker was suspended, or on another
+    // synced device. Without this the row survives in every stat and search
+    // result indefinitely.
+    const incomingIds = new Set(newBookmarks.map((b) => b.id));
+    const removedIds = existingBookmarks.map((b) => b.id).filter((id) => !incomingIds.has(id));
+    if (removedIds.length > 0) {
+      await db.bookmarks.bulkDelete(removedIds);
+    }
+
+    invalidateBookmarkCorpus();
+
     console.log(
-      `Smart merged ${mergedBookmarks.length} bookmarks (${newBookmarks.length - existingMap.size} new, ${existingMap.size} updated)`,
+      `Smart merged ${mergedBookmarks.length} bookmarks (${newBookmarks.length - existingMap.size} new, ${existingMap.size} updated, ${removedIds.length} pruned)`,
     );
-    return true;
+    return { success: true, removedIds };
   } catch (error) {
     console.error('Error smart merging bookmarks:', error);
-    return false;
+    return { success: false, removedIds: [] };
   }
 }
 
@@ -282,9 +358,24 @@ export async function smartMergeBookmarks(newBookmarks) {
 export async function deleteBookmark(id) {
   try {
     await db.bookmarks.delete(id);
+    invalidateBookmarkCorpus();
     return true;
   } catch (error) {
     console.error('Error deleting bookmark:', error);
+    return false;
+  }
+}
+
+// Delete several bookmarks from IndexedDB only. Used by the sync prune and the
+// onRemoved handler, where Chrome has already removed the real bookmarks.
+export async function bulkDeleteBookmarks(ids) {
+  if (!ids || ids.length === 0) return true;
+  try {
+    await db.bookmarks.bulkDelete(ids);
+    invalidateBookmarkCorpus();
+    return true;
+  } catch (error) {
+    console.error('Error bulk deleting bookmarks:', error);
     return false;
   }
 }
@@ -491,6 +582,34 @@ export async function addToEnrichmentQueue(bookmarkId, priority = 0) {
   } catch (error) {
     console.error('Error adding to enrichment queue:', error);
     return false;
+  }
+}
+
+/**
+ * Queue many bookmarks at once. Sync used to await addToEnrichmentQueue per
+ * bookmark, which meant an indexed lookup plus an insert - two transactions -
+ * for every row. This does one read and one bulkAdd.
+ * @param {string[]} bookmarkIds
+ * @param {number} priority
+ * @returns {Promise<number>} Number of rows actually queued
+ */
+export async function bulkAddToEnrichmentQueue(bookmarkIds, priority = 0) {
+  if (!bookmarkIds || bookmarkIds.length === 0) return 0;
+
+  try {
+    const queued = new Set(await db.enrichmentQueue.orderBy('bookmarkId').keys());
+    const addedAt = Date.now();
+    const rows = [...new Set(bookmarkIds)]
+      .filter((bookmarkId) => !queued.has(bookmarkId))
+      .map((bookmarkId) => ({ bookmarkId, addedAt, priority }));
+
+    if (rows.length > 0) {
+      await db.enrichmentQueue.bulkAdd(rows);
+    }
+    return rows.length;
+  } catch (error) {
+    console.error('Error bulk adding to enrichment queue:', error);
+    return 0;
   }
 }
 
@@ -767,6 +886,8 @@ export async function invalidateMetricCaches(changeType) {
 
   const keys = keysToInvalidate[changeType] || [];
 
+  invalidateBookmarkCorpus();
+
   try {
     for (const key of keys) {
       await db.computedMetrics.delete(key);
@@ -783,6 +904,7 @@ export async function invalidateMetricCaches(changeType) {
 export async function clearAllMetricCaches() {
   try {
     await db.computedMetrics.clear();
+    invalidateBookmarkCorpus();
     console.log('Cleared all metric caches');
     return true;
   } catch (error) {
@@ -988,7 +1110,7 @@ export async function getConsolidatedDomainAnalytics() {
 
         const data = domainData[bookmark.domain];
         data.count++;
-        if (bookmark.lastChecked) data.enrichedCount++;
+        if (isEnriched(bookmark)) data.enrichedCount++;
         if (bookmark.dateAdded > data.latestDate) data.latestDate = bookmark.dateAdded;
         if (bookmark.dateAdded < data.oldestDate) data.oldestDate = bookmark.dateAdded;
       });
@@ -1254,16 +1376,17 @@ export async function getQuickStats() {
       const oneWeek = 7 * 24 * 60 * 60 * 1000;
       const oneMonth = 30 * 24 * 60 * 60 * 1000;
 
-      const enriched = bookmarks.filter((b) => b.lastChecked).length;
-      const deadLinks = bookmarks.filter((b) => b.isAlive === false).length;
+      const enrichable = bookmarks.filter(isEnrichable);
+      const enriched = enrichable.filter(isEnriched).length;
+      const deadLinks = bookmarks.filter(isDead).length;
       const uniqueDomains = new Set(bookmarks.map((b) => b.domain).filter((d) => d)).size;
 
       return {
         total: bookmarks.length,
         enriched,
-        pending: bookmarks.length - enriched,
+        pending: enrichable.length - enriched,
         enrichedPercentage:
-          bookmarks.length > 0 ? Math.round((enriched / bookmarks.length) * 100) : 0,
+          enrichable.length > 0 ? Math.round((enriched / enrichable.length) * 100) : 0,
         duplicateGroups: duplicates.length,
         uncategorized: uncategorized.length,
         malformed: malformed.length,
@@ -1683,7 +1806,7 @@ export async function createBackup() {
     const similarities = await db.similarities.toArray();
 
     // Get stats for backup metadata
-    const enrichedCount = bookmarks.filter((b) => b.lastChecked).length;
+    const enrichedCount = bookmarks.filter(isEnriched).length;
     const categorizedCount = bookmarks.filter((b) => b.category).length;
 
     const backup = {
@@ -2078,6 +2201,7 @@ export async function backfillPlatformData(progressCallback = null) {
           })),
         );
         stats.updated += updates.length;
+        invalidateBookmarkCorpus();
       }
 
       // Report progress

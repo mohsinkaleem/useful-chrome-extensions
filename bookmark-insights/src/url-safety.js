@@ -95,6 +95,23 @@ export function safeImageUrl(rawUrl, baseUrl) {
 }
 
 /**
+ * Scheme allowlist for anything rendered as an `href`. The data model expects
+ * `javascript:` bookmarklets and `data:` URLs, so navigable links must be
+ * restricted here rather than relying on the extension CSP to block them.
+ * @param {string} url
+ * @returns {string|null} The URL when navigable, otherwise null.
+ */
+export function safeHref(url) {
+  if (typeof url !== 'string' || url.length === 0) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch with a timeout that also covers body download, a hard body-size cap and
  * an optional Content-Type gate. Rejects non-fetchable URLs outright.
  *

@@ -3,26 +3,52 @@
 
 import { Document } from 'flexsearch';
 import { getAllBookmarksWithReadingList, setCache, getCache } from './db.js';
+import { isDead, isEnriched, isNeverAccessed, isStale } from './predicates.js';
 import { getSortFunction } from './utils.js';
-// import { allBookmarks as bookmarksStore } from './stores.js';
 
 // FlexSearch index instance
 let searchIndex = null;
 let indexInitialized = false;
+let indexInitPromise = null;
+
+// Corpus-cached in db.js: a keystroke no longer re-reads the whole table.
+const getBookmarksCached = getAllBookmarksWithReadingList;
 
 /**
- * Get bookmarks using cached store when possible
- * Falls back to direct db call if store not available
- * Now includes reading list items for unified search
+ * Compile a user-supplied regex from the search box.
+ *
+ * Two hazards are handled here:
+ * - `g`/`y` make `.test()` stateful via `lastIndex`, and the compiled object is
+ *   reused across every bookmark, so results alternated match/no-match.
+ * - An unbounded pattern such as `/(a+)+$/` runs on the UI thread against every
+ *   bookmark's concatenated text and freezes the dashboard.
+ *
+ * @returns {RegExp|null} null when the pattern is rejected or invalid
  */
-async function getBookmarksCached() {
-  // try {
-  //   // Try to use the cached store first
-  //   return await bookmarksStore.getCached();
-  // } catch (error) {
-  //   // Fallback to direct db call
-  return await getAllBookmarksWithReadingList();
-  // }
+const MAX_REGEX_LENGTH = 200;
+// A quantifier applied to a group that already contains one — `(a+)+`, `(a*)*`.
+const NESTED_QUANTIFIER = /\([^)]*[+*][^)]*\)\s*[+*{]/;
+
+export function compileUserRegex(pattern, flags) {
+  if (!pattern || pattern.length > MAX_REGEX_LENGTH) {
+    console.warn('Rejected search regex: pattern too long');
+    return null;
+  }
+
+  if (NESTED_QUANTIFIER.test(pattern)) {
+    console.warn('Rejected search regex: nested quantifier (catastrophic backtracking risk)');
+    return null;
+  }
+
+  // Default to case-insensitive; strip the stateful flags entirely.
+  const safeFlags = (flags || 'i').replace(/[gy]/g, '') || 'i';
+
+  try {
+    return new RegExp(pattern, safeFlags);
+  } catch (e) {
+    console.warn('Invalid regex pattern:', pattern, e.message);
+    return null;
+  }
 }
 
 /**
@@ -54,15 +80,8 @@ function parseAdvancedQuery(query) {
   let remaining = query;
 
   while ((match = regexExtractPattern.exec(query)) !== null) {
-    try {
-      const pattern = match[1];
-      const flags = match[2] || 'i'; // Default to case-insensitive
-      const regex = new RegExp(pattern, flags);
-      regexPatterns.push(regex);
-    } catch (e) {
-      // Invalid regex, treat as regular search term
-      console.warn('Invalid regex pattern:', match[0], e.message);
-    }
+    const regex = compileUserRegex(match[1], match[2]);
+    if (regex) regexPatterns.push(regex);
   }
 
   // Remove regex patterns from remaining query
@@ -227,59 +246,10 @@ function calculateRelevanceScore(bookmark, parsedQuery) {
   return score;
 }
 
-// Initialize FlexSearch index with optimized configuration
-async function initializeSearchIndex() {
-  if (indexInitialized) {
-    return searchIndex;
-  }
-
-  console.log('Initializing FlexSearch index...');
-
-  // Try to load serialized index from cache
-  const cachedIndex = await getCache('flexsearch_index');
-
-  if (cachedIndex && cachedIndex.serialized) {
-    try {
-      searchIndex = new Document({
-        document: {
-          id: 'id',
-          index: ['title', 'url', 'description', 'keywords', 'category', 'domain'],
-          store: true,
-        },
-        tokenize: 'forward',
-        cache: true,
-        optimize: true,
-        resolution: 9,
-        context: {
-          depth: 3,
-          bidirectional: true,
-        },
-      });
-
-      // Import serialized data
-      const keys = Object.keys(cachedIndex.serialized);
-      for (const key of keys) {
-        await searchIndex.import(key, cachedIndex.serialized[key]);
-      }
-      indexInitialized = true;
-      console.log('Loaded FlexSearch index from cache');
-      return searchIndex;
-    } catch (error) {
-      console.error('Error loading cached index:', error);
-      // Fall through to rebuild
-    }
-  }
-
-  // Build new index
-  await rebuildSearchIndex();
-  return searchIndex;
-}
-
-// Rebuild the entire search index from bookmarks
-export async function rebuildSearchIndex() {
-  console.log('Building FlexSearch index...');
-
-  searchIndex = new Document({
+// Shared FlexSearch configuration - the index is constructed in two places and
+// the two copies must stay identical or a cached index fails to import.
+function createSearchIndex() {
+  return new Document({
     document: {
       id: 'id',
       index: ['title', 'url', 'description', 'keywords', 'category', 'domain'],
@@ -294,6 +264,56 @@ export async function rebuildSearchIndex() {
       bidirectional: true,
     },
   });
+}
+
+// Initialize FlexSearch index with optimized configuration
+async function initializeSearchIndex() {
+  if (indexInitialized) {
+    return searchIndex;
+  }
+
+  // Concurrent bookmark events would otherwise each start their own rebuild.
+  if (indexInitPromise) return indexInitPromise;
+
+  indexInitPromise = (async () => {
+    console.log('Initializing FlexSearch index...');
+
+    // Try to load serialized index from cache
+    const cachedIndex = await getCache('flexsearch_index');
+
+    if (cachedIndex && cachedIndex.serialized) {
+      try {
+        searchIndex = createSearchIndex();
+
+        // Import serialized data
+        const keys = Object.keys(cachedIndex.serialized);
+        for (const key of keys) {
+          await searchIndex.import(key, cachedIndex.serialized[key]);
+        }
+        indexInitialized = true;
+        console.log('Loaded FlexSearch index from cache');
+        return searchIndex;
+      } catch (error) {
+        console.error('Error loading cached index:', error);
+        // Fall through to rebuild
+      }
+    }
+
+    // Build new index
+    await rebuildSearchIndex();
+    return searchIndex;
+  })().finally(() => {
+    indexInitPromise = null;
+  });
+
+  return indexInitPromise;
+}
+
+// Rebuild the entire search index from bookmarks
+export async function rebuildSearchIndex() {
+  console.log('Building FlexSearch index...');
+
+  searchIndex = createSearchIndex();
 
   // Use cached bookmarks for better performance
   const bookmarks = await getBookmarksCached();
@@ -305,17 +325,8 @@ export async function rebuildSearchIndex() {
 
   indexInitialized = true;
 
-  // Cache the serialized index
-  try {
-    const serialized = {};
-    await searchIndex.export((key, data) => {
-      serialized[key] = data;
-    });
-    await setCache('flexsearch_index', { serialized, timestamp: Date.now() });
-    console.log(`Indexed ${bookmarks.length} bookmarks`);
-  } catch (error) {
-    console.error('Error caching index:', error);
-  }
+  await saveIndexToCache();
+  console.log(`Indexed ${bookmarks.length} bookmarks`);
 
   return searchIndex;
 }
@@ -339,19 +350,22 @@ export async function addToIndex(bookmark, saveCache = true) {
 
   await searchIndex.add(doc);
   if (saveCache) {
-    await saveIndexToCache();
+    scheduleIndexSave();
   }
 }
 
-// Remove a bookmark from the search index
+// Remove a bookmark from the search index.
+// The index must be loaded first: on a freshly-woken service worker
+// `searchIndex` is always null, and returning early there left deleted
+// bookmarks permanently searchable.
 export async function removeFromIndex(bookmarkId, saveCache = true) {
   if (!searchIndex) {
-    return;
+    await initializeSearchIndex();
   }
 
   await searchIndex.remove(bookmarkId);
   if (saveCache) {
-    await saveIndexToCache();
+    scheduleIndexSave();
   }
 }
 
@@ -361,9 +375,27 @@ export async function updateInIndex(bookmark) {
   await addToIndex(bookmark, true);
 }
 
+// Serializing the index writes the whole O(N) structure as a single IndexedDB
+// record. Doing that per mutation made a bulk import quadratic, so writes are
+// coalesced into one save shortly after the last change.
+const INDEX_SAVE_DEBOUNCE_MS = 2000;
+let indexSaveTimer = null;
+
+function scheduleIndexSave() {
+  if (indexSaveTimer) clearTimeout(indexSaveTimer);
+  indexSaveTimer = setTimeout(() => {
+    indexSaveTimer = null;
+    saveIndexToCache();
+  }, INDEX_SAVE_DEBOUNCE_MS);
+}
+
 // Helper to save index to cache
 async function saveIndexToCache() {
   if (!searchIndex) return;
+  if (indexSaveTimer) {
+    clearTimeout(indexSaveTimer);
+    indexSaveTimer = null;
+  }
   try {
     const serialized = {};
     await searchIndex.export((key, data) => {
@@ -505,7 +537,6 @@ function parseSpecialFilters(query) {
  */
 function applySpecialFilters(bookmarks, filters) {
   const now = Date.now();
-  const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
 
   return bookmarks.filter((bookmark) => {
     // Category filter
@@ -522,32 +553,22 @@ function applySpecialFilters(bookmarks, filters) {
 
     // Accessed filter
     if (filters.accessed !== undefined) {
-      const wasAccessed = bookmark.accessCount && bookmark.accessCount > 0;
-      if (filters.accessed !== wasAccessed) return false;
+      if (filters.accessed === isNeverAccessed(bookmark)) return false;
     }
 
     // Stale filter (old + never accessed)
     if (filters.stale) {
-      const isOld = bookmark.dateAdded < thirtyDaysAgo;
-      const neverAccessed = !bookmark.accessCount || bookmark.accessCount === 0;
-      const isAlive = bookmark.isAlive !== false;
-      if (!(isOld && neverAccessed && isAlive)) return false;
+      if (!isStale(bookmark, now)) return false;
     }
 
     // Enriched filter
     if (filters.enriched !== undefined) {
-      const isEnriched = Boolean(
-        bookmark.description ||
-        (bookmark.keywords && bookmark.keywords.length > 0) ||
-        bookmark.contentSnippet,
-      );
-      if (filters.enriched !== isEnriched) return false;
+      if (filters.enriched !== isEnriched(bookmark)) return false;
     }
 
     // Dead link filter
     if (filters.dead !== undefined) {
-      const isDead = bookmark.isAlive === false;
-      if (filters.dead !== isDead) return false;
+      if (filters.dead !== isDead(bookmark)) return false;
     }
 
     // Folder filter
@@ -633,7 +654,7 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 
   // Apply activeFilters if provided
   if (activeFilters) {
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
 
     filteredBookmarks = filteredBookmarks.filter((b) => {
       if (activeFilters.domains && activeFilters.domains.length > 0) {
@@ -664,13 +685,10 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
         if (!activeFilters.tags.some((t) => b.tags.includes(t))) return false;
       }
       if (activeFilters.deadLinks) {
-        if (b.isAlive !== false) return false;
+        if (!isDead(b)) return false;
       }
       if (activeFilters.stale) {
-        const isOld = b.dateAdded < thirtyDaysAgo;
-        const neverAccessed = !b.accessCount || b.accessCount === 0;
-        const isAlive = b.isAlive !== false;
-        if (!(isOld && neverAccessed && isAlive)) return false;
+        if (!isStale(b, now)) return false;
       }
 
       // Reading list filter - show only reading list items
@@ -765,8 +783,13 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
         }
 
         // Filter the already filtered bookmarks (from special filters)
-        // to only include those found by FlexSearch
-        filteredBookmarks = filteredBookmarks.filter((bookmark) => resultIds.has(bookmark.id));
+        // to only include those found by FlexSearch.
+        // Reading-list rows carry synthetic ids and are never added to the index,
+        // so intersecting on id alone dropped 100% of them; they are matched by
+        // matchesAdvancedQuery below instead.
+        filteredBookmarks = filteredBookmarks.filter(
+          (bookmark) => bookmark.isReadingListItem || resultIds.has(bookmark.id),
+        );
 
         // Then apply the remaining advanced query logic (negative terms, phrases, regex)
         // This is still needed because FlexSearch might not handle negative terms/regex exactly as we want

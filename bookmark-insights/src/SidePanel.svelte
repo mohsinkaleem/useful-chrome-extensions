@@ -12,6 +12,7 @@
   } from './db.js';
   import { searchBookmarks } from './search.js';
   import { getFaviconUrl, formatDate } from './utils.js';
+  import { safeHref } from './url-safety.js';
   import { darkMode, initDarkMode, toggleDarkMode } from './darkModeStore.js';
 
   let bookmarks = [];
@@ -518,7 +519,7 @@
                   />
                   <div class="flex-1 min-w-0">
                     <a
-                      href={item.url}
+                      href={safeHref(item.url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       class="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 truncate block"
@@ -587,7 +588,7 @@
                   />
                   <div class="flex-1 min-w-0">
                     <a
-                      href={item.url}
+                      href={safeHref(item.url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       class="text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 truncate block"

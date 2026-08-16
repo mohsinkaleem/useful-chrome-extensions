@@ -799,6 +799,28 @@ export function getTopicDisplayName(topicId) {
 }
 
 /**
+ * Helper to escape special regex characters
+ */
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// The taxonomy has ~410 static keywords and detectTopics runs per bookmark, so
+// compiling the word-boundary regex inside the loop meant ~1.5M compilations
+// during a full migration. No /g flag, so `.test()` is stateless and the
+// instances are safe to share.
+const KEYWORD_PATTERNS = new Map();
+
+function keywordPattern(keyword) {
+  let pattern = KEYWORD_PATTERNS.get(keyword);
+  if (!pattern) {
+    pattern = new RegExp(`\\b${escapeRegex(keyword)}\\b`, 'i');
+    KEYWORD_PATTERNS.set(keyword, pattern);
+  }
+  return pattern;
+}
+
+/**
  * Detect topics for a bookmark based on its metadata
  * @param {Object} bookmark - Bookmark object with metadata
  * @returns {string[]} Array of topic IDs that match
@@ -815,13 +837,7 @@ export function detectTopics(bookmark) {
   const domain = (bookmark.domain || '').toLowerCase();
   const category = (bookmark.category || '').toLowerCase();
   const contentSnippet = (bookmark.contentSnippet || '').toLowerCase();
-  const keywords = Array.isArray(bookmark.keywords)
-    ? bookmark.keywords.map((k) => k.toLowerCase()).join(' ')
-    : '';
   const folderPath = (bookmark.folderPath || '').toLowerCase();
-
-  // Combine all text for keyword matching
-  const allText = `${title} ${description} ${keywords} ${contentSnippet} ${folderPath}`;
 
   // Extract og:type from rawMetadata
   let ogType = '';
@@ -860,21 +876,19 @@ export function detectTopics(bookmark) {
     // Check keyword matches
     if (topic.keywords) {
       for (const keyword of topic.keywords) {
-        const keywordLower = keyword.toLowerCase();
-
         // Match whole words to avoid false positives
-        const wordBoundaryRegex = new RegExp(`\\b${escapeRegex(keywordLower)}\\b`, 'i');
+        const pattern = keywordPattern(keyword.toLowerCase());
 
-        if (wordBoundaryRegex.test(title)) {
+        if (pattern.test(title)) {
           addScore(topic.id, KEYWORD_TITLE_SCORE);
         }
-        if (wordBoundaryRegex.test(description)) {
+        if (pattern.test(description)) {
           addScore(topic.id, KEYWORD_DESC_SCORE);
         }
-        if (wordBoundaryRegex.test(contentSnippet)) {
+        if (pattern.test(contentSnippet)) {
           addScore(topic.id, KEYWORD_CONTENT_SCORE);
         }
-        if (wordBoundaryRegex.test(folderPath)) {
+        if (pattern.test(folderPath)) {
           addScore(topic.id, KEYWORD_FOLDER_SCORE);
         }
       }
@@ -897,19 +911,23 @@ export function detectTopics(bookmark) {
         // Check subtopic keywords
         if (subtopic.keywords) {
           for (const keyword of subtopic.keywords) {
-            const keywordLower = keyword.toLowerCase();
-            const wordBoundaryRegex = new RegExp(`\\b${escapeRegex(keywordLower)}\\b`, 'i');
+            const pattern = keywordPattern(keyword.toLowerCase());
 
-            if (wordBoundaryRegex.test(title)) {
+            if (pattern.test(title)) {
               addScore(subtopic.id, KEYWORD_TITLE_SCORE);
               addScore(topic.id, KEYWORD_TITLE_SCORE / 2);
             }
-            if (wordBoundaryRegex.test(description)) {
+            if (pattern.test(description)) {
               addScore(subtopic.id, KEYWORD_DESC_SCORE);
               addScore(topic.id, KEYWORD_DESC_SCORE / 2);
             }
-            if (wordBoundaryRegex.test(allText)) {
+            // contentSnippet, not the combined text: the combined text also
+            // contained the title, so every title hit was scored twice.
+            if (pattern.test(contentSnippet)) {
               addScore(subtopic.id, KEYWORD_CONTENT_SCORE);
+            }
+            if (pattern.test(folderPath)) {
+              addScore(subtopic.id, KEYWORD_FOLDER_SCORE);
             }
           }
         }
@@ -941,13 +959,6 @@ export function detectTopics(bookmark) {
 
   // Limit to top 5 topics to avoid noise
   return sortedTopics.slice(0, 5);
-}
-
-/**
- * Helper to escape special regex characters
- */
-function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

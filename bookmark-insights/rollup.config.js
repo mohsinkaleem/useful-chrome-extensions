@@ -80,5 +80,27 @@ export default [
     watch: {
       clearScreen: false
     }
+  },
+  {
+    // Dedicated worker for similarity scoring and topic detection. Loaded with
+    // { type: 'module' } from analysis-client.js.
+    input: 'src/analysis-worker.js',
+    output: {
+      sourcemap: !production,
+      format: 'es',
+      file: 'analysis-worker.js',
+      inlineDynamicImports: true
+    },
+    plugins: [
+      resolve({
+        browser: true,
+        preferBuiltins: false
+      }),
+      commonjs(),
+      production && terser()
+    ],
+    watch: {
+      clearScreen: false
+    }
   }
 ];

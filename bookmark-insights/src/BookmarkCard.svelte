@@ -1,5 +1,6 @@
 <script>
   import { formatDate, getFaviconUrl, getDomainLabel, copyToClipboard } from './utils.js';
+  import { isDead, isEnriched } from './predicates.js';
   import Highlight from './Highlight.svelte';
   import { selectedBookmarks } from './stores.js';
 
@@ -33,10 +34,9 @@
   }
 
   // Compute dynamic classes for the bookmark card
-  $: deadLinkClasses =
-    bookmark.isAlive === false
-      ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'
-      : '';
+  $: deadLinkClasses = isDead(bookmark)
+    ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'
+    : '';
   $: selectedClasses = $selectedBookmarks.has(bookmark.id) ? 'ring-2 ring-blue-500' : '';
 </script>
 
@@ -73,7 +73,7 @@
         </h3>
         <!-- Status Icons -->
         <div class="flex items-center gap-1 flex-shrink-0">
-          {#if bookmark.isAlive === false}
+          {#if isDead(bookmark)}
             <span class="text-red-500 dark:text-red-400" title="Dead link">
               <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                 <path
@@ -84,7 +84,7 @@
               </svg>
             </span>
           {/if}
-          {#if bookmark.description || (bookmark.keywords && bookmark.keywords.length > 0)}
+          {#if isEnriched(bookmark)}
             <span class="text-green-500 dark:text-green-400" title="Enriched with metadata">
               <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                 <path

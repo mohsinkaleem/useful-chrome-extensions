@@ -2,13 +2,12 @@
 // Provides domain hierarchy visualization, behavioral analytics, and data insights
 
 import { getAllBookmarks } from './db.js';
-// import { allBookmarks } from './stores.js';
+import { isDead, isNeverAccessed, isStale } from './predicates.js';
+import { shuffle } from './utils.js';
 
-// Use cached bookmarks to avoid redundant DB calls across insight functions
-async function getBookmarksCached() {
-  // return await allBookmarks.getCached();
-  return await getAllBookmarks();
-}
+// getAllBookmarks is corpus-cached in db.js, so the ~25 insight functions below
+// share one read instead of scanning the table each.
+const getBookmarksCached = getAllBookmarks;
 
 /**
  * Get dead link insights and categorization
@@ -17,7 +16,7 @@ async function getBookmarksCached() {
 export async function getDeadLinkInsights() {
   try {
     const bookmarks = await getBookmarksCached();
-    const deadLinks = bookmarks.filter((b) => b.isAlive === false);
+    const deadLinks = bookmarks.filter(isDead);
     const now = Date.now();
 
     if (deadLinks.length === 0) {
@@ -322,18 +321,12 @@ export async function getActionableInsights() {
     const bookmarks = await getBookmarksCached();
     const now = Date.now();
 
-    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
     const ninetyDaysAgo = now - 90 * 24 * 60 * 60 * 1000;
     const oneYearAgo = now - 365 * 24 * 60 * 60 * 1000;
 
     // Stale Queue: Unaccessed bookmarks older than 30 days
     const staleQueue = bookmarks
-      .filter((b) => {
-        const isOld = b.dateAdded < thirtyDaysAgo;
-        const neverAccessed = !b.accessCount || b.accessCount === 0;
-        const isAlive = b.isAlive !== false;
-        return isOld && neverAccessed && isAlive;
-      })
+      .filter((b) => isStale(b, now))
       .sort((a, b) => a.dateAdded - b.dateAdded)
       .slice(0, 50)
       .map((b) => ({
@@ -349,16 +342,11 @@ export async function getActionableInsights() {
 
     // Cleanup Candidates: Dead + never accessed + very old
     const cleanupCandidates = bookmarks
-      .filter((b) => {
-        const isDead = b.isAlive === false;
-        const neverAccessed = !b.accessCount || b.accessCount === 0;
-        const isVeryOld = b.dateAdded < oneYearAgo && neverAccessed;
-        return isDead || isVeryOld;
-      })
+      .filter((b) => isDead(b) || (b.dateAdded < oneYearAgo && isNeverAccessed(b)))
       .sort((a, b) => {
         // Prioritize dead links first
-        if (a.isAlive === false && b.isAlive !== false) return -1;
-        if (b.isAlive === false && a.isAlive !== false) return 1;
+        if (isDead(a) && !isDead(b)) return -1;
+        if (isDead(b) && !isDead(a)) return 1;
         return a.dateAdded - b.dateAdded;
       })
       .slice(0, 50)
@@ -370,30 +358,28 @@ export async function getActionableInsights() {
         dateAdded: b.dateAdded,
         isAlive: b.isAlive,
         accessCount: b.accessCount || 0,
-        reason: b.isAlive === false ? 'Dead link' : 'Old & unused',
+        reason: isDead(b) ? 'Dead link' : 'Old & unused',
         ageInDays: Math.floor((now - b.dateAdded) / (24 * 60 * 60 * 1000)),
       }));
 
     // Rediscovery Feed: Random selection of old but alive bookmarks
-    const rediscoveryCandidates = bookmarks.filter((b) => {
-      const isOld = b.dateAdded < ninetyDaysAgo;
-      const isAlive = b.isAlive !== false;
-      const hasContent = b.title && b.url;
-      return isOld && isAlive && hasContent;
-    });
+    const rediscoveryCandidates = bookmarks.filter(
+      (b) => b.dateAdded < ninetyDaysAgo && !isDead(b) && b.title && b.url,
+    );
 
-    // Shuffle and pick 5
-    const shuffled = [...rediscoveryCandidates].sort(() => Math.random() - 0.5);
-    const rediscoveryFeed = shuffled.slice(0, 10).map((b) => ({
-      id: b.id,
-      title: b.title,
-      url: b.url,
-      domain: b.domain,
-      dateAdded: b.dateAdded,
-      category: b.category,
-      description: b.description,
-      ageInDays: Math.floor((now - b.dateAdded) / (24 * 60 * 60 * 1000)),
-    }));
+    // Shuffle and pick 10
+    const rediscoveryFeed = shuffle(rediscoveryCandidates)
+      .slice(0, 10)
+      .map((b) => ({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        domain: b.domain,
+        dateAdded: b.dateAdded,
+        category: b.category,
+        description: b.description,
+        ageInDays: Math.floor((now - b.dateAdded) / (24 * 60 * 60 * 1000)),
+      }));
 
     // Consolidation Opportunities: Domains with only 1-2 bookmarks
     const domainCount = {};
@@ -426,10 +412,9 @@ export async function getActionableInsights() {
       totalStale: staleQueue.length,
       totalCleanupCandidates: cleanupCandidates.length,
       totalLowValueDomains: lowValueDomains.length,
-      deadLinksCount: bookmarks.filter((b) => b.isAlive === false).length,
-      oldUnusedCount: bookmarks.filter(
-        (b) => b.dateAdded < oneYearAgo && (!b.accessCount || b.accessCount === 0),
-      ).length,
+      deadLinksCount: bookmarks.filter(isDead).length,
+      oldUnusedCount: bookmarks.filter((b) => b.dateAdded < oneYearAgo && isNeverAccessed(b))
+        .length,
     };
 
     return {
@@ -487,10 +472,10 @@ export async function getDomainIntelligence() {
 
       if (b.isAlive !== null && b.isAlive !== undefined) {
         d.checked++;
-        if (b.isAlive === false) d.dead++;
+        if (isDead(b)) d.dead++;
       }
 
-      if (b.accessCount && b.accessCount > 0) {
+      if (!isNeverAccessed(b)) {
         d.accessed++;
         d.totalAccess += b.accessCount;
       }

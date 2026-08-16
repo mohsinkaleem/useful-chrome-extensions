@@ -91,6 +91,12 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     // Only enrich public http/https URLs - never reach into private or loopback ranges
     if (!isFetchableUrl(bookmark.url)) {
       console.log(`Skipping non-fetchable bookmark: ${bookmark.url}`);
+      // Write the terminal state once, otherwise this row stays "pending
+      // enrichment" forever and is re-queued on every sync.
+      if (bookmark.enrichable !== false) {
+        bookmark.enrichable = false;
+        await upsertBookmark(bookmark);
+      }
       return { success: false, error: 'Not a public HTTP URL', skipped: true };
     }
 
@@ -150,6 +156,11 @@ export async function enrichBookmark(bookmarkId, options = {}) {
     bookmark.category = category || bookmark.category;
     bookmark.isAlive = isAlive;
     bookmark.lastChecked = Date.now();
+    // lastChecked is the retry guard and is stamped on failures too; enrichedAt
+    // marks an actual successful metadata fetch and drives every user-facing count.
+    bookmark.enrichedAt = Date.now();
+    bookmark.enrichable = true;
+    bookmark.enrichmentError = null;
     bookmark.faviconUrl = metadata.faviconUrl || bookmark.faviconUrl;
     bookmark.contentSnippet = metadata.snippet || bookmark.contentSnippet;
     bookmark.rawMetadata = metadata.rawMetadata || bookmark.rawMetadata; // Store comprehensive metadata
