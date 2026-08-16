@@ -2,6 +2,55 @@
 
 All notable changes to Bookmark Insight.
 
+## 2.3.0 — 2026-08-16
+
+Roadmap phases 5-10: correctness, dead-code removal, robustness, UX and features.
+
+### Added
+
+- **Omnibox** — type `bm` then space in the address bar to run the full query language without opening any UI. Unresolved queries hand off to the dashboard.
+- **Trash** — every delete now passes through a 30-day holding area with an undo toast. Bulk deletes report progress and can be cancelled mid-run.
+- **Saved searches** — store a query plus its filters as a smart folder, with a live count in the sidebar.
+- **Merge duplicates** — keeps the richer record and unions tags, keywords, topics and metadata, instead of forcing a survivor to be picked.
+- **Folder suggestions** — topics that are well represented but scattered across many folders, with one-click create-and-move.
+- **Domain operations** — per-domain totals, dead counts, re-check and delete-all-dead.
+- **Export** to Markdown, CSV and Netscape HTML alongside the existing JSON backup.
+- **Read Next** reading-time buckets and **content age** filters, which finally drive the `readingTimeRange` and `hasPublishedDate` filters that were already wired into search but had no UI.
+- Keyboard shortcuts: `/` and `Ctrl`/`Cmd`+`K` focus search, `j`/`k` walk results, `Enter` opens, `Esc` closes, `Alt`+`Shift`+`B` opens the side panel.
+- Field-filter autocomplete in the search box, so the 14 documented filters are discoverable in-app.
+- Per-domain rate limiting with `Retry-After` handling in the enrichment pipeline.
+- 52 further unit tests (100 total) covering predicates, `safeHref`, the exporters and published-date parsing.
+
+### Fixed
+
+- Deleting a folder orphaned every bookmark inside it; descendants are now collected from `removeInfo.node.children`.
+- Sync never pruned, so bookmarks removed while the service worker was suspended survived in every count and search result forever.
+- Any text query silently dropped **all** reading-list items, because they are never in the FlexSearch index.
+- Failed enrichment counted as successful enrichment, inflating every progress bar and pending count. `enrichedAt` now tracks success; `lastChecked` remains the retry guard.
+- `chrome://`, `file://` and bookmarklet bookmarks are marked non-enrichable instead of being re-queued on every sync.
+- A user regex with `/g` was stateful across bookmarks, so the same query returned different results on consecutive runs. Pattern length is capped and nested quantifiers are rejected.
+- A transient IndexedDB failure could re-queue the entire collection for network enrichment.
+- `handleBookmarkMoved` and `handleBookmarkChanged` did not invalidate the metric caches, so folder changes took up to an hour to reach the sidebar.
+- Dead-link re-checks are capped and checkpointed, so a service-worker termination costs one chunk rather than the whole run.
+- Four `{#each}` blocks over mutated arrays were unkeyed and rendered rows against the wrong record after a delete.
+- `chrome.bookmarks.onCreated` overwrote restored records with blank enrichment fields; it now adopts an existing or recently-trashed record.
+
+### Changed
+
+- One `predicates.js` defines `isEnriched`, `isStale`, `isDead` and `isNeverAccessed`; the three conflicting definitions of "enriched" are gone.
+- All 20 blocking `confirm()`/`alert()` calls replaced with a dark-mode-aware, focus-trapped dialog and a toast host with `aria-live`.
+- Bookmark titles are real anchors in both the list and card views, restoring middle-click, "open in new window" and "copy link address".
+- View mode, sort order, filters and query persist across reloads.
+- `href` values go through a scheme allowlist at all anchor sites.
+- Deep Analysis runs in the existing worker and writes in batches rather than one transaction per record.
+- `privacyMode` is now a real guard in `enrichBookmark`.
+- The `commands.description` field was removed from the reserved `_execute_action` entry, which Chrome rejects.
+
+### Removed
+
+- 29 unreachable exports in `db.js` (~700 lines) and the `similarities` table, which nothing ever wrote to. `knip` was misconfigured and reported none of it; the root cause was a dynamic `import('./db.js')` that made every export look used.
+- Five settings with no readers, and the one-shot `chrome.storage.local` migration that ran on every browser launch.
+
 ## 2.2.0 — 2026-08-15
 
 Code review remediation, phases 0-4.

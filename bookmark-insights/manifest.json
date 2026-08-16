@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bookmark Insight",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "A powerful bookmark manager with smart search, insights, enrichment, and maintenance tools",
   "permissions": [
     "bookmarks",
@@ -30,8 +30,7 @@
       "suggested_key": {
         "default": "Alt+Shift+B",
         "mac": "Alt+Shift+B"
-      },
-      "description": "Open the Bookmark Insight side panel"
+      }
     }
   },
   "side_panel": {
