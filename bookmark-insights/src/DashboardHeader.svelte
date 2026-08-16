@@ -1,16 +1,24 @@
 <script>
   import { createEventDispatcher } from 'svelte';
   import { darkMode, toggleDarkMode } from './darkModeStore.js';
+  import { EXPORT_FORMATS } from './exporters.js';
 
   export let currentView = 'bookmarks';
 
   const dispatch = createEventDispatcher();
 
+  let exportMenuOpen = false;
+
+  function chooseFormat(format) {
+    exportMenuOpen = false;
+    dispatch('export', format);
+  }
+
   const VIEWS = [
     { key: 'bookmarks', label: 'Bookmarks' },
     { key: 'insights', label: 'Insights' },
     { key: 'health', label: 'Health' },
-    { key: 'dataExplorer', label: '🗄️ Data' },
+    { key: 'dataExplorer', label: '\u{1F5C4}\uFE0F Data' },
   ];
 
   const ACTIVE = 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300';
@@ -22,26 +30,46 @@
     <div class="flex justify-between items-center py-4">
       <div class="flex items-center space-x-4">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-200">Bookmark Insight</h1>
-        <button
-          on:click={() => dispatch('export')}
-          class="px-3 py-1 text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
-          title="Export bookmarks to JSON"
-        >
-          <svg
-            class="w-4 h-4 inline-block mr-1"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div class="relative">
+          <button
+            on:click={() => (exportMenuOpen = !exportMenuOpen)}
+            class="px-3 py-1 text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
+            title="Export bookmarks"
+            aria-expanded={exportMenuOpen}
+            aria-haspopup="true"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-            ></path>
-          </svg>
-          Export
-        </button>
+            <svg
+              class="w-4 h-4 inline-block mr-1"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+              ></path>
+            </svg>
+            Export ▾
+          </button>
+          {#if exportMenuOpen}
+            <ul
+              class="absolute left-0 mt-1 z-30 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg overflow-hidden"
+            >
+              {#each EXPORT_FORMATS as format (format.key)}
+                <li>
+                  <button
+                    on:click={() => chooseFormat(format.key)}
+                    class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    {format.label}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
       </div>
 
       <div class="flex items-center space-x-4">

@@ -13,9 +13,14 @@ A privacy-first bookmark manager with advanced search, platform-aware enrichment
 - **Special filters**: `category:`, `domain:`, `folder:`, `accessed:`, `stale:`, `dead:`, `enriched:`
 - **Platform filters**: `platform:`, `channel:`, `repo:`, `author:`, `type:`, `hasimage:`, `playlist:`
 - **Visual filter builder** with quick-access buttons for common filters
+- **Field autocomplete** — start typing `dom…` and press Tab to complete `domain:`
+- **Omnibox** — type `bm` then space in the address bar to search without opening any UI
+- **Saved searches** — store a query plus filters as a smart folder with a live count in the sidebar
 - **Search history** in a dropdown
 - **Keyword highlighting** in titles, URLs and descriptions
 - **Dynamic sidebar** — domain, folder and topic counts update with the result set
+- **Read Next** — filter by estimated reading time (≤ 10 / 10–30 / 30–60 / 60+ minutes)
+- **Content age** — surface bookmarks whose *content* was published 2, 5 or 10+ years ago
 
 ### 📱 Platform enrichment
 
@@ -42,10 +47,27 @@ The Insights tab renders Chart.js visualisations over your collection: platform 
 ### 🏥 Health & maintenance
 
 - **Dead links** — view, re-check or delete unreachable bookmarks
-- **Duplicates & similar content** — unified panel with side-by-side comparison
+- **Duplicates & similar content** — unified panel with side-by-side comparison, and **merge** that keeps the richer record and unions tags, keywords, topics and metadata
 - **Cleanup candidates** — dead, old and unused, generic titles, temporary/dev URLs, low quality score
 - **Malformed URL detection**
+- **Folder suggestions** — topics that are well represented but scattered across many folders, with one-click "create the folder and move them"
+- **Domain operations** — per-domain totals, dead counts, re-check and delete-all-dead
+- **Trash** — every delete is recoverable for 30 days; bulk deletes show progress and can be cancelled
 - **Backup & restore** — full JSON or compressed `.db` export
+- **Export** — JSON, Markdown, CSV, or Netscape HTML for import into any browser
+
+### ⌨️ Keyboard
+
+| Key | Action |
+|---|---|
+| `/` | Focus the search box |
+| `Ctrl`/`Cmd` + `K` | Jump to Bookmarks and focus search |
+| `j` / `k` (or `↓` / `↑`) | Move through results |
+| `Enter` | Open the highlighted bookmark |
+| `Esc` | Close the current dialog |
+| `Alt` + `Shift` + `B` | Open the side panel |
+
+In the search box, `Tab` completes the highlighted field filter.
 
 ### 💾 Data explorer
 
@@ -163,9 +185,14 @@ CI runs lint, format check, tests, knip and a build on every push and pull reque
 │   ├── similarity.js          # Duplicate and near-duplicate detection
 │   ├── insights.js            # Analytics aggregations
 │   ├── topics.js              # Topic taxonomy and detection
+│   ├── foldering.js           # Auto-foldering suggestions from topics
+│   ├── exporters.js           # Markdown, CSV and Netscape HTML serializers
 │   ├── stores.js              # Svelte stores for filters, search, selection
+│   ├── dialogs.js             # Promise-based confirm/prompt and toast stores
+│   ├── viewState.js           # Persisted view mode, sort order and filters
 │   ├── darkModeStore.js       # Dark mode persistence
 │   ├── utils.js               # Shared helpers and constants
+│   ├── predicates.js          # isEnriched / isStale / isDead / isNeverAccessed
 │   ├── error-boundary.js      # CSP-safe crash fallback
 │   ├── Dashboard.svelte       # Dashboard shell
 │   ├── DashboardHeader.svelte
@@ -175,6 +202,8 @@ CI runs lint, format check, tests, knip and a build on every push and pull reque
 │   ├── BookmarkCard.svelte / BookmarkListItem.svelte
 │   ├── ActiveFilterChips.svelte
 │   ├── UselessCategory.svelte
+│   ├── Modal.svelte           # Focus-trapped dialog shell
+│   ├── ConfirmDialog.svelte / PromptDialog.svelte / ToastHost.svelte
 │   ├── Highlight.svelte       # Search-term highlighting without {@html}
 │   ├── InsightCard.svelte
 │   ├── VisualInsights.svelte  # Insights tab charts

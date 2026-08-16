@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compileUserRegex } from '../src/search.js';
+import { compileUserRegex, publishedTimestamp } from '../src/search.js';
 
 describe('compileUserRegex', () => {
   it('strips g and y so .test() is not stateful across bookmarks', () => {
@@ -36,5 +36,30 @@ describe('compileUserRegex', () => {
   it('rejects invalid and empty patterns', () => {
     expect(compileUserRegex('(unclosed')).toBeNull();
     expect(compileUserRegex('')).toBeNull();
+  });
+});
+
+describe('publishedTimestamp', () => {
+  it('accepts numeric timestamps', () => {
+    expect(publishedTimestamp({ publishedDate: 1700000000000 })).toBe(1700000000000);
+  });
+
+  it('parses ISO strings', () => {
+    expect(publishedTimestamp({ publishedDate: '2020-01-02T00:00:00Z' })).toBe(
+      Date.parse('2020-01-02T00:00:00Z'),
+    );
+  });
+
+  it('falls back to rawMetadata', () => {
+    expect(publishedTimestamp({ rawMetadata: { publishedDate: '2019-05-05' } })).toBe(
+      Date.parse('2019-05-05'),
+    );
+  });
+
+  it('returns null when absent or unparseable', () => {
+    expect(publishedTimestamp({})).toBeNull();
+    expect(publishedTimestamp({ publishedDate: '' })).toBeNull();
+    expect(publishedTimestamp({ publishedDate: 'not a date' })).toBeNull();
+    expect(publishedTimestamp(null)).toBeNull();
   });
 });

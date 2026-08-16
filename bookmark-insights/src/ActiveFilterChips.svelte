@@ -92,6 +92,38 @@
     ...($activeFilters.stale
       ? [{ id: 'stale', color: 'orange', label: 'Stale', remove: clear('stale', false) }]
       : []),
+    ...($activeFilters.readingTimeRange
+      ? [
+          {
+            id: 'readingTime',
+            color: 'purple',
+            label: `Reading time: ${$activeFilters.readingTimeRange.min ?? 0}–${
+              $activeFilters.readingTimeRange.max ?? '∞'
+            } min`,
+            remove: clear('readingTimeRange', null),
+          },
+        ]
+      : []),
+    ...($activeFilters.hasPublishedDate
+      ? [
+          {
+            id: 'hasPublishedDate',
+            color: 'yellow',
+            label: 'Has publish date',
+            remove: clear('hasPublishedDate', null),
+          },
+        ]
+      : []),
+    ...($activeFilters.contentAgeYears
+      ? [
+          {
+            id: 'contentAge',
+            color: 'orange',
+            label: `Content ${$activeFilters.contentAgeYears}+ years old`,
+            remove: clear('contentAgeYears', null),
+          },
+        ]
+      : []),
   ];
 
   function clearAll() {

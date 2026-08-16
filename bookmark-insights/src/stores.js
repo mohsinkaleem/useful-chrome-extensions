@@ -51,6 +51,7 @@ function createActiveFiltersStore() {
     readingTimeRange: null,
     qualityScoreRange: null,
     hasPublishedDate: null,
+    contentAgeYears: null, // Content (not the bookmark) published at least N years ago
     readingList: false, // Filter to show only reading list items
   });
 
@@ -123,6 +124,7 @@ function createActiveFiltersStore() {
         readingTimeRange: null,
         qualityScoreRange: null,
         hasPublishedDate: null,
+        contentAgeYears: null,
         readingList: false,
       }),
     /** @deprecated Use clearFilters() instead */

@@ -14,6 +14,20 @@ let indexInitPromise = null;
 // Corpus-cached in db.js: a keystroke no longer re-reads the whole table.
 const getBookmarksCached = getAllBookmarksWithReadingList;
 
+const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * When the content itself was published, as a timestamp. Deep Analysis stores
+ * this as either a number or an ISO string depending on the source.
+ * @returns {number|null}
+ */
+export function publishedTimestamp(bookmark) {
+  const raw = bookmark?.publishedDate ?? bookmark?.rawMetadata?.publishedDate;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const ts = typeof raw === 'number' ? raw : Date.parse(raw);
+  return Number.isFinite(ts) ? ts : null;
+}
+
 /**
  * Compile a user-supplied regex from the search box.
  *
@@ -721,6 +735,14 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
       if (activeFilters.hasPublishedDate !== null && activeFilters.hasPublishedDate !== undefined) {
         const hasDate = Boolean(b.publishedDate || b.rawMetadata?.publishedDate);
         if (activeFilters.hasPublishedDate !== hasDate) return false;
+      }
+
+      // Content freshness: the article itself is N+ years old, which is a very
+      // different signal from "you saved this N years ago".
+      if (activeFilters.contentAgeYears) {
+        const published = publishedTimestamp(b);
+        if (published === null) return false;
+        if (now - published < activeFilters.contentAgeYears * YEAR_MS) return false;
       }
 
       return true;

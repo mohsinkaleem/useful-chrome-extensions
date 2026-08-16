@@ -36,6 +36,35 @@ export function confirmAction(options) {
   });
 }
 
+/** The single pending text prompt, or null. */
+export const promptRequest = writable(null);
+
+/**
+ * Promise-based prompt. Resolves the entered string, or null when cancelled.
+ * @param {Object} options
+ * @param {string} options.message
+ * @param {string} [options.title]
+ * @param {string} [options.defaultValue]
+ * @param {string} [options.placeholder]
+ * @param {string} [options.confirmLabel]
+ * @returns {Promise<string|null>}
+ */
+export function promptAction(options) {
+  return new Promise((resolve) => {
+    promptRequest.set({
+      title: 'Enter a value',
+      defaultValue: '',
+      placeholder: '',
+      confirmLabel: 'Save',
+      ...options,
+      resolve: (value) => {
+        promptRequest.set(null);
+        resolve(value);
+      },
+    });
+  });
+}
+
 export const toasts = writable([]);
 
 let nextToastId = 1;

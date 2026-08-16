@@ -1,8 +1,15 @@
 <script>
   import { onMount } from 'svelte';
-  import { getDomainsByRecency, getDomainsByCount, getUniqueFolders } from './db.js';
+  import {
+    getDomainsByRecency,
+    getDomainsByCount,
+    getUniqueFolders,
+    getSavedSearches,
+    deleteSavedSearch,
+  } from './db.js';
+  import { searchBookmarks } from './search.js';
   import { getTopicDisplayName } from './topics.js';
-  import { activeFilters, allBookmarks } from './stores.js';
+  import { activeFilters, allBookmarks, searchQuery } from './stores.js';
 
   // Props for search result stats
   export let searchResultStats = null;
@@ -13,6 +20,19 @@
   let folders = [];
   let topics = [];
   let dateCounts = { week: 0, twoWeek: 0, month: 0, threeMonth: 0, sixMonth: 0, year: 0, older: 0 };
+
+  // Saved searches, with the live result count the sidebar shows next to each.
+  let savedSearches = [];
+  let savedSearchCounts = {};
+
+  // "I have 10 minutes" — readingTimeRange was already wired into search.js and
+  // the store, but nothing ever set it.
+  const READING_TIME_BUCKETS = [
+    { label: '≤ 10 min', min: 1, max: 10 },
+    { label: '10–30 min', min: 10, max: 30 },
+    { label: '30–60 min', min: 30, max: 60 },
+    { label: '60 min+', min: 60, max: null },
+  ];
 
   let domainSortMode = 'count'; // 'recency' or 'count'
   let domainDisplayLimit = 40; // Initial limit for domains
@@ -42,6 +62,7 @@
       await loadDomains();
       await loadTopicData();
       await loadDateCounts();
+      await loadSavedSearches();
       folders = await getUniqueFolders();
     } catch (error) {
       console.error('Error refreshing sidebar:', error);
@@ -53,11 +74,58 @@
       await loadDomains();
       await loadTopicData();
       await loadDateCounts();
+      await loadSavedSearches();
       folders = await getUniqueFolders();
     } catch (error) {
       console.error('Error loading filters:', error);
     }
   });
+
+  async function loadSavedSearches() {
+    savedSearches = await getSavedSearches();
+    // Counts come from the same cached corpus the main search uses, so this is
+    // a filter pass rather than N table reads.
+    const counts = {};
+    for (const entry of savedSearches) {
+      try {
+        const { total } = await searchBookmarks(entry.query, entry.filters, { limit: 0 });
+        counts[entry.id] = total;
+      } catch (error) {
+        console.error(`Error counting saved search "${entry.name}":`, error);
+      }
+    }
+    savedSearchCounts = counts;
+  }
+
+  function applySavedSearch(entry) {
+    // Reset first: a stored filter object may predate a newly added filter key,
+    // and searchBookmarks relies on the full shape being present.
+    activeFilters.clearFilters();
+    if (entry.filters) activeFilters.set(entry.filters);
+    searchQuery.set(entry.query || '');
+  }
+
+  async function removeSavedSearch(id) {
+    await deleteSavedSearch(id);
+    await loadSavedSearches();
+  }
+
+  function toggleReadingTime(bucket) {
+    const current = $activeFilters.readingTimeRange;
+    const same = current && current.min === bucket.min && current.max === bucket.max;
+    activeFilters.setFilter('readingTimeRange', same ? null : { min: bucket.min, max: bucket.max });
+  }
+
+  function toggleContentAge(years) {
+    activeFilters.setFilter(
+      'contentAgeYears',
+      $activeFilters.contentAgeYears === years ? null : years,
+    );
+  }
+
+  function toggleHasPublishedDate() {
+    activeFilters.setFilter('hasPublishedDate', $activeFilters.hasPublishedDate ? null : true);
+  }
 
   async function loadDateCounts() {
     const bookmarks = await allBookmarks.getCached();
@@ -132,7 +200,8 @@
     $activeFilters.dateRange !== null ||
     $activeFilters.readingTimeRange !== null ||
     $activeFilters.qualityScoreRange !== null ||
-    $activeFilters.hasPublishedDate !== null;
+    $activeFilters.hasPublishedDate !== null ||
+    ($activeFilters.contentAgeYears ?? null) !== null;
 
   // Reactive: Check if we should use filtered stats
   // This ensures proper reactivity when searchResultStats prop changes
@@ -364,6 +433,39 @@
     {/if}
   </div>
 
+  <!-- Saved Searches -->
+  {#if savedSearches.length > 0}
+    <div class="mb-6">
+      <h4 class="text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2">
+        ⭐ Saved Searches
+      </h4>
+      <div class="space-y-1">
+        {#each savedSearches as entry (entry.id)}
+          <div class="flex items-center gap-1">
+            <button
+              on:click={() => applySavedSearch(entry)}
+              class="flex-1 min-w-0 text-left px-2 py-1 text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded flex items-center justify-between gap-2"
+              title={entry.query || '(filters only)'}
+            >
+              <span class="truncate">{entry.name}</span>
+              <span class="text-[10px] text-gray-400 dark:text-gray-500 flex-shrink-0">
+                {savedSearchCounts[entry.id] ?? '…'}
+              </span>
+            </button>
+            <button
+              on:click={() => removeSavedSearch(entry.id)}
+              class="px-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+              title="Delete saved search"
+              aria-label="Delete saved search {entry.name}"
+            >
+              ×
+            </button>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
   <!-- Quick Filters Section -->
   <div class="mb-6">
     <h4 class="text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2">
@@ -394,6 +496,55 @@
       >
         <span>📦 Stale</span>
       </button>
+    </div>
+  </div>
+
+  <!-- Read Next: reading-time buckets -->
+  <div class="mb-6">
+    <h4 class="text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2">
+      ⏱️ Read Next
+    </h4>
+    <div class="flex flex-wrap gap-2">
+      {#each READING_TIME_BUCKETS as bucket (bucket.label)}
+        <button
+          on:click={() => toggleReadingTime(bucket)}
+          class="px-2 py-1 text-[11px] rounded border transition-colors {$activeFilters
+            .readingTimeRange?.min === bucket.min &&
+          $activeFilters.readingTimeRange?.max === bucket.max
+            ? 'bg-teal-50 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800'
+            : 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+        >
+          {bucket.label}
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  <!-- Content freshness -->
+  <div class="mb-6">
+    <h4 class="text-xs font-medium text-gray-700 dark:text-gray-400 uppercase tracking-wide mb-2">
+      📅 Content Age
+    </h4>
+    <div class="flex flex-wrap gap-2">
+      <button
+        on:click={toggleHasPublishedDate}
+        class="px-2 py-1 text-[11px] rounded border transition-colors {$activeFilters.hasPublishedDate
+          ? 'bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+          : 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+      >
+        Has publish date
+      </button>
+      {#each [2, 5, 10] as years (years)}
+        <button
+          on:click={() => toggleContentAge(years)}
+          class="px-2 py-1 text-[11px] rounded border transition-colors {$activeFilters.contentAgeYears ===
+          years
+            ? 'bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+            : 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+        >
+          {years}+ years old
+        </button>
+      {/each}
     </div>
   </div>
 

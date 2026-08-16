@@ -344,11 +344,13 @@ Ordered by value ÷ effort. Everything in Tier 1 uses data the extension already
 - [x] U5, U6, U8 — modal semantics, `aria-live`, card favicon fallback
 - [x] U9, U10, U11 — persist view state, keyboard shortcuts, in-app syntax hints
 
-### Phase 10 — Features
-- [ ] N1 (omnibox) first — best value-to-effort in the document
-- [ ] N2, N3, N4 — unlock the filters that are already wired but have no UI
-- [ ] N5, N6, N7, N8
-- [ ] N10 (auto-foldering) — the biggest latent win, once Phase 6 is stable
+### Phase 10 — Features ✅ done
+- [x] N1 (omnibox) first — best value-to-effort in the document
+- [x] N2, N3, N4 — unlock the filters that are already wired but have no UI
+- [x] N5, N6, N8 — duplicate merge, Markdown/CSV/Netscape export, domain bulk operations
+- [x] N9 — trash with 30-day retention (landed with phase 9)
+- [x] N10 (auto-foldering) — topic-driven folder suggestions with preview and one-click apply
+- [ ] N7 — writable reading list (deferred)
 
 ---
 

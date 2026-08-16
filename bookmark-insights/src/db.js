@@ -72,6 +72,35 @@ export async function updateSettings(newSettings) {
 }
 
 // =============================================
+// Saved searches
+// =============================================
+
+/** @returns {Promise<Array<{id: string, name: string, query: string, filters: Object|null}>>} */
+export async function getSavedSearches() {
+  const settings = await getSettings();
+  return Array.isArray(settings.savedSearches) ? settings.savedSearches : [];
+}
+
+/** Store a named query. Re-saving the same name replaces the previous entry. */
+export async function saveSearch({ name, query, filters }) {
+  const existing = await getSavedSearches();
+  const entry = {
+    id: `saved-${Date.now().toString(36)}`,
+    name,
+    query: query || '',
+    filters: filters || null,
+  };
+  const next = [...existing.filter((s) => s.name !== name), entry];
+  await updateSettings({ savedSearches: next });
+  return entry;
+}
+
+export async function deleteSavedSearch(id) {
+  const existing = await getSavedSearches();
+  await updateSettings({ savedSearches: existing.filter((s) => s.id !== id) });
+}
+
+// =============================================
 // Corpus cache
 // =============================================
 
@@ -885,28 +914,6 @@ export async function getQuickStats() {
 }
 
 /**
- * Export bookmarks to JSON format
- */
-export async function exportBookmarks() {
-  try {
-    const bookmarks = await getAllBookmarks();
-    return {
-      exportDate: new Date().toISOString(),
-      version: '2.0',
-      totalBookmarks: bookmarks.length,
-      bookmarks: bookmarks,
-    };
-  } catch (error) {
-    console.error('Error exporting bookmarks:', error);
-    throw error;
-  }
-}
-
-// =============================================
-// Additional Analytics Functions (migrated from database.js)
-// =============================================
-
-/**
  * Get bookmarks by folder path
  */
 export async function getBookmarksByFolder(folderPath) {
@@ -1004,6 +1011,68 @@ export async function deleteBookmarks(bookmarkIds, options = {}) {
   }
 }
 
+// Scalar fields a merge may inherit from a duplicate when the survivor is
+// missing them. Collection fields are unioned separately.
+const MERGE_DONOR_FIELDS = [
+  'description',
+  'category',
+  'faviconUrl',
+  'contentSnippet',
+  'rawMetadata',
+  'platform',
+  'creator',
+  'contentType',
+  'platformData',
+  'readingTime',
+  'publishedDate',
+  'contentQualityScore',
+  'enrichedAt',
+  'lastChecked',
+  'isAlive',
+];
+
+/**
+ * Merge duplicates into one record instead of forcing the user to pick a
+ * survivor and lose the other's metadata. The losers go to the trash, so the
+ * merge is reversible for 30 days.
+ *
+ * @param {string} keepId The surviving bookmark.
+ * @param {string[]} mergeIds Bookmarks folded into it (keepId is ignored).
+ */
+export async function mergeBookmarks(keepId, mergeIds) {
+  const ids = (mergeIds || []).filter((id) => id !== keepId);
+  if (ids.length === 0) return { merged: 0, record: null };
+
+  const keeper = await db.bookmarks.get(keepId);
+  if (!keeper) throw new Error('The bookmark to keep no longer exists');
+
+  const others = (await db.bookmarks.bulkGet(ids)).filter(Boolean);
+  const all = [keeper, ...others];
+  const merged = { ...keeper };
+
+  for (const field of ['keywords', 'tags', 'topics', 'smartTags']) {
+    const values = all.flatMap((b) => (Array.isArray(b[field]) ? b[field] : []));
+    if (values.length > 0) merged[field] = [...new Set(values)];
+  }
+
+  const isEmpty = (value) => value === null || value === undefined || value === '';
+  for (const field of MERGE_DONOR_FIELDS) {
+    if (!isEmpty(merged[field])) continue;
+    const donor = others.find((b) => !isEmpty(b[field]));
+    if (donor) merged[field] = donor[field];
+  }
+
+  merged.accessCount = all.reduce((sum, b) => sum + (b.accessCount || 0), 0);
+  merged.lastAccessed = Math.max(0, ...all.map((b) => b.lastAccessed || 0)) || null;
+  merged.dateAdded = Math.min(...all.map((b) => b.dateAdded || Date.now()));
+
+  await db.bookmarks.put(merged);
+  const result = await deleteBookmarks(ids);
+  invalidateBookmarkCorpus();
+
+  return { merged: result.success, record: merged, errors: result.errors };
+}
+
 // =============================================
 // Trash
 // =============================================
@@ -1055,6 +1124,36 @@ export async function restoreFromTrash(ids) {
   return { restored: restoredTrashIds.length, errors };
 }
 
+/**
+ * Claim the most recent trashed record for a URL, removing it from the trash.
+ *
+ * `chrome.bookmarks.onCreated` fires for restores too, and its handler would
+ * otherwise overwrite the just-restored record with blank enrichment fields.
+ * Looking the URL up here means a re-created bookmark reclaims its metadata
+ * whichever way the two writes interleave.
+ *
+ * @param {string} url
+ * @returns {Promise<Object|null>} The stored record without `deletedAt`.
+ */
+export async function takeTrashedByUrl(url) {
+  if (!url) return null;
+  try {
+    const matches = await db.trash.filter((row) => row.url === url).toArray();
+    if (matches.length === 0) return null;
+
+    matches.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+    await db.trash.bulkDelete(matches.map((row) => row.id));
+
+    const record = { ...matches[0] };
+    delete record.deletedAt;
+    delete record.id;
+    return record;
+  } catch (error) {
+    console.error('Error reading trash by url:', error);
+    return null;
+  }
+}
+
 /** Permanently drop trashed records. Omit `ids` to empty the whole trash. */
 export async function purgeTrash(ids = null) {
   try {
@@ -1072,7 +1171,7 @@ export async function purgeTrash(ids = null) {
 }
 
 /** Drop anything past the 30-day retention window. Runs at startup. */
-export async function purgeExpiredTrash() {
+async function purgeExpiredTrash() {
   try {
     const cutoff = Date.now() - TRASH_TTL_MS;
     return await db.trash.where('deletedAt').below(cutoff).delete();

@@ -10,21 +10,23 @@
   import ActiveFilterChips from './ActiveFilterChips.svelte';
   import UselessCategory from './UselessCategory.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
+  import PromptDialog from './PromptDialog.svelte';
   import ToastHost from './ToastHost.svelte';
   import Modal from './Modal.svelte';
-  import { confirmAction, notify } from './dialogs.js';
+  import { confirmAction, promptAction, notify } from './dialogs.js';
   import { SORT_OPTIONS } from './utils.js';
   import { searchBookmarks, invalidateSearchIndex } from './search.js';
   import {
     findDuplicates,
     findMalformedUrls,
     deleteBookmarks,
+    mergeBookmarks,
     getAllBookmarks,
     getDeadLinks,
-    exportBookmarks,
     getQuickStats,
     getSettings,
     updateSettings,
+    saveSearch,
     // Trash
     getTrashItems,
     restoreFromTrash,
@@ -36,9 +38,12 @@
     parseDbBackupFile,
   } from './db.js';
   import { batchReanalyze } from './enrichment.js';
+  import { downloadExport } from './exporters.js';
+  import { getFolderingSuggestions, applyFolderingSuggestion } from './foldering.js';
 
   // Import new insights functions
-  import { getDeadLinkInsights } from './insights.js';
+  import { getDeadLinkInsights, getDomainIntelligence } from './insights.js';
+  import { isDead } from './predicates.js';
 
   // Import enhanced similarity functions
   import { findSimilarBookmarksEnhancedFuzzy, findUselessBookmarks } from './similarity.js';
@@ -309,7 +314,29 @@
       if (stored.filters) activeFilters.set(stored.filters);
       if (typeof stored.query === 'string') searchQueryStore.set(stored.query);
     }
+
+    // The omnibox hands over a query it could not resolve to a single bookmark.
+    const handoff = new URLSearchParams(window.location.search).get('q');
+    if (handoff) {
+      activeFilters.clearFilters();
+      searchQueryStore.set(handoff);
+    }
+
     viewStateRestored = true;
+  }
+
+  async function handleSaveSearch() {
+    const name = await promptAction({
+      title: 'Save this search',
+      message: 'Name for this saved search',
+      placeholder: 'e.g. Unread long reads',
+      defaultValue: $searchQueryStore.slice(0, 40),
+    });
+    if (!name) return;
+
+    await saveSearch({ name, query: $searchQueryStore, filters: $activeFilters });
+    await sidebarRef?.refresh?.();
+    notify(`Saved search "${name}"`, { type: 'success' });
   }
 
   const persistViewState = debounce((state) => saveViewState(state), 400);
@@ -558,7 +585,8 @@
       filters.dateRange !== null ||
       filters.readingTimeRange !== null ||
       filters.qualityScoreRange !== null ||
-      filters.hasPublishedDate !== null
+      filters.hasPublishedDate !== null ||
+      (filters.contentAgeYears ?? null) !== null
     );
   }
 
@@ -610,6 +638,7 @@
       await loadEnrichmentStatus();
 
       loadTrash();
+      loadDomainOps();
 
       // Load sections progressively (non-blocking)
       // Duplicates load
@@ -1106,6 +1135,199 @@
     selectedComparisonPair = pair;
   }
 
+  // How much a record would lose by being deleted rather than kept.
+  function metadataRichness(bookmark) {
+    let score = bookmark.accessCount || 0;
+    for (const field of [
+      'description',
+      'category',
+      'contentSnippet',
+      'faviconUrl',
+      'rawMetadata',
+      'platformData',
+      'readingTime',
+      'publishedDate',
+    ]) {
+      if (bookmark[field]) score += 2;
+    }
+    return (
+      score +
+      (bookmark.keywords?.length || 0) +
+      (bookmark.topics?.length || 0) +
+      (bookmark.tags?.length || 0)
+    );
+  }
+
+  function pickSurvivor(candidates) {
+    return candidates.reduce((best, b) =>
+      metadataRichness(b) > metadataRichness(best) ? b : best,
+    );
+  }
+
+  // Merging keeps the richer record and unions the rest, instead of making the
+  // user pick a survivor and silently drop the other's metadata.
+  async function mergeGroup(group, onSuccess) {
+    const keeper = pickSurvivor(group);
+    const losers = group.filter((b) => b.id !== keeper.id);
+    if (losers.length === 0) return;
+
+    const accepted = await confirmAction({
+      title: 'Merge bookmarks',
+      message: `Keep "${keeper.title}" and fold in ${losers.length} other cop${
+        losers.length === 1 ? 'y' : 'ies'
+      }?\n\nTags, keywords, topics and metadata are combined; the extra copies go to the trash.`,
+      confirmLabel: 'Merge',
+    });
+    if (!accepted) return;
+
+    try {
+      const loserIds = losers.map((b) => b.id);
+      const { merged } = await mergeBookmarks(keeper.id, loserIds);
+      allBookmarks.invalidate();
+      invalidateSearchIndex();
+      onSuccess?.(keeper, loserIds);
+      notify(`Merged ${merged + 1} bookmarks into one`, {
+        type: 'success',
+        timeout: 10000,
+        action: { label: 'Undo', run: () => undoDelete(loserIds) },
+      });
+    } catch (err) {
+      console.error('Error merging bookmarks:', err);
+      notify('Error merging bookmarks: ' + err.message, { type: 'error' });
+    }
+  }
+
+  function mergeDuplicateGroup(group, groupIndex) {
+    return mergeGroup(group, () => {
+      duplicates = duplicates.filter((_, idx) => idx !== groupIndex);
+    });
+  }
+
+  function mergeComparisonPair(pair) {
+    return mergeGroup([pair.bookmark1, pair.bookmark2], () => {
+      enhancedSimilarPairs = enhancedSimilarPairs.filter(
+        (p) =>
+          p.bookmark1.id !== pair.bookmark1.id &&
+          p.bookmark2.id !== pair.bookmark2.id &&
+          p.bookmark1.id !== pair.bookmark2.id &&
+          p.bookmark2.id !== pair.bookmark1.id,
+      );
+      closeComparisonModal();
+    });
+  }
+
+  // Domain-level bulk operations
+  let domainOps = [];
+  let loadingDomainOps = false;
+  const DOMAIN_RECHECK_CAP = 100;
+
+  async function loadDomainOps() {
+    loadingDomainOps = true;
+    try {
+      const intelligence = await getDomainIntelligence();
+      domainOps = intelligence?.knowledgeMap || [];
+    } catch (err) {
+      console.error('Error loading domain intelligence:', err);
+    } finally {
+      loadingDomainOps = false;
+    }
+  }
+
+  function filterToDomain(domain) {
+    activeFilters.clearFilters();
+    activeFilters.addFilter('domains', domain);
+    searchQueryStore.set('');
+    switchView('bookmarks');
+  }
+
+  async function deleteDeadInDomain(domain) {
+    const all = await getAllBookmarks();
+    const ids = all.filter((b) => b.domain === domain && isDead(b)).map((b) => b.id);
+    if (ids.length === 0) {
+      notify(`No dead links on ${domain}`);
+      return;
+    }
+    const result = await runBulkDelete(ids, {
+      title: `Delete dead links on ${domain}`,
+      message: `Delete ${ids.length} dead bookmark(s) from ${domain}? They stay recoverable from the trash for 30 days.`,
+    });
+    if (result) await loadDomainOps();
+  }
+
+  async function recheckDomain(domain) {
+    const all = await getAllBookmarks();
+    const ids = all
+      .filter((b) => b.domain === domain)
+      .slice(0, DOMAIN_RECHECK_CAP)
+      .map((b) => b.id);
+    if (ids.length === 0) return;
+
+    const accepted = await confirmAction({
+      title: `Re-check ${domain}`,
+      message: `Re-fetch metadata for ${ids.length} bookmark(s) on ${domain}?`,
+      confirmLabel: 'Re-check',
+    });
+    if (!accepted) return;
+
+    notify(`Re-checking ${ids.length} bookmark(s) on ${domain}…`);
+    const response = await chrome.runtime.sendMessage({
+      action: 'enrichSpecificBookmarks',
+      ids,
+    });
+    if (response?.success) {
+      allBookmarks.invalidate();
+      await loadDomainOps();
+      notify(`Finished re-checking ${domain}`, { type: 'success' });
+    } else {
+      notify(`Re-check failed: ${response?.error}`, { type: 'error' });
+    }
+  }
+
+  // Auto-foldering suggestions
+  let folderingSuggestions = null;
+  let loadingFoldering = false;
+  let applyingFolderingTopic = null;
+
+  async function runFolderingAnalysis() {
+    loadingFoldering = true;
+    try {
+      folderingSuggestions = await getFolderingSuggestions();
+    } catch (err) {
+      console.error('Error computing foldering suggestions:', err);
+      notify('Could not compute folder suggestions: ' + err.message, { type: 'error' });
+    } finally {
+      loadingFoldering = false;
+    }
+  }
+
+  async function applyFoldering(suggestion) {
+    const accepted = await confirmAction({
+      title: `Create /${suggestion.name}`,
+      message: `Create a "${suggestion.name}" folder and move ${suggestion.count} bookmark(s) into it from ${suggestion.folders.length} existing folders?`,
+      confirmLabel: 'Create and move',
+    });
+    if (!accepted) return;
+
+    applyingFolderingTopic = suggestion.topic;
+    try {
+      const { moved, errors } = await applyFolderingSuggestion(suggestion);
+      allBookmarks.invalidate();
+      sidebarRef?.refresh?.();
+      folderingSuggestions = folderingSuggestions.filter((s) => s.topic !== suggestion.topic);
+      notify(
+        errors.length > 0
+          ? `Moved ${moved} bookmarks, ${errors.length} failed`
+          : `Moved ${moved} bookmarks into /${suggestion.name}`,
+        { type: errors.length > 0 ? 'error' : 'success' },
+      );
+    } catch (err) {
+      console.error('Error applying foldering suggestion:', err);
+      notify('Could not create the folder: ' + err.message, { type: 'error' });
+    } finally {
+      applyingFolderingTopic = null;
+    }
+  }
+
   function closeComparisonModal() {
     selectedComparisonPair = null;
   }
@@ -1398,18 +1620,12 @@
     }
   }
 
-  async function handleExportBookmarks() {
+  async function handleExportBookmarks(event) {
+    const format = event?.detail || 'json';
     try {
-      const exportData = await exportBookmarks();
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `bookmarks-export-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const all = await getAllBookmarks();
+      const filename = downloadExport(format, all);
+      notify(`Exported ${all.length} bookmarks to ${filename}`, { type: 'success' });
     } catch (err) {
       console.error('Error exporting bookmarks:', err);
       notify('Error exporting bookmarks: ' + err.message, { type: 'error' });
@@ -1470,7 +1686,23 @@
   <div class="max-w-[96rem] mx-auto px-4 sm:px-6 lg:px-8 py-8">
     {#if currentView === 'bookmarks'}
       <div class="mb-4">
-        <SearchBar bind:this={searchBarRef} value={$searchQueryStore} on:search={handleSearch} />
+        <div class="flex items-start gap-2">
+          <div class="flex-1 min-w-0">
+            <SearchBar
+              bind:this={searchBarRef}
+              value={$searchQueryStore}
+              on:search={handleSearch}
+            />
+          </div>
+          <button
+            on:click={handleSaveSearch}
+            disabled={!$searchQueryStore && !hasActiveFilters($activeFilters)}
+            class="px-3 py-2.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+            title="Save the current query and filters as a smart folder"
+          >
+            ⭐ Save
+          </button>
+        </div>
         <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
           Shortcuts: <kbd class="font-mono">/</kbd> search · <kbd class="font-mono">j</kbd>/<kbd
             class="font-mono">k</kbd
@@ -2806,12 +3038,21 @@
                   <div class="space-y-6 max-h-[32rem] overflow-y-auto">
                     {#each duplicates.slice(0, duplicatesDisplayLimit) as group, groupIndex (group[0].url)}
                       <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                        <h4
-                          class="font-medium text-gray-900 dark:text-gray-200 mb-3 truncate"
-                          title={group[0].url}
-                        >
-                          {group[0].url}
-                        </h4>
+                        <div class="flex items-start justify-between gap-3 mb-3">
+                          <h4
+                            class="font-medium text-gray-900 dark:text-gray-200 truncate min-w-0"
+                            title={group[0].url}
+                          >
+                            {group[0].url}
+                          </h4>
+                          <button
+                            on:click={() => mergeDuplicateGroup(group, groupIndex)}
+                            class="flex-shrink-0 px-3 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                            title="Keep the richest copy and combine tags, keywords, topics and metadata"
+                          >
+                            Merge {group.length}
+                          </button>
+                        </div>
                         <div class="space-y-2">
                           {#each group as bookmark, index (bookmark.id)}
                             <div
@@ -3228,6 +3469,154 @@
             </div>
           </div>
 
+          <!-- Auto-foldering suggestions -->
+          <div
+            class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors"
+          >
+            <div
+              class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between gap-4"
+            >
+              <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">
+                  🗂️ Folder Suggestions
+                </h3>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Topics that are well represented but scattered across many folders
+                </p>
+              </div>
+              <button
+                on:click={runFolderingAnalysis}
+                disabled={loadingFoldering}
+                class="flex-shrink-0 px-3 py-1.5 text-sm bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50"
+              >
+                {loadingFoldering ? 'Analyzing…' : folderingSuggestions ? 'Re-analyze' : 'Analyze'}
+              </button>
+            </div>
+            <div class="p-6">
+              {#if loadingFoldering}
+                <div class="flex items-center justify-center py-8">
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
+                </div>
+              {:else if !folderingSuggestions}
+                <p class="text-gray-500 dark:text-gray-400">
+                  Run an analysis to see which topics deserve a folder. Requires Deep Content
+                  Analysis to have assigned topics.
+                </p>
+              {:else if folderingSuggestions.length === 0}
+                <p class="text-gray-500 dark:text-gray-400">
+                  No scattered topics found — your folders already match your topics.
+                </p>
+              {:else}
+                <div class="space-y-3">
+                  {#each folderingSuggestions as suggestion (suggestion.topic)}
+                    <div
+                      class="border border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/30 rounded-lg p-4"
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="text-sm font-medium text-gray-900 dark:text-gray-200">
+                            {suggestion.count} bookmarks look like
+                            <strong>{suggestion.name}</strong>
+                            but live in {suggestion.folders.length} different folders
+                          </div>
+                          <div class="flex flex-wrap gap-1.5 mt-2">
+                            {#each suggestion.folders.slice(0, 8) as entry (entry.folder)}
+                              <span
+                                class="px-2 py-0.5 text-[11px] bg-white dark:bg-gray-800 border border-teal-200 dark:border-teal-800 rounded text-gray-600 dark:text-gray-300"
+                              >
+                                {entry.folder} ({entry.count})
+                              </span>
+                            {/each}
+                            {#if suggestion.folders.length > 8}
+                              <span class="text-[11px] text-gray-500 dark:text-gray-400">
+                                +{suggestion.folders.length - 8} more
+                              </span>
+                            {/if}
+                          </div>
+                        </div>
+                        <button
+                          on:click={() => applyFoldering(suggestion)}
+                          disabled={applyingFolderingTopic === suggestion.topic}
+                          class="flex-shrink-0 px-3 py-1.5 text-xs bg-teal-600 text-white rounded hover:bg-teal-700 disabled:opacity-50"
+                        >
+                          {applyingFolderingTopic === suggestion.topic
+                            ? 'Moving…'
+                            : `Create /${suggestion.name}`}
+                        </button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Domain operations -->
+          <div
+            class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors"
+          >
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 class="text-lg font-medium text-gray-900 dark:text-gray-300">🌐 Domains</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Bulk actions across every bookmark from a single source
+              </p>
+            </div>
+            <div class="p-6">
+              {#if loadingDomainOps}
+                <div class="flex items-center justify-center py-8">
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              {:else if domainOps.length === 0}
+                <p class="text-gray-500 dark:text-gray-400">No domain data yet.</p>
+              {:else}
+                <div class="space-y-1 max-h-[28rem] overflow-y-auto">
+                  {#each domainOps as entry (entry.domain)}
+                    <div
+                      class="flex flex-wrap items-center justify-between gap-2 p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                    >
+                      <div class="min-w-0 flex-1">
+                        <div
+                          class="text-sm font-medium text-gray-800 dark:text-gray-300 truncate"
+                          title={entry.domain}
+                        >
+                          {entry.domain}
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">
+                          {entry.total} bookmarks · {entry.accessed} accessed
+                          {#if entry.dead > 0}
+                            <span class="text-red-600 dark:text-red-400"> · {entry.dead} dead</span>
+                          {/if}
+                        </div>
+                      </div>
+                      <div class="flex gap-1 flex-shrink-0">
+                        <button
+                          on:click={() => filterToDomain(entry.domain)}
+                          class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                        >
+                          Show
+                        </button>
+                        <button
+                          on:click={() => recheckDomain(entry.domain)}
+                          class="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                        >
+                          Re-check
+                        </button>
+                        {#if entry.dead > 0}
+                          <button
+                            on:click={() => deleteDeadInDomain(entry.domain)}
+                            class="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          >
+                            Delete {entry.dead} dead
+                          </button>
+                        {/if}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
+
           <!-- Trash -->
           <div
             class="bg-white dark:bg-gray-800 rounded-lg shadow border border-transparent dark:border-gray-700 transition-colors"
@@ -3490,6 +3879,14 @@
           >
           <span class="ml-2 text-sm text-indigo-600 dark:text-indigo-300">Overall Similarity</span>
         </div>
+        <div class="mt-3">
+          <button
+            on:click={() => mergeComparisonPair(selectedComparisonPair)}
+            class="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+          >
+            Merge into the richer record
+          </button>
+        </div>
       </div>
 
       <!-- Similarity Breakdown -->
@@ -3712,6 +4109,7 @@
 {/if}
 
 <ConfirmDialog />
+<PromptDialog />
 <ToastHost />
 
 <!-- Bulk delete progress + cancel -->
