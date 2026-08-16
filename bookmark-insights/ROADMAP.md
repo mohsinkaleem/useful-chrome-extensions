@@ -315,26 +315,27 @@ Ordered by value ÷ effort. Everything in Tier 1 uses data the extension already
 
 ## 8. Suggested order of work
 
-### Phase 6 — Correctness (do first, all small)
-- [ ] F1 — recurse `removeInfo.node.children` on folder delete
-- [ ] F2 — prune in `smartMergeBookmarks`
-- [ ] F3 — reading-list items in text search
-- [ ] F4 / F9 — split `lastChecked` from `enrichedAt`; mark non-enrichable URLs
-- [ ] F5 — one predicates module (`isEnriched`, `isStale`, `isDead`, `isNeverAccessed`)
-- [ ] F6 / F7 — strip `g` from user regex; cap pattern length
-- [ ] F8 — `safeHref()` at all 12 anchor sites
-- [ ] U7 — key the four mutated `{#each}` blocks
+### Phase 6 — Correctness (do first, all small) ✅ done
+- [x] F1 — recurse `removeInfo.node.children` on folder delete
+- [x] F2 — prune in `smartMergeBookmarks`
+- [x] F3 — reading-list items in text search
+- [x] F4 / F9 — split `lastChecked` from `enrichedAt`; mark non-enrichable URLs
+- [x] F5 — one predicates module (`isEnriched`, `isStale`, `isDead`, `isNeverAccessed`)
+- [x] F6 / F7 — strip `g` from user regex; cap pattern length
+- [x] F8 — `safeHref()` at all 12 anchor sites
+- [x] U7 — key the four mutated `{#each}` blocks
 
-### Phase 7 — Tooling & deletion
-- [ ] D1 — fix `knip.json`, **verify it fails on a known-dead export**, then delete the ~29 unreachable exports and the `similarities` table
-- [ ] D2 — implement `privacyMode`, delete the other dead settings
-- [ ] D3 / D4 / R5 — dynamic imports, orphaned comments, `migrateFromChromeStorage`
-- [ ] Add unit tests for the new predicates module and `safeHref` — both are pure and need zero mocking
+### Phase 7 — Tooling & deletion ✅ done
+- [x] D1 — fix `knip.json`, **verify it fails on a known-dead export**, then delete the ~29 unreachable exports and the `similarities` table
+  - Root cause of the false green: `enrichment.js` dynamically imported `db.js` and accessed the namespace object dynamically (`import('./db.js').then(m => m.getBookmark(...))`), so knip treated **every** `db.js` export as used. Fixing D3 is what makes D1 detectable.
+- [x] D2 — implement `privacyMode`, delete the other dead settings
+- [x] D3 / D4 / R5 — dynamic imports, orphaned comments, `migrateFromChromeStorage`
+- [x] Add unit tests for the new predicates module and `safeHref` — both are pure and need zero mocking
 
-### Phase 8 — Robustness & performance
-- [ ] R1, R2, R3, R6 — worker lifecycle, cache invalidation, error propagation, per-domain rate limiting
-- [ ] P1, P2 — batch Deep Analysis writes, move it into the existing worker
-- [ ] P3, P4, P7 — quadratic dedupe, search materialisation, double loads
+### Phase 8 — Robustness & performance ✅ done
+- [x] R1, R2, R3, R6 — worker lifecycle, cache invalidation, error propagation, per-domain rate limiting
+- [x] P1, P2 — batch Deep Analysis writes, move it into the existing worker
+- [x] P3, P4, P7 — quadratic dedupe, search materialisation, double loads
 
 ### Phase 9 — UX
 - [ ] U1 — real anchors in `BookmarkCard` / `BookmarkListItem`
