@@ -726,7 +726,9 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
       // Quality score filter (0-100)
       if (activeFilters.qualityScoreRange) {
         const { min, max } = activeFilters.qualityScoreRange;
-        const qualityScore = b.qualityScore || 0;
+        // `contentQualityScore` is the field Deep Analysis writes; this used to
+        // read `qualityScore`, which nothing has ever set.
+        const qualityScore = b.contentQualityScore || 0;
         if (min !== undefined && min !== null && qualityScore < min) return false;
         if (max !== undefined && max !== null && qualityScore > max) return false;
       }

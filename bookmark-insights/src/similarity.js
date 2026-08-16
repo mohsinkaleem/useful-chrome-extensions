@@ -2,7 +2,7 @@
 // Uses normalized-URL matching plus fuzzy title comparison, with caching.
 
 import { getAllBookmarks, getCache, setCache, CACHE_DURATIONS, CACHE_KEYS } from './db.js';
-import { isDead, isNeverAccessed } from './predicates.js';
+import { hasAccessData, isDead, isNeverAccessed } from './predicates.js';
 import { runSimilarityAnalysis } from './analysis-client.js';
 
 // Placeholder titles Chrome or the user left behind. Matched against the whole
@@ -132,7 +132,7 @@ export async function findSimilarBookmarksEnhancedFuzzy(options = {}) {
  * Calculate a "usefulness score" for a bookmark
  * Lower score = more likely to be useless
  */
-function calculateUsefulnessScore(bookmark) {
+function calculateUsefulnessScore(bookmark, hasVisitData = true) {
   let score = 50; // Start at neutral
   const reasons = [];
 
@@ -173,8 +173,12 @@ function calculateUsefulnessScore(bookmark) {
     reasons.push('Dead link');
   }
 
+  // Only a real signal when visit tracking has actually produced data. With
+  // tracking off - the default - accessCount is 0 everywhere, so this penalty
+  // applied to nearly every bookmark in the library and depressed the whole
+  // score distribution rather than distinguishing anything.
   const daysSinceCreated = (Date.now() - bookmark.dateAdded) / (1000 * 60 * 60 * 24);
-  if (daysSinceCreated > 365 && isNeverAccessed(bookmark)) {
+  if (hasVisitData && daysSinceCreated > 365 && isNeverAccessed(bookmark)) {
     score -= 20;
     reasons.push('Old & never accessed');
   }
@@ -219,6 +223,9 @@ export async function findUselessBookmarks(options = {}) {
 
   try {
     const bookmarks = await getBookmarksCached();
+    // Reported back so the UI can label the access-derived panels honestly
+    // rather than presenting "we never saw you open this" as "you never did".
+    const hasVisitData = hasAccessData(bookmarks);
 
     const results = {
       deadLinks: [],
@@ -226,6 +233,7 @@ export async function findUselessBookmarks(options = {}) {
       genericTitles: [],
       temporaryUrls: [],
       lowScore: [],
+      hasVisitData,
       summary: {
         total: 0,
         byCategory: {},
@@ -240,7 +248,7 @@ export async function findUselessBookmarks(options = {}) {
     const categorized = new Set();
 
     for (const bookmark of bookmarks) {
-      const usefulness = calculateUsefulnessScore(bookmark);
+      const usefulness = calculateUsefulnessScore(bookmark, hasVisitData);
       const enrichedBookmark = {
         ...bookmark,
         usefulnessScore: usefulness.score,
@@ -319,6 +327,7 @@ export async function findUselessBookmarks(options = {}) {
       genericTitles: [],
       temporaryUrls: [],
       lowScore: [],
+      hasVisitData: true,
       summary: { total: 0, byCategory: {} },
     };
   }
