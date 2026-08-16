@@ -122,7 +122,7 @@ export function safeHref(url) {
  * @param {number} [options.maxBytes=524288]
  * @param {RegExp} [options.expectContentType] Applied to the Content-Type header.
  * @param {boolean} [options.readBody=true]
- * @returns {Promise<{ok: boolean, status: number, body: string}>}
+ * @returns {Promise<{ok: boolean, status: number, retryAfter: string|null, body: string}>}
  */
 export async function safeFetch(url, options = {}) {
   const {
@@ -157,15 +157,30 @@ export async function safeFetch(url, options = {}) {
     }
 
     if (!readBody || method === 'HEAD' || !response.body) {
-      return { ok: response.ok, status: response.status, body: '' };
+      return {
+        ok: response.ok,
+        status: response.status,
+        retryAfter: response.headers.get('retry-after'),
+        body: '',
+      };
     }
 
     if (expectContentType && !expectContentType.test(response.headers.get('content-type') || '')) {
-      return { ok: response.ok, status: response.status, body: '' };
+      return {
+        ok: response.ok,
+        status: response.status,
+        retryAfter: response.headers.get('retry-after'),
+        body: '',
+      };
     }
 
     const body = await readCapped(response.body, maxBytes);
-    return { ok: response.ok, status: response.status, body };
+    return {
+      ok: response.ok,
+      status: response.status,
+      retryAfter: response.headers.get('retry-after'),
+      body,
+    };
   } finally {
     clearTimeout(timeoutId);
   }

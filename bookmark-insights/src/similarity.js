@@ -235,6 +235,10 @@ export async function findUselessBookmarks(options = {}) {
     const now = Date.now();
     const sixMonthsAgo = now - 180 * 24 * 60 * 60 * 1000;
 
+    // The low-score catch-all only takes bookmarks no other category claimed.
+    // This used to be four `.some()` scans over four growing arrays per bookmark.
+    const categorized = new Set();
+
     for (const bookmark of bookmarks) {
       const usefulness = calculateUsefulnessScore(bookmark);
       const enrichedBookmark = {
@@ -246,36 +250,32 @@ export async function findUselessBookmarks(options = {}) {
       // Dead links
       if (includeDeadLinks && isDead(bookmark)) {
         results.deadLinks.push(enrichedBookmark);
+        categorized.add(bookmark.id);
       }
 
       // Old and never accessed
       if (includeOldUnused) {
         if (bookmark.dateAdded < sixMonthsAgo && isNeverAccessed(bookmark)) {
           results.oldUnused.push(enrichedBookmark);
+          categorized.add(bookmark.id);
         }
       }
 
       // Generic titles
       if (includeGeneric && isGenericTitle(bookmark.title)) {
         results.genericTitles.push(enrichedBookmark);
+        categorized.add(bookmark.id);
       }
 
       // Temporary/dev URLs
       if (includeTemp && isTemporaryUrl(bookmark.url)) {
         results.temporaryUrls.push(enrichedBookmark);
+        categorized.add(bookmark.id);
       }
 
       // Low usefulness score (catch-all for other issues)
-      if (includeLowScore && usefulness.score < 25) {
-        // Avoid duplicates
-        if (
-          !results.deadLinks.some((b) => b.id === bookmark.id) &&
-          !results.oldUnused.some((b) => b.id === bookmark.id) &&
-          !results.genericTitles.some((b) => b.id === bookmark.id) &&
-          !results.temporaryUrls.some((b) => b.id === bookmark.id)
-        ) {
-          results.lowScore.push(enrichedBookmark);
-        }
+      if (includeLowScore && usefulness.score < 25 && !categorized.has(bookmark.id)) {
+        results.lowScore.push(enrichedBookmark);
       }
     }
 

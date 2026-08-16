@@ -5,6 +5,9 @@
 // analysis-worker.js is the only other importer that matters.
 
 import { shuffle } from './utils.js';
+import { analyzeBookmarkMetadata } from './metadata-analyzer.js';
+import { enhanceWithSchemaOrg } from './url-parsers.js';
+import { detectTopics } from './topics.js';
 
 /**
  * Levenshtein distance using two rolling rows instead of a full (m+1)x(n+1)
@@ -302,4 +305,42 @@ export function computeSimilarPairs(bookmarks, options = {}) {
           : 0,
     },
   };
+}
+
+/**
+ * Deep metadata analysis for one bookmark: reading time, published date,
+ * content quality, smart tags, topics and Schema.org-enhanced platform data.
+ *
+ * Returns only the fields to patch, so the caller can batch the writes. Pure —
+ * no IndexedDB, so this runs in the analysis worker.
+ *
+ * @param {Object} bookmark
+ * @returns {{id: string}|null} Patch object, or null when there is nothing to analyze.
+ */
+export function analyzeBookmarkDeep(bookmark) {
+  if (!bookmark || !bookmark.rawMetadata || Object.keys(bookmark.rawMetadata).length === 0) {
+    return null;
+  }
+
+  const analysis = analyzeBookmarkMetadata(bookmark);
+  if (!analysis) return null;
+
+  const patch = {
+    id: bookmark.id,
+    readingTime: analysis.readingTime,
+    publishedDate: analysis.publishedDate,
+    contentQualityScore: analysis.contentQualityScore,
+    smartTags: analysis.smartTags,
+    topics: detectTopics(bookmark),
+  };
+
+  if (bookmark.platformData) {
+    const enhanced = enhanceWithSchemaOrg(bookmark.platformData, bookmark.rawMetadata);
+    if (enhanced) {
+      patch.platformData = enhanced;
+      patch.contentType = enhanced.type;
+    }
+  }
+
+  return patch;
 }

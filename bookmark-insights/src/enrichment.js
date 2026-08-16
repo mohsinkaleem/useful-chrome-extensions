@@ -6,11 +6,13 @@ import {
   getNextEnrichmentBatch,
   removeFromEnrichmentQueue,
   upsertBookmark,
+  bulkUpsertBookmarks,
   getBookmark,
   getAllBookmarks,
   logEvent,
   invalidateMetricCaches,
 } from './db.js';
+import { runDeepAnalysis } from './analysis-client.js';
 import { isEnrichable, isEnriched, isPendingEnrichment } from './predicates.js';
 import { parseBookmarkUrl } from './url-parsers.js';
 import { safeFetch, isFetchableUrl, safeImageUrl } from './url-safety.js';
@@ -222,12 +224,55 @@ export async function enrichBookmark(bookmarkId, options = {}) {
   }
 }
 
+// Per-hostname politeness. The worker pool used to fire `concurrency` requests
+// with a flat 50 ms gap regardless of target, so a folder of 200 GitHub links
+// meant 200 requests to one host as fast as the pool allowed. Each host now has
+// its own minimum spacing, and 429/503 responses extend it via Retry-After.
+const HOST_MIN_INTERVAL_MS = 1000;
+const HOST_MAX_BACKOFF_MS = 5 * 60 * 1000;
+const hostNextAllowedAt = new Map();
+
+function hostOf(url) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+async function awaitHostSlot(url) {
+  const host = hostOf(url);
+  if (!host) return;
+
+  const now = Date.now();
+  const startAt = Math.max(now, hostNextAllowedAt.get(host) || 0);
+  // Reserve the slot before yielding, so concurrent workers queue behind each
+  // other instead of all reading the same timestamp and firing together.
+  hostNextAllowedAt.set(host, startAt + HOST_MIN_INTERVAL_MS);
+  if (startAt > now) await sleep(startAt - now);
+}
+
+function noteHostResponse(url, response) {
+  if (!response || (response.status !== 429 && response.status !== 503)) return;
+
+  const host = hostOf(url);
+  if (!host) return;
+
+  const seconds = Number(response.retryAfter);
+  const delay =
+    Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : HOST_MIN_INTERVAL_MS * 10;
+  hostNextAllowedAt.set(host, Date.now() + Math.min(delay, HOST_MAX_BACKOFF_MS));
+}
+
 // Check if a bookmark URL is still alive
 async function checkBookmarkAlive(url) {
   if (!isFetchableUrl(url)) return null;
 
+  await awaitHostSlot(url);
+
   try {
     const response = await safeFetch(url, { method: 'HEAD', timeout: 5000, readBody: false });
+    noteHostResponse(url, response);
     // Consider 2xx and 3xx as alive
     return response.ok || (response.status >= 300 && response.status < 400);
   } catch (error) {
@@ -237,8 +282,10 @@ async function checkBookmarkAlive(url) {
     }
 
     // Some servers reject HEAD; retry once with a ranged GET before declaring it dead.
+    await awaitHostSlot(url);
     try {
       const response = await safeFetch(url, { method: 'GET', timeout: 5000, maxBytes: 1024 });
+      noteHostResponse(url, response);
       return response.ok || (response.status >= 300 && response.status < 400);
     } catch (error2) {
       if (error2.name === 'AbortError') return null;
@@ -250,11 +297,14 @@ async function checkBookmarkAlive(url) {
 
 // Fetch metadata from a web page
 async function fetchPageMetadata(url) {
+  await awaitHostSlot(url);
+
   try {
     const response = await safeFetch(url, {
       timeout: 10000,
       expectContentType: /text\/html|application\/xhtml\+xml/i,
     });
+    noteHostResponse(url, response);
 
     if (!response.ok || !response.body) {
       return {};
@@ -863,74 +913,14 @@ function sleep(ms) {
 
 // ========== Deep Metadata Analysis (Re-analyze existing data without network requests) ==========
 
-import { analyzeBookmarkMetadata } from './metadata-analyzer.js';
-import { enhanceWithSchemaOrg } from './url-parsers.js';
-import { detectTopics } from './topics.js';
-
-/**
- * Re-analyze a bookmark's existing rawMetadata to extract deep insights
- * This does NOT make network requests - it only processes existing data
- * Includes topic detection which is now done separately from enrichment
- * @param {Object} bookmark - Full bookmark object with rawMetadata
- * @returns {Object} - Updated bookmark object with new analysis fields
- */
-async function reanalyzeBookmark(bookmark) {
-  if (!bookmark) {
-    return { success: false, error: 'No bookmark provided' };
-  }
-
-  try {
-    // Run deep metadata analysis on existing rawMetadata
-    const analysis = analyzeBookmarkMetadata(bookmark);
-
-    if (!analysis) {
-      return { success: false, error: 'No metadata to analyze', skipped: true };
-    }
-
-    // Update bookmark with analyzed fields
-    bookmark.readingTime = analysis.readingTime;
-    bookmark.publishedDate = analysis.publishedDate;
-    bookmark.contentQualityScore = analysis.contentQualityScore;
-    bookmark.smartTags = analysis.smartTags;
-
-    // Detect and assign topics based on all available metadata
-    bookmark.topics = detectTopics(bookmark);
-
-    // Enhance platform data with Schema.org if available
-    if (bookmark.rawMetadata && bookmark.platformData) {
-      const enhancedPlatformData = enhanceWithSchemaOrg(
-        bookmark.platformData,
-        bookmark.rawMetadata,
-      );
-      if (enhancedPlatformData) {
-        bookmark.platformData = enhancedPlatformData;
-        bookmark.contentType = enhancedPlatformData.type;
-      }
-    }
-
-    // Save updated bookmark
-    await upsertBookmark(bookmark);
-
-    console.log(
-      `Re-analyzed bookmark: ${bookmark.title} - Quality: ${analysis.contentQualityScore}, Topics: ${bookmark.topics?.length || 0}, Reading time: ${analysis.readingTime || 'N/A'} min`,
-    );
-
-    return {
-      success: true,
-      readingTime: analysis.readingTime,
-      publishedDate: analysis.publishedDate,
-      contentQualityScore: analysis.contentQualityScore,
-      smartTagsCount: analysis.smartTags?.length || 0,
-      topicsCount: bookmark.topics?.length || 0,
-    };
-  } catch (error) {
-    console.error(`Error re-analyzing bookmark ${bookmark.id}:`, error);
-    return { success: false, error: error.message };
-  }
-}
-
 /**
  * Batch re-analyze bookmarks (process existing rawMetadata without network requests)
+ *
+ * Each chunk is scored in the analysis worker and written back with a single
+ * bulkPut. The previous version ran the analysis on the UI thread and issued one
+ * `put` per bookmark, each of which dropped the corpus cache — so the next read
+ * re-scanned the whole table, ~3,700 times over a full run.
+ *
  * @param {Array<Object>} bookmarks - Array of bookmark objects to re-analyze
  * @param {Function} progressCallback - Optional callback for progress updates
  * @returns {Object} - Summary of re-analysis results
@@ -947,80 +937,58 @@ export async function batchReanalyze(bookmarks, progressCallback = null) {
   let skipped = 0;
   let completed = 0;
 
-  // Process in chunks to avoid blocking
   const chunkSize = 50;
 
   for (let i = 0; i < bookmarks.length; i += chunkSize) {
     const chunk = bookmarks.slice(i, i + chunkSize);
+    const updates = [];
+
+    let patches;
+    try {
+      patches = await runDeepAnalysis(chunk);
+    } catch (error) {
+      console.error('Deep analysis chunk failed:', error);
+      patches = chunk.map(() => undefined);
+    }
 
     for (let j = 0; j < chunk.length; j++) {
       const bookmark = chunk[j];
-      const globalIndex = i + j;
+      const patch = patches[j];
+      completed++;
 
-      try {
-        // Check if bookmark has rawMetadata to analyze
-        if (!bookmark.rawMetadata || Object.keys(bookmark.rawMetadata).length === 0) {
-          skipped++;
-          completed++;
-
-          if (progressCallback) {
-            progressCallback({
-              current: globalIndex + 1,
-              total: bookmarks.length,
-              completed: completed,
-              bookmarkId: bookmark.id,
-              title: bookmark.title,
-              status: 'skipped',
-              reason: 'No metadata to analyze',
-            });
-          }
-          continue;
-        }
-
-        const result = await reanalyzeBookmark(bookmark);
-
-        if (result.success) {
-          success++;
-        } else if (result.skipped) {
-          skipped++;
-        } else {
-          failed++;
-        }
-        completed++;
-
-        if (progressCallback) {
-          progressCallback({
-            current: globalIndex + 1,
-            total: bookmarks.length,
-            completed: completed,
-            bookmarkId: bookmark.id,
-            title: bookmark.title,
-            status: result.success ? 'completed' : result.skipped ? 'skipped' : 'failed',
-            result: result,
-          });
-        }
-      } catch (error) {
-        console.error(`Error re-analyzing bookmark ${bookmark.id}:`, error);
+      let status;
+      if (patch === undefined) {
         failed++;
-        completed++;
+        status = 'failed';
+      } else if (patch === null) {
+        skipped++;
+        status = 'skipped';
+      } else {
+        updates.push({ ...bookmark, ...patch });
+        success++;
+        status = 'completed';
+      }
 
-        if (progressCallback) {
-          progressCallback({
-            current: globalIndex + 1,
-            total: bookmarks.length,
-            completed: completed,
-            bookmarkId: bookmark.id,
-            title: bookmark.title,
-            status: 'error',
-            error: error.message,
-          });
-        }
+      if (progressCallback) {
+        progressCallback({
+          current: i + j + 1,
+          total: bookmarks.length,
+          completed,
+          bookmarkId: bookmark.id,
+          title: bookmark.title,
+          status,
+          reason: status === 'skipped' ? 'No metadata to analyze' : undefined,
+        });
       }
     }
 
-    // Small delay between chunks to allow UI to update
+    if (updates.length > 0) {
+      await bulkUpsertBookmarks(updates);
+    }
+
+    // Yield so the UI can paint between chunks
     if (i + chunkSize < bookmarks.length) {
-      await sleep(100);
+      await sleep(0);
     }
   }
 

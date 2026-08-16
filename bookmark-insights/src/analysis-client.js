@@ -3,7 +3,7 @@
 // Falls back to running the same function inline when Workers are not available
 // - notably in the MV3 service worker, which cannot spawn one.
 
-import { computeSimilarPairs } from './analysis-core.js';
+import { computeSimilarPairs, analyzeBookmarkDeep } from './analysis-core.js';
 
 const WORKER_URL = 'analysis-worker.js';
 
@@ -98,4 +98,17 @@ export async function runSimilarityAnalysis(bookmarks, options = {}) {
       }))
       .filter((pair) => pair.bookmark1 && pair.bookmark2),
   };
+}
+
+/**
+ * Run deep metadata analysis off the UI thread.
+ *
+ * Unlike similarity, this needs `rawMetadata`, so callers must pass bounded
+ * chunks rather than the whole corpus.
+ *
+ * @param {Array} bookmarks
+ * @returns {Promise<Array<Object|null>>} One patch per input, null when there was nothing to analyze.
+ */
+export async function runDeepAnalysis(bookmarks) {
+  return (await runInWorker('deepAnalysis', { bookmarks })) ?? bookmarks.map(analyzeBookmarkDeep);
 }

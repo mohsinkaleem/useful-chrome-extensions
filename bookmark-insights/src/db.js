@@ -123,13 +123,12 @@ export function invalidateBookmarkCorpus() {
 // Get all bookmarks from IndexedDB.
 // Returns a shallow copy so callers may sort or splice the array freely; the
 // bookmark objects themselves are shared and must be treated as read-only.
+//
+// This rejects rather than returning []. A transient IndexedDB failure that
+// looked like "the user has no bookmarks" made the sync path clear the
+// enrichment queue and re-queue the entire corpus for network enrichment.
 export async function getAllBookmarks() {
-  try {
-    return (await bookmarkCorpus.get()).slice();
-  } catch (error) {
-    console.error('Error getting bookmarks:', error);
-    return [];
-  }
+  return (await bookmarkCorpus.get()).slice();
 }
 
 /**
@@ -972,7 +971,7 @@ export async function deleteBookmarks(bookmarkIds) {
 export async function getDeadLinks() {
   try {
     const bookmarks = await getAllBookmarks();
-    return bookmarks.filter((b) => b.isAlive === false);
+    return bookmarks.filter(isDead);
   } catch (error) {
     console.error('Error getting dead links:', error);
     return [];

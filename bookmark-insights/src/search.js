@@ -729,10 +729,12 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 
   if (!query || !query.trim()) {
     const sortFn = getSortFunction(options.sortBy || 'date_desc');
+    // slice() first: filteredBookmarks may still be the shared cached corpus.
+    const sorted = filteredBookmarks.slice().sort(sortFn);
     const response = {
-      results: filteredBookmarks.sort(sortFn).slice(offset, offset + limit),
-      total: filteredBookmarks.length,
-      hasMore: offset + limit < filteredBookmarks.length,
+      results: sorted.slice(offset, offset + limit),
+      total: sorted.length,
+      hasMore: offset + limit < sorted.length,
       parsedQuery: null,
     };
 
@@ -749,6 +751,9 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 
   // Parse the advanced query from remaining text
   const parsedQuery = parseAdvancedQuery(remainingQuery);
+
+  // Relevance scores keyed by id, so only the returned page carries _searchScore.
+  let scoreLookup = null;
 
   // Apply special filters first
   if (Object.keys(specialFilters).length > 0) {
@@ -811,18 +816,25 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
       );
     }
 
-    // Calculate relevance scores
-    filteredBookmarks = filteredBookmarks.map((bookmark) => ({
-      ...bookmark,
-      _searchScore: calculateRelevanceScore(bookmark, parsedQuery),
-    }));
+    // Score into a side map rather than spreading every matching record. The old
+    // version cloned the full object — `rawMetadata` blobs included — for every
+    // match, on every keystroke, only to slice one page out of it afterwards.
+    const sortBy = options.sortBy || 'relevance';
+    scoreLookup = new Map();
+    for (const bookmark of filteredBookmarks) {
+      scoreLookup.set(bookmark.id, calculateRelevanceScore(bookmark, parsedQuery));
+    }
 
-    // Sort using requested sort option
-    const sortFn = getSortFunction(options.sortBy || 'relevance');
-    filteredBookmarks.sort(sortFn);
+    filteredBookmarks = filteredBookmarks.slice();
+    if (sortBy === 'relevance') {
+      filteredBookmarks.sort((a, b) => scoreLookup.get(b.id) - scoreLookup.get(a.id));
+    } else {
+      filteredBookmarks.sort(getSortFunction(sortBy));
+    }
   } else {
     // No text query
     const sortFn = getSortFunction(options.sortBy || 'date_desc');
+    filteredBookmarks = filteredBookmarks.slice();
     filteredBookmarks.sort(sortFn);
   }
 
@@ -830,7 +842,11 @@ export async function searchBookmarks(query, activeFilters = null, options = {})
 
   // Build response
   const response = {
-    results: filteredBookmarks.slice(offset, offset + limit),
+    results: filteredBookmarks
+      .slice(offset, offset + limit)
+      .map((bookmark) =>
+        scoreLookup ? { ...bookmark, _searchScore: scoreLookup.get(bookmark.id) } : bookmark,
+      ),
     total,
     hasMore: offset + limit < total,
     parsedQuery,

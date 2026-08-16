@@ -252,10 +252,13 @@
         // Invalidate cache to ensure fresh data on next load
         allBookmarks.invalidate();
 
-        // Only reload bookmarks if we're on the bookmarks view
-        // Health and Insights views manage their own state after deletions
+        // Only reload bookmarks if we're on the bookmarks view.
+        // Health and Insights views manage their own state after deletions.
+        // Debounced, not immediate: during an enrichment run this fires per
+        // bookmark and used to interleave with the reactive filter load.
         if (currentView === 'bookmarks') {
-          loadBookmarks(0, false);
+          currentPage = 0;
+          debouncedLoadBookmarks();
         }
 
         // Always update quick stats
