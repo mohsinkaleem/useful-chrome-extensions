@@ -927,10 +927,3 @@ function computeSearchResultStats(bookmarks) {
 
   return { domains, folders, topics, dateCounts };
 }
-
-// Note: advancedSearch function removed - use searchBookmarks() with activeFilters parameter instead
-// The main searchBookmarks() function now supports all advanced filtering via the activeFilters object
-
-// Clear the search index
-
-// Export for statistics

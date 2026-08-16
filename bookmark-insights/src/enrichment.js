@@ -7,9 +7,11 @@ import {
   removeFromEnrichmentQueue,
   upsertBookmark,
   getBookmark,
+  getAllBookmarks,
   logEvent,
   invalidateMetricCaches,
 } from './db.js';
+import { isEnrichable, isEnriched, isPendingEnrichment } from './predicates.js';
 import { parseBookmarkUrl } from './url-parsers.js';
 import { safeFetch, isFetchableUrl, safeImageUrl } from './url-safety.js';
 
@@ -82,6 +84,14 @@ export async function enrichBookmark(bookmarkId, options = {}) {
   const { force = false } = options;
 
   try {
+    const settings = await getSettings();
+
+    // Privacy mode is a hard stop: no outbound request for any bookmark, and
+    // force does not override it.
+    if (settings.privacyMode) {
+      return { success: false, error: 'Privacy mode enabled', skipped: true };
+    }
+
     const bookmark = await getBookmark(bookmarkId);
     if (!bookmark) {
       console.log(`Bookmark ${bookmarkId} not found`);
@@ -102,7 +112,6 @@ export async function enrichBookmark(bookmarkId, options = {}) {
 
     // Skip if recently enriched (based on freshness settings) - unless force is true
     if (!force) {
-      const settings = await getSettings();
       const freshnessDays = settings.enrichmentFreshnessDays || 30;
       const freshnessThreshold = Date.now() - freshnessDays * 24 * 60 * 60 * 1000;
 
@@ -214,7 +223,7 @@ export async function enrichBookmark(bookmarkId, options = {}) {
 }
 
 // Check if a bookmark URL is still alive
-export async function checkBookmarkAlive(url) {
+async function checkBookmarkAlive(url) {
   if (!isFetchableUrl(url)) return null;
 
   try {
@@ -240,7 +249,7 @@ export async function checkBookmarkAlive(url) {
 }
 
 // Fetch metadata from a web page
-export async function fetchPageMetadata(url) {
+async function fetchPageMetadata(url) {
   try {
     const response = await safeFetch(url, {
       timeout: 10000,
@@ -420,7 +429,7 @@ export async function fetchPageMetadata(url) {
 }
 
 // Auto-categorize a bookmark based on domain, URL path, and content
-export function categorizeBookmark(bookmark, metadata = {}) {
+function categorizeBookmark(bookmark, metadata = {}) {
   try {
     const url = new URL(bookmark.url);
     const domain = url.hostname.toLowerCase();
@@ -638,8 +647,8 @@ export async function processEnrichmentBatch(
 
   try {
     const settings = await getSettings();
-    if (!settings.enrichmentEnabled) {
-      console.log('Enrichment is disabled');
+    if (!settings.enrichmentEnabled || settings.privacyMode) {
+      console.log(settings.privacyMode ? 'Privacy mode is on' : 'Enrichment is disabled');
       return { processed: 0, success: 0, failed: 0, skipped: 0 };
     }
 
@@ -654,19 +663,18 @@ export async function processEnrichmentBatch(
 
     // In FORCE mode, directly get bookmarks instead of using the queue
     if (force) {
-      const { getAllBookmarks } = await import('./db.js');
       const allBookmarks = await getAllBookmarks();
 
       // Get all HTTP/HTTPS bookmarks
-      const httpBookmarks = allBookmarks.filter(
-        (b) => b.url && (b.url.startsWith('http://') || b.url.startsWith('https://')),
-      );
+      const httpBookmarks = allBookmarks.filter(isEnrichable);
 
       // Take batchSize number of bookmarks (prioritize unenriched, then oldest enriched)
-      const unenriched = httpBookmarks.filter((b) => !b.lastChecked);
+      const unenriched = httpBookmarks.filter((b) => !isEnriched(b));
       const enriched = httpBookmarks
-        .filter((b) => b.lastChecked)
-        .sort((a, b) => a.lastChecked - b.lastChecked); // Oldest first
+        .filter(isEnriched)
+        .sort(
+          (a, b) => (a.enrichedAt || a.lastChecked || 0) - (b.enrichedAt || b.lastChecked || 0),
+        ); // Oldest first
 
       // Combine: unenriched first, then oldest enriched
       const prioritized = [...unenriched, ...enriched].slice(0, batchSize);
@@ -687,17 +695,9 @@ export async function processEnrichmentBatch(
 
       if (batch.length === 0) {
         // Queue empty - try to get unenriched bookmarks directly
-        const { getAllBookmarks } = await import('./db.js');
         const allBookmarks = await getAllBookmarks();
 
-        const unenrichedBookmarks = allBookmarks
-          .filter(
-            (b) =>
-              b.url &&
-              (b.url.startsWith('http://') || b.url.startsWith('https://')) &&
-              !b.lastChecked,
-          )
-          .slice(0, batchSize);
+        const unenrichedBookmarks = allBookmarks.filter(isPendingEnrichment).slice(0, batchSize);
 
         if (unenrichedBookmarks.length === 0) {
           console.log('No bookmarks in enrichment queue and no unenriched bookmarks found');
@@ -739,7 +739,7 @@ export async function processEnrichmentBatch(
     // Process bookmarks with concurrency control
     const processBookmark = async (item, index) => {
       try {
-        const bookmark = await import('./db.js').then((m) => m.getBookmark(item.bookmarkId));
+        const bookmark = await getBookmark(item.bookmarkId);
 
         // Send progress update
         if (progressCallback && bookmark) {
@@ -861,9 +861,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Export category rules for use in UI
-export { CATEGORY_RULES, PATH_PATTERNS, CONTENT_KEYWORDS };
-
 // ========== Deep Metadata Analysis (Re-analyze existing data without network requests) ==========
 
 import { analyzeBookmarkMetadata } from './metadata-analyzer.js';
@@ -877,7 +874,7 @@ import { detectTopics } from './topics.js';
  * @param {Object} bookmark - Full bookmark object with rawMetadata
  * @returns {Object} - Updated bookmark object with new analysis fields
  */
-export async function reanalyzeBookmark(bookmark) {
+async function reanalyzeBookmark(bookmark) {
   if (!bookmark) {
     return { success: false, error: 'No bookmark provided' };
   }

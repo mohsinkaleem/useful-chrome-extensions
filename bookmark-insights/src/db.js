@@ -2,44 +2,39 @@
 // This provides a structured, indexed storage layer for bookmarks and enrichment data
 
 import Dexie from 'dexie';
-import { STOP_WORDS } from './utils.js';
-import { isFetchableUrl, safeFetch } from './url-safety.js';
 import { isDead, isEnrichable, isEnriched } from './predicates.js';
 
 // Initialize Dexie database
 export const db = new Dexie('BookmarkInsightsDB');
 
-// Schema version 5 is the only declaration kept: versions 1-4 had no data
+// Schema version 5 is the oldest declaration kept: versions 1-4 had no data
 // migration (their upgrade bodies only logged), and Dexie upgrades an older
 // store directly to the newest declared version.
-db.version(5).stores({
+// Version 6 drops `similarities`, which no code ever wrote to.
+db.version(6).stores({
   bookmarks:
     'id, url, title, domain, category, dateAdded, lastAccessed, lastChecked, isAlive, parentId, platform, creator, contentType, publishedDate',
   enrichmentQueue: '++queueId, bookmarkId, addedAt, priority',
   events: '++eventId, bookmarkId, type, timestamp',
   cache: 'key',
   settings: 'key',
-  similarities: '++id, bookmark1Id, bookmark2Id, score, [bookmark1Id+bookmark2Id]',
+  similarities: null,
   computedMetrics: 'key',
 });
 
 // Define default settings
 const DEFAULT_SETTINGS = {
   enrichmentEnabled: true,
-  enrichmentSchedule: 'manual', // 'manual' only - user triggers enrichment
   enrichmentBatchSize: 50,
   enrichmentConcurrency: 5, // Number of parallel requests (1-20)
-  enrichmentRateLimit: 1000, // milliseconds between requests (deprecated with concurrency)
   enrichmentFreshnessDays: 30, // Re-enrich bookmarks older than this many days (0 = always re-enrich)
-  autoCategorizationEnabled: true,
-  deadLinkCheckEnabled: true,
-  privacyMode: false, // If true, skip enrichment entirely
+  privacyMode: false, // If true, skip enrichment entirely - no outbound requests
   trackBrowsingBehavior: false, // If false, don't track tab visits (default OFF for privacy)
   dataVersion: 0, // Set by background.js; gates the update-time index rebuild
 };
 
 // Initialize settings
-export async function initializeSettings() {
+async function initializeSettings() {
   try {
     const existingSettings = await db.settings.get('app');
     if (!existingSettings) {
@@ -70,69 +65,6 @@ export async function updateSettings(newSettings) {
   } catch (error) {
     console.error('Error updating settings:', error);
     return false;
-  }
-}
-
-// Migration: Import data from chrome.storage.local to IndexedDB
-export async function migrateFromChromeStorage() {
-  try {
-    // Check if migration has already been done
-    const migrationStatus = await db.settings.get('migration');
-    if (migrationStatus && migrationStatus.completed) {
-      console.log('Migration already completed');
-      return { success: true, alreadyMigrated: true };
-    }
-
-    console.log('Starting migration from chrome.storage.local to IndexedDB...');
-
-    // Get existing data from chrome.storage.local
-    const result = await chrome.storage.local.get(['bookmarks', 'lastSyncTime']);
-    const oldBookmarks = result.bookmarks || [];
-
-    if (oldBookmarks.length === 0) {
-      console.log('No bookmarks to migrate');
-      await db.settings.put({ key: 'migration', completed: true, timestamp: Date.now(), count: 0 });
-      return { success: true, count: 0 };
-    }
-
-    // Transform old bookmarks to new schema with enrichment fields
-    const newBookmarks = oldBookmarks.map((bookmark) => ({
-      ...bookmark,
-      // New enrichment fields
-      description: null,
-      keywords: [],
-      category: null,
-      tags: [],
-      isAlive: null, // null = unknown, true = alive, false = dead
-      lastChecked: null,
-      faviconUrl: null,
-      contentSnippet: null,
-      lastAccessed: null,
-      accessCount: 0,
-      // Platform-specific fields
-      platform: null,
-      creator: null,
-      contentType: null,
-      platformData: null,
-    }));
-
-    // Bulk insert into IndexedDB
-    await db.bookmarks.bulkPut(newBookmarks);
-
-    // Mark migration as complete
-    await db.settings.put({
-      key: 'migration',
-      completed: true,
-      timestamp: Date.now(),
-      count: newBookmarks.length,
-      oldSyncTime: result.lastSyncTime,
-    });
-
-    console.log(`Successfully migrated ${newBookmarks.length} bookmarks`);
-    return { success: true, count: newBookmarks.length };
-  } catch (error) {
-    console.error('Migration error:', error);
-    return { success: false, error: error.message };
   }
 }
 
@@ -354,18 +286,6 @@ export async function smartMergeBookmarks(newBookmarks) {
   }
 }
 
-// Delete a bookmark
-export async function deleteBookmark(id) {
-  try {
-    await db.bookmarks.delete(id);
-    invalidateBookmarkCorpus();
-    return true;
-  } catch (error) {
-    console.error('Error deleting bookmark:', error);
-    return false;
-  }
-}
-
 // Delete several bookmarks from IndexedDB only. Used by the sync prune and the
 // onRemoved handler, where Chrome has already removed the real bookmarks.
 export async function bulkDeleteBookmarks(ids) {
@@ -394,86 +314,12 @@ export async function getBookmarksByDomain(domain) {
   }
 }
 
-// Get bookmarks by category
-export async function getBookmarksByCategory(category) {
-  try {
-    return await db.bookmarks.where('category').equals(category).toArray();
-  } catch (error) {
-    console.error('Error getting bookmarks by category:', error);
-    return [];
-  }
-}
-
 // Get bookmarks by date range
 export async function getBookmarksByDateRange(startDate, endDate) {
   try {
     return await db.bookmarks.where('dateAdded').between(startDate, endDate, true, true).toArray();
   } catch (error) {
     console.error('Error getting bookmarks by date range:', error);
-    return [];
-  }
-}
-
-// Get unique domains
-export async function getUniqueDomains() {
-  try {
-    const bookmarks = await db.bookmarks.toArray();
-    const domains = [...new Set(bookmarks.map((b) => b.domain).filter((d) => d))];
-    return domains.sort();
-  } catch (error) {
-    console.error('Error getting unique domains:', error);
-    return [];
-  }
-}
-
-// Get unique categories
-export async function getUniqueCategories() {
-  try {
-    const bookmarks = await db.bookmarks.toArray();
-    const categories = [...new Set(bookmarks.map((b) => b.category).filter((c) => c))];
-    return categories.sort();
-  } catch (error) {
-    console.error('Error getting unique categories:', error);
-    return [];
-  }
-}
-
-// Get domain statistics
-export async function getDomainStats() {
-  try {
-    const bookmarks = await db.bookmarks.toArray();
-    const domainCount = {};
-
-    bookmarks.forEach((bookmark) => {
-      if (bookmark.domain) {
-        domainCount[bookmark.domain] = (domainCount[bookmark.domain] || 0) + 1;
-      }
-    });
-
-    return Object.entries(domainCount)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10);
-  } catch (error) {
-    console.error('Error getting domain stats:', error);
-    return [];
-  }
-}
-
-// Get activity timeline
-export async function getActivityTimeline() {
-  try {
-    const bookmarks = await db.bookmarks.toArray();
-    const monthlyCount = {};
-
-    bookmarks.forEach((bookmark) => {
-      const date = new Date(bookmark.dateAdded);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      monthlyCount[monthKey] = (monthlyCount[monthKey] || 0) + 1;
-    });
-
-    return Object.entries(monthlyCount).sort();
-  } catch (error) {
-    console.error('Error getting activity timeline:', error);
     return [];
   }
 }
@@ -491,26 +337,6 @@ export async function logEvent(bookmarkId, type, metadata = {}) {
   } catch (error) {
     console.error('Error logging event:', error);
     return false;
-  }
-}
-
-// Get events for a bookmark
-export async function getBookmarkEvents(bookmarkId, limit = 50) {
-  try {
-    return await db.events.where('bookmarkId').equals(bookmarkId).reverse().limit(limit).toArray();
-  } catch (error) {
-    console.error('Error getting bookmark events:', error);
-    return [];
-  }
-}
-
-// Get recent events
-export async function getRecentEvents(limit = 100) {
-  try {
-    return await db.events.orderBy('timestamp').reverse().limit(limit).toArray();
-  } catch (error) {
-    console.error('Error getting recent events:', error);
-    return [];
   }
 }
 
@@ -545,22 +371,6 @@ export async function getCache(key) {
   } catch (error) {
     console.error('Error getting cache:', error);
     return null;
-  }
-}
-
-export async function clearCache(keyPattern = null) {
-  try {
-    if (keyPattern) {
-      const allCache = await db.cache.toArray();
-      const toDelete = allCache.filter((c) => c.key.includes(keyPattern)).map((c) => c.key);
-      await db.cache.bulkDelete(toDelete);
-    } else {
-      await db.cache.clear();
-    }
-    return true;
-  } catch (error) {
-    console.error('Error clearing cache:', error);
-    return false;
   }
 }
 
@@ -642,15 +452,6 @@ export async function clearEnrichmentQueue() {
   }
 }
 
-export async function getEnrichmentQueueSize() {
-  try {
-    return await db.enrichmentQueue.count();
-  } catch (error) {
-    console.error('Error getting queue size:', error);
-    return 0;
-  }
-}
-
 // =============================================
 // Reading List API Functions
 // =============================================
@@ -683,29 +484,6 @@ export async function getReadingListItems() {
   } catch (error) {
     console.error('Error getting reading list items:', error);
     return [];
-  }
-}
-
-/**
- * Add an item to Chrome's Reading List
- * @param {Object} entry - Entry with title, url, hasBeenRead
- * @returns {Promise<boolean>} Success status
- */
-export async function addToReadingList(entry) {
-  try {
-    if (!chrome.readingList) {
-      console.warn('Reading List API not available');
-      return false;
-    }
-    await chrome.readingList.addEntry({
-      title: entry.title,
-      url: entry.url,
-      hasBeenRead: entry.hasBeenRead || false,
-    });
-    return true;
-  } catch (error) {
-    console.error('Error adding to reading list:', error);
-    return false;
   }
 }
 
@@ -748,28 +526,12 @@ export async function updateReadingListItem(url, hasBeenRead) {
   }
 }
 
-/**
- * Get unread reading list items count
- * @returns {Promise<number>} Count of unread items
- */
-export async function getUnreadReadingListCount() {
-  try {
-    if (!chrome.readingList) return 0;
-    const items = await chrome.readingList.query({ hasBeenRead: false });
-    return items.length;
-  } catch (error) {
-    console.error('Error getting unread count:', error);
-    return 0;
-  }
-}
-
 // Initialize database
 export async function initializeDatabase() {
   try {
     await initializeSettings();
-    const migrationResult = await migrateFromChromeStorage();
-    console.log('Database initialized', migrationResult);
-    return migrationResult;
+    console.log('Database initialized');
+    return { success: true };
   } catch (error) {
     console.error('Error initializing database:', error);
     return { success: false, error: error.message };
@@ -799,7 +561,7 @@ export const CACHE_KEYS = {
 /**
  * Cache duration constants (in milliseconds)
  */
-const CACHE_DURATIONS = {
+export const CACHE_DURATIONS = {
   [CACHE_KEYS.DOMAIN_ANALYTICS]: 60 * 60 * 1000, // 1 hour
   [CACHE_KEYS.AGE_DISTRIBUTION]: 6 * 60 * 60 * 1000, // 6 hours
   [CACHE_KEYS.CREATION_PATTERNS]: 6 * 60 * 60 * 1000, // 6 hours
@@ -817,7 +579,7 @@ const CACHE_DURATIONS = {
  * @param {number} ttlMs - Time to live in milliseconds
  * @returns {Promise<any>} Cached or computed data
  */
-export async function getCachedMetric(key, computeFn, ttlMs) {
+async function getCachedMetric(key, computeFn, ttlMs) {
   try {
     const cached = await db.computedMetrics.get(key);
     if (cached && cached.validUntil > Date.now()) {
@@ -901,7 +663,7 @@ export async function invalidateMetricCaches(changeType) {
 /**
  * Clear all computed metrics (useful for debugging or forced refresh)
  */
-export async function clearAllMetricCaches() {
+async function clearAllMetricCaches() {
   try {
     await db.computedMetrics.clear();
     invalidateBookmarkCorpus();
@@ -917,178 +679,15 @@ export async function clearAllMetricCaches() {
 // Similarity Storage Functions
 // =============================================
 
-/**
- * Store similarity results for a bookmark
- * @param {string} bookmarkId - Source bookmark ID
- * @param {Array} similarities - Array of {bookmark2Id, score} objects
- */
-export async function storeSimilarities(bookmarkId, similarities) {
-  try {
-    // Remove old similarities for this bookmark
-    await db.similarities.where('bookmark1Id').equals(bookmarkId).delete();
-
-    // Add new similarities
-    const records = similarities.map((sim) => ({
-      bookmark1Id: bookmarkId,
-      bookmark2Id: sim.bookmark2Id,
-      score: sim.score,
-      computedAt: Date.now(),
-    }));
-
-    await db.similarities.bulkAdd(records);
-    return true;
-  } catch (error) {
-    console.error('Error storing similarities:', error);
-    return false;
-  }
-}
-
-/**
- * Get stored similar bookmarks for a specific bookmark
- * @param {string} bookmarkId - Bookmark ID
- * @returns {Promise<Array>} Array of similar bookmarks with scores
- */
-export async function getStoredSimilarities(bookmarkId) {
-  try {
-    return await db.similarities.where('bookmark1Id').equals(bookmarkId).toArray();
-  } catch (error) {
-    console.error('Error getting stored similarities:', error);
-    return [];
-  }
-}
-
-/**
- * Clear all stored similarities (call when bookmarks are deleted)
- */
-export async function clearSimilarities() {
-  try {
-    await db.similarities.clear();
-    return true;
-  } catch (error) {
-    console.error('Error clearing similarities:', error);
-    return false;
-  }
-}
-
-// Export cache durations for use in other modules
-export { CACHE_DURATIONS };
-
 // =============================================
 // Consolidated Analytics Functions
 // (Migrated from database.js for single source of truth)
 // =============================================
 
 /**
- * Get bookmarks with pagination and filtering
- * @param {number} page - Page number (0-indexed)
- * @param {number} pageSize - Items per page
- * @param {Object} filters - Filter options
- * @returns {Promise<Object>} Paginated results
- */
-export async function getBookmarksPaginated(page = 0, pageSize = 50, filters = {}) {
-  try {
-    let bookmarks = await getAllBookmarks();
-
-    // Apply multiple filters
-    if (filters.domains && filters.domains.length > 0) {
-      bookmarks = bookmarks.filter((b) => filters.domains.includes(b.domain));
-    }
-
-    if (filters.folders && filters.folders.length > 0) {
-      bookmarks = bookmarks.filter((b) => filters.folders.includes(b.folderPath));
-    }
-
-    if (filters.dateRange) {
-      bookmarks = bookmarks.filter(
-        (b) =>
-          b.dateAdded >= filters.dateRange.startDate && b.dateAdded <= filters.dateRange.endDate,
-      );
-    }
-
-    if (filters.searchQuery) {
-      const lowerQuery = filters.searchQuery.toLowerCase();
-      bookmarks = bookmarks.filter(
-        (b) =>
-          (b.title && b.title.toLowerCase().includes(lowerQuery)) ||
-          (b.url && b.url.toLowerCase().includes(lowerQuery)) ||
-          (b.domain && b.domain.toLowerCase().includes(lowerQuery)) ||
-          (b.description && b.description.toLowerCase().includes(lowerQuery)),
-      );
-    }
-
-    // Platform filter
-    if (filters.platforms && filters.platforms.length > 0) {
-      bookmarks = bookmarks.filter((b) => filters.platforms.includes(b.platform || 'other'));
-    }
-
-    // Creators filter (each creator is an object with {key, creator, platform})
-    if (filters.creators && filters.creators.length > 0) {
-      bookmarks = bookmarks.filter((b) => {
-        if (!b.creator) return false;
-        const bookmarkCreatorKey = `${b.platform || 'other'}:${b.creator}`;
-        return filters.creators.some((c) => c.key === bookmarkCreatorKey);
-      });
-    }
-
-    // Content types filter
-    if (filters.contentTypes && filters.contentTypes.length > 0) {
-      bookmarks = bookmarks.filter((b) => filters.contentTypes.includes(b.contentType));
-    }
-
-    if (filters.category) {
-      bookmarks = bookmarks.filter((b) => b.category === filters.category);
-    }
-
-    if (filters.isEnriched !== undefined) {
-      bookmarks = filters.isEnriched
-        ? bookmarks.filter((b) => b.lastChecked)
-        : bookmarks.filter((b) => !b.lastChecked);
-    }
-
-    // Apply sorting
-    const sortBy = filters.sortBy || 'date_desc';
-    switch (sortBy) {
-      case 'date_asc':
-        bookmarks.sort((a, b) => a.dateAdded - b.dateAdded);
-        break;
-      case 'title_asc':
-        bookmarks.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-        break;
-      case 'title_desc':
-        bookmarks.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
-        break;
-      case 'domain_asc':
-        bookmarks.sort((a, b) => (a.domain || '').localeCompare(b.domain || ''));
-        break;
-      case 'accessed_desc':
-        bookmarks.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-        break;
-      case 'date_desc':
-      default:
-        bookmarks.sort((a, b) => b.dateAdded - a.dateAdded);
-        break;
-    }
-
-    const startIndex = page * pageSize;
-    const endIndex = startIndex + pageSize;
-
-    return {
-      bookmarks: bookmarks.slice(startIndex, endIndex),
-      totalCount: bookmarks.length,
-      hasMore: endIndex < bookmarks.length,
-      currentPage: page,
-      totalPages: Math.ceil(bookmarks.length / pageSize),
-    };
-  } catch (error) {
-    console.error('Error getting paginated bookmarks:', error);
-    return { bookmarks: [], totalCount: 0, hasMore: false, currentPage: 0, totalPages: 0 };
-  }
-}
-
-/**
  * Get consolidated domain analytics in a single pass
  */
-export async function getConsolidatedDomainAnalytics() {
+async function getConsolidatedDomainAnalytics() {
   return getCachedMetric(
     CACHE_KEYS.DOMAIN_ANALYTICS,
     async () => {
@@ -1159,132 +758,6 @@ export async function getUniqueFolders() {
 }
 
 /**
- * Get bookmark age distribution
- */
-export async function getBookmarkAgeDistribution() {
-  return getCachedMetric(
-    CACHE_KEYS.AGE_DISTRIBUTION,
-    async () => {
-      const bookmarks = await getAllBookmarks();
-      const now = Date.now();
-      const ageGroups = {
-        'Last 24 hours': 0,
-        'Last week': 0,
-        'Last month': 0,
-        'Last 3 months': 0,
-        'Last 6 months': 0,
-        'Last year': 0,
-        'Over 1 year': 0,
-      };
-
-      const DAY = 24 * 60 * 60 * 1000;
-      const WEEK = 7 * DAY;
-      const MONTH = 30 * DAY;
-
-      bookmarks.forEach((bookmark) => {
-        const age = now - bookmark.dateAdded;
-
-        if (age <= DAY) ageGroups['Last 24 hours']++;
-        else if (age <= WEEK) ageGroups['Last week']++;
-        else if (age <= MONTH) ageGroups['Last month']++;
-        else if (age <= 3 * MONTH) ageGroups['Last 3 months']++;
-        else if (age <= 6 * MONTH) ageGroups['Last 6 months']++;
-        else if (age <= 365 * DAY) ageGroups['Last year']++;
-        else ageGroups['Over 1 year']++;
-      });
-
-      return Object.entries(ageGroups);
-    },
-    CACHE_DURATIONS[CACHE_KEYS.AGE_DISTRIBUTION],
-  );
-}
-
-/**
- * Get bookmark creation patterns (hourly, daily, monthly)
- */
-export async function getBookmarkCreationPatterns() {
-  return getCachedMetric(
-    CACHE_KEYS.CREATION_PATTERNS,
-    async () => {
-      const bookmarks = await getAllBookmarks();
-      const hourPatterns = new Array(24).fill(0);
-      const dayPatterns = new Array(7).fill(0);
-      const monthPatterns = new Array(12).fill(0);
-
-      const dayNames = [
-        'Sunday',
-        'Monday',
-        'Tuesday',
-        'Wednesday',
-        'Thursday',
-        'Friday',
-        'Saturday',
-      ];
-      const monthNames = [
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec',
-      ];
-
-      bookmarks.forEach((bookmark) => {
-        const date = new Date(bookmark.dateAdded);
-        hourPatterns[date.getHours()]++;
-        dayPatterns[date.getDay()]++;
-        monthPatterns[date.getMonth()]++;
-      });
-
-      return {
-        hourly: hourPatterns.map((count, hour) => [`${hour}:00`, count]),
-        daily: dayPatterns.map((count, day) => [dayNames[day], count]),
-        monthly: monthPatterns.map((count, month) => [monthNames[month], count]),
-      };
-    },
-    CACHE_DURATIONS[CACHE_KEYS.CREATION_PATTERNS],
-  );
-}
-
-/**
- * Get title word frequency
- */
-export async function getTitleWordFrequency() {
-  return getCachedMetric(
-    CACHE_KEYS.WORD_FREQUENCY,
-    async () => {
-      const bookmarks = await getAllBookmarks();
-      const wordCount = {};
-
-      bookmarks.forEach((bookmark) => {
-        if (bookmark.title) {
-          const words = bookmark.title
-            .toLowerCase()
-            .replace(/[^\w\s]/g, ' ')
-            .split(/\s+/)
-            .filter((word) => word.length > 2 && !STOP_WORDS.has(word));
-
-          words.forEach((word) => {
-            wordCount[word] = (wordCount[word] || 0) + 1;
-          });
-        }
-      });
-
-      return Object.entries(wordCount)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 20);
-    },
-    CACHE_DURATIONS[CACHE_KEYS.WORD_FREQUENCY],
-  );
-}
-
-/**
  * Find duplicate bookmarks
  */
 export async function findDuplicates() {
@@ -1311,7 +784,7 @@ export async function findDuplicates() {
 /**
  * Find uncategorized bookmarks (in root folders)
  */
-export async function findUncategorizedBookmarks() {
+async function findUncategorizedBookmarks() {
   try {
     const bookmarks = await getAllBookmarks();
     const rootFolders = ['Bookmarks Bar', 'Other Bookmarks', 'Mobile Bookmarks', ''];
@@ -1444,59 +917,6 @@ export async function getBookmarksByFolder(folderPath) {
 }
 
 /**
- * Find similar bookmarks using word overlap
- */
-export async function findSimilarBookmarks(threshold = 0.7, maxPairs = 100) {
-  try {
-    const bookmarks = await getAllBookmarks();
-    const similar = [];
-
-    // Pre-compute word sets
-    const wordSets = bookmarks
-      .map((b) => ({
-        bookmark: b,
-        words: new Set(
-          b.title
-            .toLowerCase()
-            .split(/\s+/)
-            .filter((w) => w.length > 2),
-        ),
-      }))
-      .filter((item) => item.words.size > 0);
-
-    for (let i = 0; i < wordSets.length; i++) {
-      for (let j = i + 1; j < wordSets.length; j++) {
-        if (wordSets[i].bookmark.url === wordSets[j].bookmark.url) continue;
-
-        const words1 = wordSets[i].words;
-        const words2 = wordSets[j].words;
-
-        const intersection = [...words1].filter((w) => words2.has(w)).length;
-        const similarity = (2 * intersection) / (words1.size + words2.size);
-
-        if (similarity >= threshold) {
-          similar.push([wordSets[i].bookmark, wordSets[j].bookmark, similarity]);
-        }
-      }
-
-      if (similar.length >= maxPairs * 2) break;
-    }
-
-    return similar.sort((a, b) => b[2] - a[2]).slice(0, maxPairs);
-  } catch (error) {
-    console.error('Error finding similar bookmarks:', error);
-    return [];
-  }
-}
-
-/**
- * Legacy alias for backward compatibility
- */
-export async function findOrphans() {
-  return findUncategorizedBookmarks();
-}
-
-/**
  * Get domains sorted by recency
  */
 export async function getDomainsByRecency() {
@@ -1546,190 +966,6 @@ export async function deleteBookmarks(bookmarkIds) {
 }
 
 /**
- * Get common title patterns
- */
-export async function getTitlePatterns() {
-  try {
-    const bookmarks = await getAllBookmarks();
-    const patterns = {};
-
-    bookmarks.forEach((bookmark) => {
-      if (bookmark.title) {
-        const title = bookmark.title.toLowerCase();
-
-        if (title.includes('how to'))
-          patterns['How-to guides'] = (patterns['How-to guides'] || 0) + 1;
-        if (title.includes('tutorial')) patterns['Tutorials'] = (patterns['Tutorials'] || 0) + 1;
-        if (title.includes('documentation') || title.includes('docs'))
-          patterns['Documentation'] = (patterns['Documentation'] || 0) + 1;
-        if (title.includes('api') || title.includes('reference'))
-          patterns['API/Reference'] = (patterns['API/Reference'] || 0) + 1;
-        if (title.includes('blog') || title.includes('article'))
-          patterns['Blog/Articles'] = (patterns['Blog/Articles'] || 0) + 1;
-        if (title.includes('github') || title.includes('repository'))
-          patterns['Code Repositories'] = (patterns['Code Repositories'] || 0) + 1;
-        if (title.includes('video') || title.includes('youtube'))
-          patterns['Videos'] = (patterns['Videos'] || 0) + 1;
-        if (title.includes('tool') || title.includes('app'))
-          patterns['Tools/Apps'] = (patterns['Tools/Apps'] || 0) + 1;
-
-        if (title.length > 60)
-          patterns['Long titles (60+ chars)'] = (patterns['Long titles (60+ chars)'] || 0) + 1;
-        if (title.split(' ').length <= 3)
-          patterns['Short titles (≤3 words)'] = (patterns['Short titles (≤3 words)'] || 0) + 1;
-      }
-    });
-
-    return Object.entries(patterns).sort(([, a], [, b]) => b - a);
-  } catch (error) {
-    console.error('Error getting title patterns:', error);
-    return [];
-  }
-}
-
-/**
- * Analyze URL patterns
- */
-export async function getUrlPatterns() {
-  try {
-    const bookmarks = await getAllBookmarks();
-    const protocols = {};
-    const topLevelDomains = {};
-    const pathPatterns = {};
-    const subdomainPatterns = {};
-
-    bookmarks.forEach((bookmark) => {
-      try {
-        const url = new URL(bookmark.url);
-
-        protocols[url.protocol] = (protocols[url.protocol] || 0) + 1;
-
-        const domain = url.hostname;
-        const parts = domain.split('.');
-        if (parts.length > 1) {
-          const tld = parts[parts.length - 1];
-          topLevelDomains[tld] = (topLevelDomains[tld] || 0) + 1;
-        }
-
-        if (parts.length > 2) {
-          const subdomain = parts[0];
-          if (subdomain !== 'www') {
-            subdomainPatterns[subdomain] = (subdomainPatterns[subdomain] || 0) + 1;
-          }
-        }
-
-        const pathSegments = url.pathname.split('/').filter((segment) => segment.length > 0);
-        if (pathSegments.length > 0) {
-          const firstSegment = pathSegments[0];
-          pathPatterns[firstSegment] = (pathPatterns[firstSegment] || 0) + 1;
-        }
-      } catch (e) {
-        // Skip malformed URLs
-      }
-    });
-
-    return {
-      protocols: Object.entries(protocols).sort(([, a], [, b]) => b - a),
-      topLevelDomains: Object.entries(topLevelDomains)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 10),
-      subdomains: Object.entries(subdomainPatterns)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 10),
-      pathPatterns: Object.entries(pathPatterns)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 15),
-    };
-  } catch (error) {
-    console.error('Error getting URL patterns:', error);
-    return { protocols: [], topLevelDomains: [], subdomains: [], pathPatterns: [] };
-  }
-}
-
-/**
- * Analyze URL parameter usage
- */
-export async function getUrlParameterUsage() {
-  try {
-    const bookmarks = await getAllBookmarks();
-    const parameterCount = {};
-    let urlsWithParams = 0;
-    let totalUrls = 0;
-
-    bookmarks.forEach((bookmark) => {
-      totalUrls++;
-      try {
-        const url = new URL(bookmark.url);
-        const params = url.searchParams;
-
-        if (params.toString()) {
-          urlsWithParams++;
-          for (const [key] of params) {
-            parameterCount[key] = (parameterCount[key] || 0) + 1;
-          }
-        }
-      } catch (e) {
-        // Skip malformed URLs
-      }
-    });
-
-    const parameterUsage = Object.entries(parameterCount)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 15);
-
-    return {
-      parameters: parameterUsage,
-      urlsWithParams,
-      totalUrls,
-      percentage: totalUrls > 0 ? Math.round((urlsWithParams / totalUrls) * 100) : 0,
-    };
-  } catch (error) {
-    console.error('Error getting URL parameter usage:', error);
-    return { parameters: [], urlsWithParams: 0, totalUrls: 0, percentage: 0 };
-  }
-}
-
-/**
- * Get domain distribution
- */
-export async function getDomainDistribution() {
-  try {
-    const bookmarks = await getAllBookmarks();
-    const domainCount = {};
-
-    bookmarks.forEach((bookmark) => {
-      domainCount[bookmark.domain] = (domainCount[bookmark.domain] || 0) + 1;
-    });
-
-    const sortedDomains = Object.entries(domainCount).sort(([, a], [, b]) => b - a);
-
-    const totalBookmarks = bookmarks.length;
-    const top10 = sortedDomains.slice(0, 10);
-    const others = sortedDomains.slice(10);
-    const othersCount = others.reduce((sum, [, count]) => sum + count, 0);
-
-    const distribution = top10.map(([domain, count]) => ({
-      domain,
-      count,
-      percentage: Math.round((count / totalBookmarks) * 100),
-    }));
-
-    if (othersCount > 0) {
-      distribution.push({
-        domain: 'Others',
-        count: othersCount,
-        percentage: Math.round((othersCount / totalBookmarks) * 100),
-      });
-    }
-
-    return distribution;
-  } catch (error) {
-    console.error('Error getting domain distribution:', error);
-    return [];
-  }
-}
-
-/**
  * Get bookmarks that have been detected as dead links
  * Returns bookmarks where isAlive === false (already checked and found dead)
  */
@@ -1743,53 +979,6 @@ export async function getDeadLinks() {
   }
 }
 
-/**
- * Check for dead links
- */
-export async function checkDeadLinks(bookmarkIds = null, batchSize = 10) {
-  try {
-    const bookmarks = await getAllBookmarks();
-    // The scheme/host filter applies to both branches - an explicit id list must
-    // not be able to make the extension fetch file://, chrome:// or intranet URLs.
-    const toCheck = (
-      bookmarkIds ? bookmarks.filter((b) => bookmarkIds.includes(b.id)) : bookmarks
-    ).filter((b) => isFetchableUrl(b.url));
-
-    const results = {
-      checked: 0,
-      alive: [],
-      dead: [],
-      errors: [],
-      inProgress: false,
-    };
-
-    for (let i = 0; i < Math.min(toCheck.length, batchSize); i++) {
-      const bookmark = toCheck[i];
-      results.checked++;
-
-      try {
-        await safeFetch(bookmark.url, { method: 'HEAD', timeout: 5000, readBody: false });
-        results.alive.push(bookmark);
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          results.errors.push({ bookmark, reason: 'timeout' });
-        } else {
-          results.dead.push({ bookmark, reason: error.message });
-        }
-      }
-    }
-
-    return {
-      ...results,
-      total: toCheck.length,
-      remaining: Math.max(0, toCheck.length - batchSize),
-    };
-  } catch (error) {
-    console.error('Error checking dead links:', error);
-    return { checked: 0, alive: [], dead: [], errors: [], total: 0, remaining: 0 };
-  }
-}
-
 // =============================================
 // Backup & Restore System
 // =============================================
@@ -1798,12 +987,11 @@ export async function checkDeadLinks(bookmarkIds = null, batchSize = 10) {
  * Create a full backup of the IndexedDB database
  * @returns {Promise<Object>} Backup object with all data
  */
-export async function createBackup() {
+async function createBackup() {
   try {
     const bookmarks = await db.bookmarks.toArray();
     const settings = await db.settings.toArray();
     const events = await db.events.orderBy('timestamp').reverse().limit(1000).toArray();
-    const similarities = await db.similarities.toArray();
 
     // Get stats for backup metadata
     const enrichedCount = bookmarks.filter(isEnriched).length;
@@ -1818,13 +1006,11 @@ export async function createBackup() {
         enrichedCount,
         categorizedCount,
         eventsCount: events.length,
-        similaritiesCount: similarities.length,
       },
       data: {
         bookmarks,
         settings,
         events,
-        similarities,
       },
     };
 
@@ -1984,7 +1170,6 @@ export async function restoreFromBackup(backup, options = {}) {
     restoreBookmarks = true,
     restoreSettings = true,
     restoreEvents = false, // Events are optional
-    restoreSimilarities = true,
     mergeMode = false, // If true, merge with existing data; if false, replace
   } = options;
 
@@ -2002,7 +1187,6 @@ export async function restoreFromBackup(backup, options = {}) {
       bookmarksRestored: 0,
       settingsRestored: 0,
       eventsRestored: 0,
-      similaritiesRestored: 0,
       errors: [],
     };
 
@@ -2057,15 +1241,6 @@ export async function restoreFromBackup(backup, options = {}) {
       results.eventsRestored = backup.data.events.length;
     }
 
-    // Restore similarities
-    if (restoreSimilarities && backup.data.similarities && backup.data.similarities.length > 0) {
-      if (!mergeMode) {
-        await db.similarities.clear();
-      }
-      await db.similarities.bulkPut(backup.data.similarities);
-      results.similaritiesRestored = backup.data.similarities.length;
-    }
-
     // Clear caches after restore
     await clearAllMetricCaches();
 
@@ -2118,136 +1293,4 @@ export function validateBackup(backup) {
     version: backup.version || 'unknown',
     createdAt: backup.createdAt || 'unknown',
   };
-}
-
-// ============================================================================
-// PLATFORM DATA BACKFILL
-// ============================================================================
-
-import { parseBookmarkUrl } from './url-parsers.js';
-
-/**
- * Backfill platform data for all existing bookmarks
- * This parses URLs to extract platform, creator, and content type without network requests
- * @param {Function} progressCallback - Optional callback for progress updates (processed, total)
- * @returns {Object} - { processed, updated, errors }
- */
-export async function backfillPlatformData(progressCallback = null) {
-  console.log('Starting platform data backfill...');
-
-  const stats = { processed: 0, updated: 0, errors: 0, platforms: {} };
-
-  try {
-    const allBookmarks = await db.bookmarks.toArray();
-    const total = allBookmarks.length;
-
-    console.log(`Processing ${total} bookmarks for platform data...`);
-
-    // Process in batches of 100 for efficiency
-    const BATCH_SIZE = 100;
-
-    for (let i = 0; i < allBookmarks.length; i += BATCH_SIZE) {
-      const batch = allBookmarks.slice(i, i + BATCH_SIZE);
-      const updates = [];
-
-      for (const bookmark of batch) {
-        stats.processed++;
-
-        try {
-          // Skip if no URL
-          if (!bookmark.url) continue;
-
-          // Parse the URL for platform data
-          const platformData = parseBookmarkUrl(bookmark.url);
-
-          // Skip if no platform detected
-          if (!platformData || !platformData.platform) continue;
-
-          // Only update if platform data is different or missing
-          if (
-            bookmark.platform !== platformData.platform ||
-            bookmark.creator !== platformData.creator ||
-            bookmark.contentType !== platformData.type
-          ) {
-            updates.push({
-              id: bookmark.id,
-              platform: platformData.platform,
-              creator: platformData.creator || null,
-              contentType: platformData.type || null,
-              platformData: platformData,
-            });
-
-            // Track platform stats
-            stats.platforms[platformData.platform] =
-              (stats.platforms[platformData.platform] || 0) + 1;
-          }
-        } catch (err) {
-          stats.errors++;
-          console.warn(`Error processing bookmark ${bookmark.id}:`, err.message);
-        }
-      }
-
-      // Bulk update this batch
-      if (updates.length > 0) {
-        await db.bookmarks.bulkUpdate(
-          updates.map((u) => ({
-            key: u.id,
-            changes: {
-              platform: u.platform,
-              creator: u.creator,
-              contentType: u.contentType,
-              platformData: u.platformData,
-            },
-          })),
-        );
-        stats.updated += updates.length;
-        invalidateBookmarkCorpus();
-      }
-
-      // Report progress
-      if (progressCallback) {
-        progressCallback(stats.processed, total);
-      }
-    }
-
-    console.log('Platform data backfill complete:', stats);
-    return stats;
-  } catch (error) {
-    console.error('Error during platform data backfill:', error);
-    throw error;
-  }
-}
-
-/**
- * Get platform data statistics
- * @returns {Object} - Stats about platform coverage
- */
-export async function getPlatformDataStats() {
-  try {
-    const total = await db.bookmarks.count();
-    const withPlatform = await db.bookmarks.where('platform').notEqual('').count();
-    const withCreator = await db.bookmarks.where('creator').notEqual('').count();
-
-    // Count by platform
-    const platforms = {};
-    await db.bookmarks
-      .where('platform')
-      .notEqual('')
-      .each((b) => {
-        if (b.platform) {
-          platforms[b.platform] = (platforms[b.platform] || 0) + 1;
-        }
-      });
-
-    return {
-      total,
-      withPlatform,
-      withCreator,
-      coverage: total > 0 ? Math.round((withPlatform / total) * 100) : 0,
-      platforms,
-    };
-  } catch (error) {
-    console.error('Error getting platform stats:', error);
-    return { total: 0, withPlatform: 0, withCreator: 0, coverage: 0, platforms: {} };
-  }
 }

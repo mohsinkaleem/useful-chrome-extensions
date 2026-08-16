@@ -1,7 +1,14 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/background.js"],
+  "entry": [
+    "src/background.js",
+    "src/dashboard.js",
+    "src/sidepanel.js",
+    "src/analysis-worker.js",
+    "test/**/*.test.js"
+  ],
   "project": ["src/**/*.{js,svelte}"],
+  "includeEntryExports": true,
   "ignoreDependencies": ["autoprefixer", "postcss"],
   "ignoreBinaries": ["du"]
 }

@@ -292,7 +292,6 @@
       events: ['eventId', 'bookmarkId', 'type', 'timestamp'],
       cache: ['key', 'timestamp', 'ttl'],
       settings: ['key'],
-      similarities: ['id', 'bookmark1Id', 'bookmark2Id', 'score'],
       computedMetrics: ['key', 'computedAt', 'validUntil'],
       enrichmentQueue: ['queueId', 'bookmarkId', 'addedAt', 'priority'],
     };

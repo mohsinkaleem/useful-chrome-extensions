@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isFetchableUrl, safeImageUrl } from '../src/url-safety.js';
+import { isFetchableUrl, safeImageUrl, safeHref } from '../src/url-safety.js';
 
 describe('isFetchableUrl', () => {
   it('accepts public http and https URLs', () => {
@@ -69,5 +69,31 @@ describe('safeImageUrl', () => {
   it('rejects empty or non-string input', () => {
     expect(safeImageUrl('')).toBeNull();
     expect(safeImageUrl(undefined)).toBeNull();
+  });
+});
+
+describe('safeHref', () => {
+  it('passes through navigable http(s) URLs unchanged', () => {
+    expect(safeHref('https://example.com/a?b=1')).toBe('https://example.com/a?b=1');
+    expect(safeHref('http://localhost:3000/')).toBe('http://localhost:3000/');
+  });
+
+  it('rejects schemes that must never become an href', () => {
+    for (const url of [
+      'javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'file:///etc/passwd',
+      'chrome://settings',
+      'vbscript:msgbox(1)',
+    ]) {
+      expect(safeHref(url)).toBeNull();
+    }
+  });
+
+  it('rejects malformed and empty input', () => {
+    expect(safeHref('not a url')).toBeNull();
+    expect(safeHref('')).toBeNull();
+    expect(safeHref(null)).toBeNull();
+    expect(safeHref(undefined)).toBeNull();
   });
 });

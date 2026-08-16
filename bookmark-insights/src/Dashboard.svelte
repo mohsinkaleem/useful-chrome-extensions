@@ -16,16 +16,19 @@
     findMalformedUrls,
     deleteBookmarks,
     upsertBookmark,
+    getAllBookmarks,
     getDeadLinks,
     exportBookmarks,
     getQuickStats,
     getSettings,
+    updateSettings,
     // Backup functions
     downloadBackup,
     restoreFromBackup,
     validateBackup,
     parseDbBackupFile,
   } from './db.js';
+  import { batchReanalyze } from './enrichment.js';
 
   // Import new insights functions
   import { getDeadLinkInsights } from './insights.js';
@@ -616,6 +619,10 @@
     enrichmentLogs = [];
 
     try {
+      // The sliders only lived in component state, so the chosen values were
+      // lost on every reload.
+      await updateSettings({ enrichmentBatchSize, enrichmentConcurrency });
+
       const response = await chrome.runtime.sendMessage({
         action: 'runEnrichment',
         batchSize: enrichmentBatchSize,
@@ -645,10 +652,6 @@
     deepAnalysisResult = null;
 
     try {
-      // Import required functions
-      const { batchReanalyze } = await import('./enrichment.js');
-      const { getAllBookmarks } = await import('./db.js');
-
       // Get ALL bookmarks (no pagination needed - it's local data)
       const allBookmarks = await getAllBookmarks();
 
@@ -1369,7 +1372,7 @@
 
       if (result.success) {
         alert(
-          `Restore complete!\n\n- ${result.results.bookmarksRestored} bookmarks restored\n- ${result.results.similaritiesRestored} similarities restored\n\nRefreshing...`,
+          `Restore complete!\n\n- ${result.results.bookmarksRestored} bookmarks restored\n\nRefreshing...`,
         );
         restoreFile = null;
         backupValidation = null;

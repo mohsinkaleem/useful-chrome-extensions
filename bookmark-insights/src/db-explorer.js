@@ -11,7 +11,6 @@ const TABLE_META = {
   events: { icon: '📊', description: 'Activity log (create, delete, access, enrichment events)' },
   cache: { icon: '💾', description: 'General purpose cache storage' },
   settings: { icon: '⚙️', description: 'Application settings and preferences' },
-  similarities: { icon: '🔗', description: 'Precomputed bookmark similarity scores' },
   computedMetrics: { icon: '📈', description: 'Cached computed metrics with TTL' },
   enrichmentQueue: { icon: '⏳', description: 'Queue of bookmarks pending enrichment' },
 };
